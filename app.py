@@ -3,18 +3,16 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty Pro Volume System", layout="wide")
-st.title("🚀 Nifty 1-Hour Institutional Volume Matrix (NiftyBees Synced)")
-st.write("Formula: Col A=(H+L)/2 | Col B=0.0001 Loop | Col C=A-B | Col E=NiftyBees Pro Volume Filter")
+st.set_page_config(page_title="Nifty Volume Behavior Tracker", layout="wide")
+st.title("🎯 Nifty 1-Hour Pure Volume Spread (VSA) Tracker")
+st.write("System Focus: Displays market behavior ONLY when Column C changes its Sign (+ / -)")
 
-# Fetch 1-Hour Data Safely
+# Fetch 1-Hour Synchronized Data (Nifty Index + NiftyBees Volume)
 @st.cache_data(ttl=300)
 def load_data():
-    # 1. Fetch Nifty Index for accurate Price Loop
     df_idx = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
     df_idx.columns = [col[0] if isinstance(col, tuple) else col for col in df_idx.columns]
     
-    # 2. Fetch NiftyBees ETF for Real Deployed Volume
     df_bees = yf.download(tickers="NIFTYBEES.NS", start="2026-01-01", interval="1h")
     df_bees.columns = [col[0] if isinstance(col, tuple) else col for col in df_bees.columns]
     
@@ -22,114 +20,103 @@ def load_data():
         df_idx = df_idx.reset_index()
         if not df_bees.empty:
             df_bees = df_bees.reset_index()
-            
-            # Extract time column name dynamically
             t_idx = 'Datetime' if 'Datetime' in df_idx.columns else df_idx.columns[0]
             t_bees = 'Datetime' if 'Datetime' in df_bees.columns else df_bees.columns[0]
-            
-            # Map NiftyBees Volume to Index Datetime
             bees_vol_map = dict(zip(df_bees[t_bees], df_bees['Volume']))
             df_idx['True_Volume'] = df_idx[t_idx].map(bees_vol_map).fillna(df_bees['Volume'].median())
         else:
-            df_idx['True_Volume'] = 500000  # Fallback base
+            df_idx['True_Volume'] = 500000
         return df_idx
     return pd.DataFrame()
 
 df = load_data()
 
 if not df.empty:
-    # 1. Column D: Date and Time formatting
+    # 1. Column D: Date and Time
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Column D'] = pd.to_datetime(df[time_col]).dt.strftime('%d %b %H:%M')
     
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop with 0.0001 multiplier
+    # 3. Column B: Running Loop (0.0001 multiplier)
     multiplier = 0.0001
     col_b = np.zeros(len(df))
     if len(df) > 0:
         col_b[0] = df['Column A'].iloc[0]
-        
     for i in range(1, len(df)):
-        a_current = df['Column A'].iloc[i]
-        b_prev = col_b[i-1]
-        col_b[i] = b_prev + (multiplier * (a_current - b_prev))
+        col_b[i] = col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - col_b[i-1]))
     df['Column B'] = col_b
     
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Column E: Institutional Pro Volume Filter Logic
-    df['Vol_Mean'] = df['True_Volume'].rolling(window=20).mean()
+    # 5. Volume Analysis Baseline (20-period Mean and Std Dev)
+    df['Vol_Avg'] = df['True_Volume'].rolling(window=20).mean()
     df['Vol_Std'] = df['True_Volume'].rolling(window=20).std()
     
-    status_list = []
-    for i in range(len(df)):
-        if i < 20:
-            status_list.append("Institutional Loading...")
-            continue
-            
+    # 6. Column E: VSA Behavior Logic on Sign Flip
+    status_list = ["Baseline"]
+    
+    for i in range(1, len(df)):
+        prev_c = df['Column C'].iloc[i-1]
+        curr_c = df['Column C'].iloc[i]
         vol = df['True_Volume'].iloc[i]
-        v_mean = df['Vol_Mean'].iloc[i]
+        v_avg = df['Vol_Avg'].iloc[i]
         v_std = df['Vol_Std'].iloc[i]
-        c_val = df['Column C'].iloc[i]
-        close_p = df['Close'].iloc[i]
-        open_p = df['Open'].iloc[i]
         
-        # Proper Z-Score Volume Thresholding
-        is_heavy_volume = vol > v_mean
-        is_extreme_volume = vol > (v_mean + 0.8 * v_std)
-        is_green_candle = close_p > open_p
+        # Determine if candle spread is large or small
+        candle_body = abs(df['Close'].iloc[i] - df['Open'].iloc[i])
+        avg_candle_body = abs(df['Close'] - df['Open']).rolling(window=20).mean().iloc[i]
         
-        if is_extreme_volume:
-            if c_val > 0 and is_green_candle:
-                status_list.append("🔥 INSTITUTIONAL BLAST (Buy Confirm)")
-            elif c_val < 0 and not is_green_candle:
-                status_list.append("⚠️ INSTITUTIONAL DUMP (Sell Confirm)")
-            elif c_val < 0 and is_green_candle:
-                status_list.append("🐳 ACCUMULATION TRAP (Buy Hint)")
-            else:
-                status_list.append("🐻 DISTRIBUTION TRAP (Sell Hint)")
-        elif is_heavy_volume:
-            if c_val > 0:
-                status_list.append("✅ TREND CONFIRMED (Buy)")
-            else:
-                status_list.append("🚨 TREND CONFIRMED (Sell)")
+        # Check Sign Flip
+        sign_changed = (prev_c >= 0 and curr_c < 0) or (prev_c < 0 and curr_c >= 0)
+        
+        if sign_changed:
+            is_high_vol = vol > (v_avg + 0.5 * v_std)
+            is_large_candle = candle_body > avg_candle_body
+            
+            if curr_c > 0:  # Sign flipped to Plus (+)
+                if is_high_vol and is_large_candle:
+                    status_list.append("🟢 ASLI BUY HINT (Whale Entry)")
+                elif is_high_vol and not is_large_candle:
+                    status_list.append("🐳 ACCUMULATION (Heavy Buying Absorption)")
+                elif not is_high_vol and is_large_candle:
+                    status_list.append("❌ NO-VOLUME TRAP (Fake Bull Move)")
+                else:
+                    status_list.append("💤 RETAIL FLIP (Weak Buy Signal)")
+            else:  # Sign flipped to Minus (-)
+                if is_high_vol and is_large_candle:
+                    status_list.append("🔴 ASLI SELL HINT (Whale Dumping)")
+                elif is_high_vol and not is_large_candle:
+                    status_list.append("🐻 DISTRIBUTION (Heavy Selling Pressure)")
+                elif not is_high_vol and is_large_candle:
+                    status_list.append("❌ NO-VOLUME TRAP (Fake Bear Move)")
+                else:
+                    status_list.append("💤 RETAIL FLIP (Weak Sell Signal)")
         else:
-            if abs(c_val) > 10:
-                status_list.append("❌ FAKE MOVE (No Volume)")
-            else:
-                status_list.append("💤 SIDEWAYS (Retail Churn)")
-                
+            # No sign change, keep trend quiet
+            status_list.append("Trend Continuing...")
+            
     df['Column E'] = status_list
     
-    # Top Metrics
-    latest_a = float(df['Column A'].iloc[-1])
-    latest_b = float(df['Column B'].iloc[-1])
-    latest_c = float(df['Column C'].iloc[-1])
-    latest_e = str(df['Column E'].iloc[-1])
-    latest_time = str(df['Column D'].iloc[-1])
+    # Filter only the rows where sign changed to analyze easily
+    # We always include the very last row so the user sees the latest live candle behavior
+    df['Sign_Changed'] = (df['Column C'].shift(1) >= 0) != (df['Column C'] >= 0)
+    df.loc[df.index[-1], 'Sign_Changed'] = True  # Keep latest live candle visible
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Latest Candle Time (Col D)", latest_time)
-    col2.metric("Column C (A - B)", f"{latest_c:.4f}")
-    col3.metric("Smart Filter (Col E)", latest_e)
-    
-    st.subheader("📋 Pro Institutional Data Grid (Last 20 Candles)")
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
+    filtered_df = df[df['Sign_Changed'] == True].copy()
+    show_df = filtered_df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]  # Latest on top
     
-    def color_status(val):
-        if "🔥" in val or "✅" in val: return 'background-color: #1fc07c; color: white'
-        if "⚠️" in val or "🚨" in val: return 'background-color: #ff4b4b; color: white'
-        if "🐳" in val or "🐻" in val: return 'background-color: #0072b2; color: white'
-        return 'background-color: #2b2b2b; color: #888888'
+    def color_vsa(val):
+        if "🟢" in val or "🐳" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+        if "🔴" in val or "🐻" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
+        return 'color: #888888;'
 
     st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 
-        'Column B': '{:.4f}', 
-        'Column C': '{:.4f}'
-    }).map(color_status, subset=['Column E']), use_container_width=True)
+        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
+    }).map(color_vsa, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Market data load nahi ho pa raha hai.")
+    st.error("Data fetch error.")
