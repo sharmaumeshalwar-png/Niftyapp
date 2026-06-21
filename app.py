@@ -103,7 +103,7 @@ while live_toggle:
                 return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
             return ''
 
-        styled_df = df.tail(20).style.applymap(style_signals, subset=['Signal'])
+        styled_df = df.tail(20).style.map(style_signals)
         
         st.subheader("Live Tracker Sheet (Last 20 Rows)")
         st.dataframe(styled_df, use_container_width=True, height=500)
