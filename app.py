@@ -3,9 +3,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty Pure Price System", layout="wide")
+st.set_page_config(page_title="Nifty Price Action Matrix", layout="wide")
 st.title("🎯 Nifty 1-Hour Pure Price Action Dashboard")
-st.write("Fixed: Volume completely removed. Column E filters traps using Pure Price Range Expansion & Velocity.")
+st.write("Column E: Prints calculation ONLY on Column C Sign Changes. Remaining cells are kept completely blank.")
 
 # Fetch 1-Hour Accurate Nifty Index Data
 @st.cache_data(ttl=300)
@@ -26,7 +26,7 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop (Excel Logic - 0.0001 multiplier ONLY here)
+    # 3. Column B: Running Loop (Excel Formula Multiplier - 0.0001 ONLY here)
     multiplier = 0.0001
     col_b = np.zeros(len(df))
     if len(df) > 0:
@@ -38,13 +38,13 @@ if not df.empty:
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Pure Price Action Calculations (Independent of Volume & Multiplier)
+    # 5. Pure Price Action Calculations (Independent of Volume)
     df['Candle_Range'] = df['High'] - df['Low']
     df['Avg_Range_20'] = df['Candle_Range'].rolling(window=20).mean()
     df['Real_Body'] = df['Close'] - df['Open']
     
-    # 6. Column E: Conditional Labeling ONLY on Column C Sign Changes
-    status_list = [""] # Baseline placeholder
+    # 6. Column E: Conditional Labeling ONLY on Column C Sign Changes (Rest are BLANK)
+    status_list = [""] # Baseline row placeholder
     
     for i in range(1, len(df)):
         prev_c = df['Column C'].iloc[i-1]
@@ -57,7 +57,7 @@ if not df.empty:
         sign_changed = (prev_c >= 0 and curr_c < 0) or (prev_c < 0 and curr_c >= 0)
         
         if sign_changed:
-            # Price Action Rule: Is the current candle range expanding significantly?
+            # Range Expansion Check
             is_range_expanded = c_range > (a_range * 1.1)
             
             if curr_c > 0:  # Sign flipped to Plus (+)
@@ -71,16 +71,16 @@ if not df.empty:
                 else:
                     status_list.append("❌ FAKE BREAKDOWN (Weak Price Trap)")
         else:
-            # Trend is continuing normally, keep cell 100% blank
+            # NO sign change -> Column E mein kuch nahi likhega, ek dum blank string rahegi
             status_list.append("")
             
     df['Column E'] = status_list
     
-    # Complete Layout Data Grid (All rows preserved)
+    # Complete Grid Setup (All rows and historical candles preserved)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]  # Latest candle on top
     
-    def color_pure_price(val):
+    def color_clean_matrix(val):
         if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
         if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
         if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
@@ -88,6 +88,6 @@ if not df.empty:
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_pure_price, subset=['Column E']), use_container_width=True)
+    }).map(color_clean_matrix, subset=['Column E']), use_container_width=True)
 else:
     st.error("Market data load nahi ho pa raha hai.")
