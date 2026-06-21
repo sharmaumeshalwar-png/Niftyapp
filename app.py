@@ -4,32 +4,34 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(page_title="Nifty Pro Volume System", layout="wide")
-st.title("🚀 Nifty 1-Hour Institutional Volume Matrix (Index + Futures Vol)")
-st.write("Formula: Col A=(H+L)/2 | Col B=0.0001 Loop | Col C=A-B | Col E=Volume Filter Status")
+st.title("🚀 Nifty 1-Hour Institutional Volume Matrix (NiftyBees Synced)")
+st.write("Formula: Col A=(H+L)/2 | Col B=0.0001 Loop | Col C=A-B | Col E=NiftyBees Pro Volume Filter")
 
-# Fetch 1-Hour Data
+# Fetch 1-Hour Data Safely
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetch Nifty Index for accurate Price Loop
+    # 1. Fetch Nifty Index for accurate Price Loop
     df_idx = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
     df_idx.columns = [col[0] if isinstance(col, tuple) else col for col in df_idx.columns]
     
-    # Fetch Nifty Futures for accurate Volume Proxy
-    df_fut = yf.download(tickers="NIFTY=F", start="2026-01-01", interval="1h")
-    df_fut.columns = [col[0] if isinstance(col, tuple) else col for col in df_fut.columns]
+    # 2. Fetch NiftyBees ETF for Real Deployed Volume
+    df_bees = yf.download(tickers="NIFTYBEES.NS", start="2026-01-01", interval="1h")
+    df_bees.columns = [col[0] if isinstance(col, tuple) else col for col in df_bees.columns]
     
     if not df_idx.empty:
         df_idx = df_idx.reset_index()
-        if not df_fut.empty:
-            df_fut = df_fut.reset_index()
-            # Map Futures volume based on matching time
-            time_col_idx = 'Datetime' if 'Datetime' in df_idx.columns else df_idx.columns[0]
-            time_col_fut = 'Datetime' if 'Datetime' in df_fut.columns else df_fut.columns[0]
+        if not df_bees.empty:
+            df_bees = df_bees.reset_index()
             
-            fut_vol_map = dict(zip(df_fut[time_col_fut], df_fut['Volume']))
-            df_idx['True_Volume'] = df_idx[time_col_idx].map(fut_vol_map).fillna(df_fut['Volume'].median())
+            # Extract time column name dynamically
+            t_idx = 'Datetime' if 'Datetime' in df_idx.columns else df_idx.columns[0]
+            t_bees = 'Datetime' if 'Datetime' in df_bees.columns else df_bees.columns[0]
+            
+            # Map NiftyBees Volume to Index Datetime
+            bees_vol_map = dict(zip(df_bees[t_bees], df_bees['Volume']))
+            df_idx['True_Volume'] = df_idx[t_idx].map(bees_vol_map).fillna(df_bees['Volume'].median())
         else:
-            df_idx['True_Volume'] = 100000  # Base fallback
+            df_idx['True_Volume'] = 500000  # Fallback base
         return df_idx
     return pd.DataFrame()
 
@@ -75,8 +77,9 @@ if not df.empty:
         close_p = df['Close'].iloc[i]
         open_p = df['Open'].iloc[i]
         
-        is_heavy_volume = vol > (v_mean + 0.3 * v_std)
-        is_extreme_volume = vol > (v_mean + 1.0 * v_std)
+        # Proper Z-Score Volume Thresholding
+        is_heavy_volume = vol > v_mean
+        is_extreme_volume = vol > (v_mean + 0.8 * v_std)
         is_green_candle = close_p > open_p
         
         if is_extreme_volume:
