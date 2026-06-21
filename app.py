@@ -3,15 +3,14 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="India VIX 2025-2026 System", layout="wide")
-st.title("🎯 India VIX 1-Hour Continuous Predictor (From Jan 2025)")
-st.write("Tracking India VIX (^INDIAVIX) from January 1, 2025 onwards. Every historical candle evaluated live.")
+st.set_page_config(page_title="Nifty 50 2025-2026 System", layout="wide")
+st.title("🎯 Nifty 50 1-Hour Continuous Predictor (From Jan 2025)")
+st.write("Tracking Nifty 50 (^NSEI) from January 1, 2025 onwards. Every historical candle evaluated live.")
 
-# Fetch 1-Hour Accurate India VIX Data from January 1, 2025
+# Fetch 1-Hour Accurate Nifty 50 Data from January 1, 2025
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetching directly from Jan 2025 for continuous baseline tracking
-    df = yf.download(tickers="^INDIAVIX", start="2025-01-01", interval="1h")
+    df = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -28,8 +27,9 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop (Excel Logic - 0.0001 multiplier applied to VIX)
-    multiplier = 0.0001
+    # 3. Column B: Running Loop (Excel Logic adapted for Nifty Price)
+    # Note: Nifty ka price bada hota hai, isliye tracking multiplier 0.01 (1%) rakha hai
+    multiplier = 0.01 
     col_b = np.zeros(len(df))
     if len(df) > 0:
         col_b[0] = df['Column A'].iloc[0]
@@ -40,59 +40,59 @@ if not df.empty:
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Continuous VIX Volatility Calculations
-    df['VIX_Range'] = df['High'] - df['Low']
-    df['Avg_VIX_Range'] = df['VIX_Range'].rolling(window=20).mean()
-    df['VIX_Body'] = df['Close'] - df['Open']
+    # 5. Continuous Nifty Volatility & Momentum Calculations
+    df['Nifty_Range'] = df['High'] - df['Low']
+    df['Avg_Nifty_Range'] = df['Nifty_Range'].rolling(window=20).mean()
+    df['Nifty_Body'] = df['Close'] - df['Open']
     
-    # 6. Column E: Continuous Live Behavioral Analysis on India VIX
+    # 6. Column E: Continuous Live Behavioral Analysis on Nifty 50
     status_list = ["Baseline"]
     
     for i in range(1, len(df)):
         curr_c = df['Column C'].iloc[i]
-        v_range = df['VIX_Range'].iloc[i]
-        a_range = df['Avg_VIX_Range'].iloc[i]
-        body = df['VIX_Body'].iloc[i]
+        n_range = df['Nifty_Range'].iloc[i]
+        a_range = df['Avg_Nifty_Range'].iloc[i]
+        body = df['Nifty_Body'].iloc[i]
         
-        # Checking VIX Range Expansion
+        # Checking Range Expansion (Volume/Volatility Breakout)
         if pd.isna(a_range):
             is_range_expanded = False
         else:
-            is_range_expanded = v_range > (a_range * 1.05)
+            is_range_expanded = n_range > (a_range * 1.05)
         
-        if curr_c > 0:  # VIX Trend is Plus (+) -> Fear Spike
+        if curr_c > 0:  # Nifty Trend is Plus (+) -> Bullish Zone
             if body > 0 and is_range_expanded:
-                status_list.append("🟢 FEAR SPIKE RUNNING (Strong VIX Expansion)")
+                status_list.append("🟢 BULLISH BREAKOUT (Strong Momentum)")
             elif body < 0:
-                status_list.append("❌ FAKE VIX RISE (Price Dropping in VIX Bull Trend)")
+                status_list.append("❌ FAKE UPMOVE (Price Dropping in Bull Trend Zone)")
             else:
-                status_list.append("💤 SLOW FEAR BUILDING (Weak VIX Momentum)")
-        else:  # VIX Trend is Minus (-) -> Market Cooling
+                status_list.append("💤 SLOW ACCUMULATION (Weak Buying)")
+        else:  # Nifty Trend is Minus (-) -> Bearish Zone
             if body < 0 and is_range_expanded:
-                status_list.append("🔴 VIX COOLING RUNNING (Strong Drop Continuation)")
+                status_list.append("🔴 BEARISH BREAKDOWN (Strong Selling)")
             elif body > 0:
-                status_list.append("❌ FAKE VIX DROP (Price Rising in VIX Bear Trend)")
+                status_list.append("❌ FAKE DOWNMOVE (Price Rising in Bear Trend Zone)")
             else:
-                status_list.append("💤 SLOW CALMING (Weak Down Momentum)")
+                status_list.append("💤 SLOW DISTRIBUTION (Weak Momentum)")
                 
     df['Column E'] = status_list
     
     # Keep data strictly from January 1, 2025 onwards
     df = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
-    # Final Grid Layout for India VIX (Latest on Top)
+    # Final Grid Layout for Nifty 50 (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]
     
-    def color_vix_grid(val):
-        if "🟢" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;' # Red for Fear Spike
-        if "🔴" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;' # Green for Calm Market
-        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap
+    def color_nifty_grid(val):
+        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;' # Green for Bullish
+        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;' # Red for Bearish
+        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap / Fake Move
         if "💤" in val: return 'background-color: #7f8c8d; color: white;' # Grey for Sideways
         return ''
 
     st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_vix_grid, subset=['Column E']), use_container_width=True)
+        'Column A': '{:.2f}', 'Column B': '{:.2f}', 'Column C': '{:.2f}'
+    }).map(color_nifty_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("India VIX historical data from Jan 2025 available nahi hai.")
+    st.error("Nifty 50 historical data available nahi hai.")
