@@ -86,3 +86,54 @@ if not df.empty:
         b3_seq[i] = b3_seq[i-1] + (m_catalyst * (df['Micro_Gap'].iloc[i] - b3_seq[i-1]))
         
     df['B3_Catalyst'] = b3_seq
+    
+    # ---------------------------------------------------------
+    # 🎯 COLUMN E: DUAL-STAGE VELOCITY TRAP GRID INTERSECTION
+    # ---------------------------------------------------------
+    status_list = ["Baseline System Boot"]
+    
+    for i in range(1, len(df)):
+        curr_c = df['Column C'].iloc[i]
+        gap = df['Micro_Gap'].iloc[i]
+        catalyst = df['B3_Catalyst'].iloc[i]
+        
+        # Micro structural validation cross check
+        micro_bullish = gap > catalyst
+        
+        # --- THE REFINED 90% VS 10% PRICE ACTION MATRIX ---
+        if curr_c > 0:  # Column C is Plus (+)
+            if micro_bullish:  # Flow is structurally accelerating upward -> 10% Real Move
+                status_list.append("🟢 TRUE BULLISH MOMENTUM (Micro-Engine Verified)")
+            else:  # Flow is collapsing inside the sequence -> THE 90% CALL TRAP DETECTED!
+                status_list.append("⚠️ 90% FAKE UPMOVE TRAP (Micro Decay!)")
+                
+        else:  # Column C is Minus (-)
+            if not micro_bullish:  # Flow is structurally collapsing downward -> Real Breakdown
+                status_list.append("🔴 TRUE BEARISH CRASH (Micro-Engine Verified)")
+            else:  # Flow is accumulating traction below -> THE 90% PUT TRAP DETECTED!
+                status_list.append("⚠️ 90% FAKE DOWNMOVE TRAP (Micro Accumulation!)")
+                
+    df['Column E'] = status_list
+    
+    # Trim output display boundary cleanly for 1st May 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
+    
+    # Reverse dataset array to throw latest 1-Hour rows at the top of the grid
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Micro_Gap', 'B3_Catalyst', 'Column E']].copy()
+    show_df = show_df.iloc[::-1]
+    
+    # Distinct Dashboard Layout Hex-Theming
+    def color_trap_grid(val):
+        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+        if "💤" in val: return 'background-color: #34495e; color: #bdc3c7;'
+        return ''
+
+    # Precision Decimal Formatter Block
+    st.dataframe(show_df.style.format({
+        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+        'Micro_Gap': '{:.4f}', 'B3_Catalyst': '{:.4f}'
+    }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
+else:
+    st.error("Data ingestion failure: Data stream structure couldn't be mounted on Streamlit.")
