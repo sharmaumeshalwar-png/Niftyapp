@@ -4,16 +4,16 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty-VIX 90% Trap Filter May 2026", layout="wide")
-st.title("🎯 Nifty 50 + India VIX 1-Hour Traps & Divergence System (May 2026)")
-st.write("Tracking Nifty (^NSEI) and VIX (^INDIAVIX) from May 1, 2026 onwards. Filtering the 90% Fake Out Moves.")
+st.set_page_config(page_title="Nifty-VIX 90% Trap Filter June 2026", layout="wide")
+st.title("🎯 Nifty 50 + India VIX 1-Hour Traps & Divergence System (June 2026)")
+st.write("Tracking Nifty (^NSEI) and VIX (^INDIAVIX) from June 1, 2026 onwards. Filtering the 90% Fake Out Moves.")
 
 # Fetch 1-Hour Data safely by downloading separately to bypass yfinance multi-ticker hourly limits
 @st.cache_data(ttl=300)
 def load_combined_data():
-    # Setting the exact baseline date requested: May 1, 2026
-    df_nifty = yf.download(tickers="^NSEI", start="2026-05-01", interval="1h")
-    df_vix = yf.download(tickers="^INDIAVIX", start="2026-05-01", interval="1h")
+    # Setting the exact baseline date requested: June 1, 2026
+    df_nifty = yf.download(tickers="^NSEI", start="2026-06-01", interval="1h")
+    df_vix = yf.download(tickers="^INDIAVIX", start="2026-06-01", interval="1h")
     
     # Flatten columns if multi-index is present
     df_nifty.columns = [col[0] if isinstance(col, tuple) else col for col in df_nifty.columns]
@@ -59,74 +59,4 @@ if not df.empty:
         
     for i in range(1, len(df)):
         # Replicating row-by-row sequence dependency
-        n_col_b[i] = n_col_b[i-1] + (multiplier * (df['Nifty_A'].iloc[i] - n_col_b[i-1]))
-        v_col_b[i] = v_col_b[i-1] + (multiplier * (df['Vix_A'].iloc[i] - v_col_b[i-1]))
-        
-    df['Nifty_B'] = n_col_b
-    df['Vix_B'] = v_col_b
-    
-    # 4. Column C Calculations: Exact Formula -> A - B Deviation
-    df['Nifty_C'] = df['Nifty_A'] - df['Nifty_B']
-    df['Vix_C'] = df['Vix_A'] - df['Vix_B']
-    
-    # Range Metrics for Breakout Confirmations
-    df['Nifty_Range'] = df['N_High'] - df['N_Low']
-    df['Avg_Nifty_Range'] = df['Nifty_Range'].rolling(window=20).mean()
-    df['Nifty_Body'] = df['N_Close'] - df['N_Open']
-    
-    # 5. Column E: The 90% Opposite Intersecting Trap Engine
-    status_list = ["Baseline"]
-    
-    for i in range(1, len(df)):
-        n_curr_c = df['Nifty_C'].iloc[i]
-        v_curr_c = df['Vix_C'].iloc[i]
-        n_range = df['Nifty_Range'].iloc[i]
-        a_range = df['Avg_Nifty_Range'].iloc[i]
-        body = df['Nifty_Body'].iloc[i]
-        
-        if pd.isna(a_range):
-            is_range_expanded = False
-        else:
-            is_range_expanded = n_range > (a_range * 1.05)
-            
-        # --- EXECUTION OF THE TRAP FILTER MATRIX ---
-        if n_curr_c > 0:  # Nifty is in Plus (+) Trend Zone
-            if v_curr_c <= 0:  # VIX is properly dropping in Minus (-) Zone -> 10% Real Moves
-                if body > 0 and is_range_expanded:
-                    status_list.append("🟢 TRUE BULLISH MOMENTUM (VIX Confirmed)")
-                else:
-                    status_list.append("💤 SLOW ACCUMULATION (Safe Buying Zone)")
-            else:  # VIX is ALSO Tracking Plus (+) -> THE 90% TRAP DETECTED!
-                status_list.append("⚠️ 90% FAKE UPMOVE TRAP (VIX Rising, Danger!)")
-                
-        else:  # Nifty is in Minus (-) Trend Zone
-            if v_curr_c > 0:  # VIX is properly spiking in Plus (+) Zone -> Genuine Panic
-                if body < 0 and is_range_expanded:
-                    status_list.append("🔴 TRUE BEARISH CRASH (VIX Confirmed)")
-                else:
-                    status_list.append("💤 SLOW DISTRIBUTION (Safe Selling Zone)")
-            else:  # VIX is ALSO Tracking Minus (-) -> THE 90% TRAP DETECTED!
-                status_list.append("⚠️ 90% FAKE DOWNMOVE TRAP (VIX Dropping, Reversal Coming!)")
-                
-    df['Column E'] = status_list
-    
-    # Filter view to strictly show from May 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
-    
-    # Reverse final matrix data view to push latest candles to the top row
-    show_df = df[['Column D', 'Nifty_A', 'Nifty_B', 'Nifty_C', 'Vix_C', 'Column E']].copy()
-    show_df = show_df.iloc[::-1]
-    
-    # Grid Styling Setup
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        if "💤" in val: return 'background-color: #34495e; color: #bdc3c7;'
-        return ''
-
-    st.dataframe(show_df.style.format({
-        'Nifty_A': '{:.2f}', 'Nifty_B': '{:.4f}', 'Nifty_C': '{:.4f}', 'Vix_C': '{:.4f}'
-    }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
-else:
-    st.error("Data fetch error: Yahoo Finance se May 2026 ka hourly data load nahi ho paya.")
+        n_col_b[i] = n_col_b[i-1] + (multiplier * (df['Nifty_A'].
