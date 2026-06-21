@@ -3,72 +3,41 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty Custom 1-Hour System", layout="wide")
-st.title("📊 Nifty 1-Hour Custom Algorithmic Dashboard")
-st.write("Formula Applied: Column B Multiplier = 0.0001 | Timeframe: 1-Hour Candle")
+st.set_page_config(page_title="Nifty Pro Volume ETF System", layout="wide")
+st.title("🚀 Nifty 1-Hour Institutional Volume Matrix (Nifty BeES Synced)")
+st.write("Formula: Col A=(H+L)/2 | Col B=0.0001 Loop | Col C=A-B | Col E=Nifty BeES Volume Filter")
 
-# Fetch 1-Hour Nifty Data
+# Fetch 1-Hour Nifty Price & Nifty BeES ETF Volume Data
 @st.cache_data(ttl=300)
-def load_data():
-    # Fetching 1 month of hourly data
-    df = yf.download(tickers="^NSEI", period="1mo", interval="1h")
-    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-    return df
+def load_synchronized_data():
+    # 1. Fetch Nifty Index Price (Baseline frozen from 2026-01-01)
+    df_index = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
+    df_index.columns = [col[0] if isinstance(col, tuple) else col for col in df_index.columns]
+    
+    # 2. Fetch Nifty BeES ETF for Real Tradable Volume
+    df_etf = yf.download(tickers="NIFTYBEES.NS", start="2026-01-01", interval="1h")
+    df_etf.columns = [col[0] if isinstance(col, tuple) else col for col in df_etf.columns]
+    
+    if not df_index.empty:
+        df_index = df_index.reset_index()
+        
+        if not df_etf.empty:
+            df_etf = df_etf.reset_index()
+            # Aligning ETF volumes based on exact datetime mapping
+            index_time_col = 'Datetime' if 'Datetime' in df_index.columns else df_index.columns[0]
+            etf_time_col = 'Datetime' if 'Datetime' in df_etf.columns else df_etf.columns[0]
+            
+            vol_map = dict(zip(df_etf[etf_time_col], df_etf['Volume']))
+            df_index['True_Volume'] = df_index[index_time_col].map(vol_map).fillna(df_etf['Volume'].median())
+        else:
+            df_index['True_Volume'] = 100000  # Fallback base
+            
+        return df_index
+    return pd.DataFrame()
 
-df = load_data()
+df = load_synchronized_data()
 
 if not df.empty:
-    df = df.reset_index()
-    
-    # 1. Column D: Date and Time formatting (e.g., '03 May 10:15')
-    # Handling yfinance datetime column name which is usually 'Datetime'
+    # 1. Column D: Date and Time
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
-    df['Column D'] = pd.to_datetime(df[time_col]).dt.strftime('%d %b %H:%M')
-    
-    # 2. Column A: (High + Low) / 2
-    df['Column A'] = (df['High'] + df['Low']) / 2
-    
-    # 3. Column B: Running Excel formula with 0.0001 multiplier
-    multiplier = 0.0001
-    col_b = np.zeros(len(df))
-    
-    if len(df) > 0:
-        col_b[0] = df['Column A'].iloc[0]  # First row: B1 = A1
-        
-    for i in range(1, len(df)):
-        a_current = df['Column A'].iloc[i]
-        b_prev = col_b[i-1]
-        col_b[i] = b_prev + (multiplier * (a_current - b_prev))
-        
-    df['Column B'] = col_b
-    
-    # 4. Column C: A - B
-    df['Column C'] = df['Column A'] - df['Column B']
-    
-    # Top Metrics Display
-    latest_a = float(df['Column A'].iloc[-1])
-    latest_b = float(df['Column B'].iloc[-1])
-    latest_c = float(df['Column C'].iloc[-1])
-    latest_time = str(df['Column D'].iloc[-1])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Latest Candle Time (Col D)", latest_time)
-    col2.metric("Column A (H+L)/2", f"₹ {latest_a:.2f}")
-    col3.metric("Column B (Running)", f"₹ {latest_b:.4f}")
-    col4.metric("Column C (A - B)", f"{latest_c:.4f}")
-    
-    st.subheader("📋 System Logs - Custom Mathematical Table")
-    
-    # Rearranging columns for display order: D, A, B, C
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C']].copy()
-    
-    # Reverse to see latest candles on top
-    show_df = show_df.iloc[::-1]
-    
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 
-        'Column B': '{:.4f}', 
-        'Column C': '{:.4f}'
-    }), use_container_width=True)
-else:
-    st.error("Market data load karne mein dikkat aa rahi hai.")
+    df['Column D'] = pd.to_datetime(df
