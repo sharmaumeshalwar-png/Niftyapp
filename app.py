@@ -3,9 +3,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty Volume Behavior Tracker", layout="wide")
-st.title("🎯 Nifty 1-Hour Pure Volume Spread (VSA) Tracker")
-st.write("System Focus: Displays market behavior ONLY when Column C changes its Sign (+ / -)")
+st.set_page_config(page_title="Nifty Full Data Volume Tracker", layout="wide")
+st.title("🎯 Nifty 1-Hour Complete Grid & Sign-Flip Volume Tracker")
+st.write("System: Showing all candles. Column E prints Volume Hints ONLY on Column C Sign Changes.")
 
 # Fetch 1-Hour Synchronized Data (Nifty Index + NiftyBees Volume)
 @st.cache_data(ttl=300)
@@ -51,12 +51,12 @@ if not df.empty:
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Volume Analysis Baseline (20-period Mean and Std Dev)
+    # 5. Volume Analysis Baseline
     df['Vol_Avg'] = df['True_Volume'].rolling(window=20).mean()
     df['Vol_Std'] = df['True_Volume'].rolling(window=20).std()
     
-    # 6. Column E: VSA Behavior Logic on Sign Flip
-    status_list = ["Baseline"]
+    # 6. Column E: Conditional Labeling (Prints ONLY on Sign Change)
+    status_list = [""] # Empty for first baseline row
     
     for i in range(1, len(df)):
         prev_c = df['Column C'].iloc[i-1]
@@ -65,7 +65,6 @@ if not df.empty:
         v_avg = df['Vol_Avg'].iloc[i]
         v_std = df['Vol_Std'].iloc[i]
         
-        # Determine if candle spread is large or small
         candle_body = abs(df['Close'].iloc[i] - df['Open'].iloc[i])
         avg_candle_body = abs(df['Close'] - df['Open']).rolling(window=20).mean().iloc[i]
         
@@ -80,43 +79,38 @@ if not df.empty:
                 if is_high_vol and is_large_candle:
                     status_list.append("🟢 ASLI BUY HINT (Whale Entry)")
                 elif is_high_vol and not is_large_candle:
-                    status_list.append("🐳 ACCUMULATION (Heavy Buying Absorption)")
+                    status_list.append("🐳 ACCUMULATION (Absorption)")
                 elif not is_high_vol and is_large_candle:
-                    status_list.append("❌ NO-VOLUME TRAP (Fake Bull Move)")
+                    status_list.append("❌ NO-VOLUME TRAP (Fake Buy)")
                 else:
-                    status_list.append("💤 RETAIL FLIP (Weak Buy Signal)")
+                    status_list.append("💤 RETAIL FLIP (Weak Buy)")
             else:  # Sign flipped to Minus (-)
                 if is_high_vol and is_large_candle:
-                    status_list.append("🔴 ASLI SELL HINT (Whale Dumping)")
+                    status_list.append("🔴 ASLI SELL HINT (Whale Dump)")
                 elif is_high_vol and not is_large_candle:
-                    status_list.append("🐻 DISTRIBUTION (Heavy Selling Pressure)")
+                    status_list.append("🐻 DISTRIBUTION (Pressure)")
                 elif not is_high_vol and is_large_candle:
-                    status_list.append("❌ NO-VOLUME TRAP (Fake Bear Move)")
+                    status_list.append("❌ NO-VOLUME TRAP (Fake Sell)")
                 else:
-                    status_list.append("💤 RETAIL FLIP (Weak Sell Signal)")
+                    status_list.append("💤 RETAIL FLIP (Weak Sell)")
         else:
-            # No sign change, keep trend quiet
-            status_list.append("Trend Continuing...")
+            # NO sign change -> Keep Column E completely empty string
+            status_list.append("")
             
     df['Column E'] = status_list
     
-    # Filter only the rows where sign changed to analyze easily
-    # We always include the very last row so the user sees the latest live candle behavior
-    df['Sign_Changed'] = (df['Column C'].shift(1) >= 0) != (df['Column C'] >= 0)
-    df.loc[df.index[-1], 'Sign_Changed'] = True  # Keep latest live candle visible
+    # Complete Data Grid (No rows deleted)
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
+    show_df = show_df.iloc[::-1]  # Latest candle on top
     
-    filtered_df = df[df['Sign_Changed'] == True].copy()
-    show_df = filtered_df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
-    show_df = show_df.iloc[::-1]  # Latest on top
-    
-    def color_vsa(val):
+    def color_vsa_clean(val):
         if "🟢" in val or "🐳" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
         if "🔴" in val or "🐻" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
         if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
-        return 'color: #888888;'
+        return ''
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_vsa, subset=['Column E']), use_container_width=True)
+    }).map(color_vsa_clean, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Data fetch error.")
+    st.error("Data processing failed.")
