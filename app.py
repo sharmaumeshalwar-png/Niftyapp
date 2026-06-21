@@ -3,11 +3,11 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty True Predictor System", layout="wide")
-st.title("🚀 Nifty 1-Hour Volatility & Price Action Predictor")
-st.write("Column E: Advanced Volatility Matrix & Reversal Confirmation (Independent of Raw Volume Truncation)")
+st.set_page_config(page_title="Nifty Pure Price System", layout="wide")
+st.title("🎯 Nifty 1-Hour Pure Price Action Dashboard")
+st.write("Fixed: Volume completely removed. Column E filters traps using Pure Price Range Expansion & Velocity.")
 
-# Fetch 1-Hour Nifty Data
+# Fetch 1-Hour Accurate Nifty Index Data
 @st.cache_data(ttl=300)
 def load_data():
     df = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
@@ -26,76 +26,68 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop with 0.0001 multiplier (Excel Baseline)
+    # 3. Column B: Running Loop (Excel Logic - 0.0001 multiplier ONLY here)
     multiplier = 0.0001
     col_b = np.zeros(len(df))
     if len(df) > 0:
         col_b[0] = df['Column A'].iloc[0]
-        
     for i in range(1, len(df)):
-        a_current = df['Column A'].iloc[i]
-        b_prev = col_b[i-1]
-        col_b[i] = b_prev + (multiplier * (a_current - b_prev))
+        col_b[i] = col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - col_b[i-1]))
     df['Column B'] = col_b
     
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Advanced Mathematical Volatility Filter (ATR & Momentum Spread)
-    # Calculating price expansion without relying on faulty volume statistics
-    df['Candle_Spread'] = df['High'] - df['Low']
-    df['Spread_EMA'] = df['Candle_Spread'].ewm(span=20, adjust=False).mean()
-    df['Price_Velocity'] = df['Close'] - df['Open']
+    # 5. Pure Price Action Calculations (Independent of Volume & Multiplier)
+    df['Candle_Range'] = df['High'] - df['Low']
+    df['Avg_Range_20'] = df['Candle_Range'].rolling(window=20).mean()
+    df['Real_Body'] = df['Close'] - df['Open']
     
+    # 6. Column E: Conditional Labeling ONLY on Column C Sign Changes
     status_list = [""] # Baseline placeholder
     
     for i in range(1, len(df)):
         prev_c = df['Column C'].iloc[i-1]
         curr_c = df['Column C'].iloc[i]
+        c_range = df['Candle_Range'].iloc[i]
+        a_range = df['Avg_Range_20'].iloc[i]
+        body = df['Real_Body'].iloc[i]
         
-        spread = df['Candle_Spread'].iloc[i]
-        avg_spread = df['Spread_EMA'].iloc[i]
-        velocity = df['Price_Velocity'].iloc[i]
-        
-        # Check Sign Flip (+ to - OR - to +)
+        # Identify Sign Flip (+ to - OR - to +)
         sign_changed = (prev_c >= 0 and curr_c < 0) or (prev_c < 0 and curr_c >= 0)
         
         if sign_changed:
-            # Check if price expansion is authentic (Volatility Breakout)
-            is_authentic_move = spread > (avg_spread * 1.15)
+            # Price Action Rule: Is the current candle range expanding significantly?
+            is_range_expanded = c_range > (a_range * 1.1)
             
-            if curr_c > 0: # Flipped to Plus (+)
-                if is_authentic_move and velocity > 0:
-                    status_list.append("🟢 STRONG BUY CONFIRMED (Institutional Expansion)")
-                elif not is_authentic_move and abs(velocity) < (avg_spread * 0.3):
-                    status_list.append("🐳 SMART ACCUMULATION (Low Volatility Absorption)")
+            if curr_c > 0:  # Sign flipped to Plus (+)
+                if is_range_expanded and body > 0:
+                    status_list.append("🟢 VALID BREAKOUT (Strong Price Push)")
                 else:
-                    status_list.append("❌ NO-FORCE TRAP (90% Opposite Risk - Ignore)")
-            else: # Flipped to Minus (-)
-                if is_authentic_move and velocity < 0:
-                    status_list.append("🔴 STRONG SELL CONFIRMED (Institutional Liquidation)")
-                elif not is_authentic_move and abs(velocity) < (avg_spread * 0.3):
-                    status_list.append("🐻 SMART DISTRIBUTION (Low Volatility Dumping)")
+                    status_list.append("❌ FAKE BREAKOUT (Weak Price Trap)")
+            else:  # Sign flipped to Minus (-)
+                if is_range_expanded and body < 0:
+                    status_list.append("🔴 VALID BREAKDOWN (Strong Price Drop)")
                 else:
-                    status_list.append("❌ NO-FORCE TRAP (90% Opposite Risk - Ignore)")
+                    status_list.append("❌ FAKE BREAKDOWN (Weak Price Trap)")
         else:
-            # No sign change, keep Column E 100% empty string
+            # Trend is continuing normally, keep cell 100% blank
             status_list.append("")
             
     df['Column E'] = status_list
     
-    # Display Grid Setup (All Rows Preserved)
+    # Complete Layout Data Grid (All rows preserved)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]  # Latest candle on top
     
-    def color_vsa_matrix(val):
-        if "🟢" in val or "🐳" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val or "🐻" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+    def color_pure_price(val):
+        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
         if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
         return ''
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_vsa_matrix, subset=['Column E']), use_container_width=True)
+    }).map(color_pure_price, subset=['Column E']), use_container_width=True)
 else:
     st.error("Market data load nahi ho pa raha hai.")
