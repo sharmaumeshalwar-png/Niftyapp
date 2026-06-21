@@ -4,108 +4,77 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Pure VIX System", layout="wide")
-st.title("🎯 Nifty 50 + India VIX Direct Candle Cross-System")
-st.write("Tracking Nifty (^NSEI) with exact Excel formula and cross-checking directly with India VIX (^INDIAVIX) movement from June 1, 2026.")
+st.set_page_config(page_title="Nifty +DI/-DI Trap Filter 2026", layout="wide")
+st.title("🎯 Nifty 50 Pure Math +DI / -DI 1-Hour Trap Filter System")
+st.write("Tracking Nifty 50 (^NSEI) from June 1, 2026. Filtering the 90% Fake Out Moves using Directional Indicators.")
 
+# Fetch 1-Hour Accurate Nifty 50 Data from June 1, 2026
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_nifty = yf.download(tickers="^NSEI", start="2026-06-01", interval="1d")
-    df_vix = yf.download(tickers="^INDIAVIX", start="2026-06-01", interval="1d")
-    
-    if isinstance(df_nifty.columns, pd.MultiIndex):
-        df_nifty.columns = df_nifty.columns.get_level_values(0)
-    if isinstance(df_vix.columns, pd.MultiIndex):
-        df_vix.columns = df_vix.columns.get_level_values(0)
-        
-    if df_nifty.empty or df_vix.empty:
-        return pd.DataFrame()
-        
-    nifty_clean = pd.DataFrame(index=df_nifty.index)
-    nifty_clean['N_Open'] = df_nifty['Open']
-    nifty_clean['N_High'] = df_nifty['High']
-    nifty_clean['N_Low'] = df_nifty['Low']
-    nifty_clean['N_Close'] = df_nifty['Close']
-    
-    vix_clean = pd.DataFrame(index=df_vix.index)
-    vix_clean['V_Close'] = df_vix['Close']  # Direct daily closing price for VIX
-    
-    return pd.merge(nifty_clean, vix_clean, left_index=True, right_index=True, how='inner')
+    df_raw = yf.download(tickers="^NSEI", start="2026-06-01", interval="1h")
+    if isinstance(df_raw.columns, pd.MultiIndex):
+        df_raw.columns = df_raw.columns.get_level_values(0)
+    return df_raw
 
 df = load_pure_data()
 
 if not df.empty:
     df = df.reset_index()
     
-    time_col = 'Date' if 'Date' in df.columns else df.columns[0]
+    # 1. Column D: Date and Time Formatter
+    time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y')
+    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
-    # 1. Column A: Nifty (High + Low) / 2
-    df['Column A'] = (df['N_High'] + df['N_Low']) / 2
+    # 2. Column A: Exact Formula -> (High + Low) / 2
+    df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 2. Column B: Exact Excel Drag-Down Loop Formula for Nifty
+    # 3. Column B: Exact Excel Drag-Down Loop Logic (Multiplier = 0.0001)
     multiplier = 0.0001
     n_col_b = np.zeros(len(df))
     
     if len(df) > 0:
-        n_col_b[0] = df['Column A'].iloc[0]  # First row = A1
+        n_col_b[0] = df['Column A'].iloc[0]  # First row = A1 logic
         
     for i in range(1, len(df)):
         n_col_b[i] = n_col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - n_col_b[i-1]))
         
     df['Column B'] = n_col_b
     
-    # 3. Column C: Exact Formula -> A - B
+    # 4. Column C: Exact Formula -> A - B Deviation
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 4. India VIX Direct Direction (Current Candle vs Previous Candle)
-    df['VIX_Prev_Close'] = df['V_Close'].shift(1)
+    # ---------------------------------------------------------
+    # 🛠️ PURE MATHEMATICAL +DI / -DI ENGINE CALCULATION (14 Period)
+    # ---------------------------------------------------------
+    df['Prev_High'] = df['High'].shift(1)
+    df['Prev_Low'] = df['Low'].shift(1)
+    df['Prev_Close'] = df['Close'].shift(1)
     
-    # 5. Column E: Pure Cross-Check Hint Engine
-    status_list = ["Baseline"]
+    # Calculate True Range (TR)
+    df['TR1'] = df['High'] - df['Low']
+    df['TR2'] = (df['High'] - df['Prev_Close']).abs()
+    df['TR3'] = (df['Low'] - df['Prev_Close']).abs()
+    df['TR'] = df[['TR1', 'TR2', 'TR3']].max(axis=1)
     
-    for i in range(1, len(df)):
-        n_curr_c = df['Column C'].iloc[i]
-        v_close = df['V_Close'].iloc[i]
-        v_prev = df['VIX_Prev_Close'].iloc[i]
-        
-        # Checking if VIX is strictly rising or falling
-        vix_is_up = v_close > v_prev
-        
-        # --- DIRECT INTERSECTION LOGIC ---
-        if n_curr_c > 0:  # Nifty is Positive (+)
-            if not vix_is_up:  # VIX is Falling (Normal Market)
-                status_list.append("🟢 TRUE BULLISH BREAKOUT (VIX Down)")
-            else:  # VIX is Rising (Divergence Trap)
-                status_list.append("⚠️ 90% FAKE UPMOVE TRAP (VIX Rising!)")
+    # Calculate Directional Movements (+DM and -DM)
+    df['UpMove'] = df['High'] - df['Prev_High']
+    df['DownMove'] = df['Prev_Low'] - df['Low']
+    
+    plus_dm = []
+    minus_dm = []
+    
+    for i in range(len(df)):
+        if i == 0:
+            plus_dm.append(0)
+            minus_dm.append(0)
+        else:
+            up = df['UpMove'].iloc[i]
+            down = df['DownMove'].iloc[i]
+            
+            if up > down and up > 0:
+                plus_dm.append(up)
+            else:
+                plus_dm.append(0)
                 
-        else:  # Nifty is Negative (-)
-            if vix_is_up:  # VIX is Rising (Normal Panic)
-                status_list.append("🔴 TRUE BEARISH CRASH (VIX Up)")
-            else:  # VIX is Falling (Divergence Trap)
-                status_list.append("⚠️ 90% FAKE DOWNMOVE TRAP (VIX Dropping!)")
-                
-    df['Column E'] = status_list
-    
-    # Filter to strictly show from June 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-06-01'].copy()
-    
-    # Reverse layout to show the latest candle on top row
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'V_Close', 'Column E']].rename(
-        columns={'V_Close': 'India_VIX'}
-    ).copy()
-    show_df = show_df.iloc[::-1]
-    
-    # Custom Visual Grid Theme Engine
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        return ''
-
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 'India_VIX': '{:.2f}'
-    }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
-else:
-    st.error("Data Load Error.")
+            if
