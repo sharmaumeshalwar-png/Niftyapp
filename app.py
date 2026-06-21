@@ -3,9 +3,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty Price Action Matrix", layout="wide")
-st.title("🎯 Nifty 1-Hour Pure Price Action Dashboard")
-st.write("Column E: Prints calculation ONLY on Column C Sign Changes. Remaining cells are kept completely blank.")
+st.set_page_config(page_title="Nifty Live Candle Tracker", layout="wide")
+st.title("🎯 Nifty 1-Hour Continuous Price Action Predictor")
+st.write("Column E: Analyzes EVERY candle live based on current momentum and range expansions (No Sign-Change Waiting).")
 
 # Fetch 1-Hour Accurate Nifty Index Data
 @st.cache_data(ttl=300)
@@ -26,7 +26,7 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop (Excel Formula Multiplier - 0.0001 ONLY here)
+    # 3. Column B: Running Loop (Excel Logic - 0.0001 multiplier)
     multiplier = 0.0001
     col_b = np.zeros(len(df))
     if len(df) > 0:
@@ -38,56 +38,53 @@ if not df.empty:
     # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Pure Price Action Calculations (Independent of Volume)
+    # 5. Continuous Price Action Math
     df['Candle_Range'] = df['High'] - df['Low']
     df['Avg_Range_20'] = df['Candle_Range'].rolling(window=20).mean()
     df['Real_Body'] = df['Close'] - df['Open']
     
-    # 6. Column E: Conditional Labeling ONLY on Column C Sign Changes (Rest are BLANK)
-    status_list = [""] # Baseline row placeholder
+    # 6. Column E: Active Evaluation on EVERY Single Candle
+    status_list = ["Baseline"]
     
     for i in range(1, len(df)):
-        prev_c = df['Column C'].iloc[i-1]
         curr_c = df['Column C'].iloc[i]
         c_range = df['Candle_Range'].iloc[i]
         a_range = df['Avg_Range_20'].iloc[i]
         body = df['Real_Body'].iloc[i]
         
-        # Identify Sign Flip (+ to - OR - to +)
-        sign_changed = (prev_c >= 0 and curr_c < 0) or (prev_c < 0 and curr_c >= 0)
+        # Checking range expansion for current candle strength
+        is_range_expanded = c_range > (a_range * 1.05)
         
-        if sign_changed:
-            # Range Expansion Check
-            is_range_expanded = c_range > (a_range * 1.1)
-            
-            if curr_c > 0:  # Sign flipped to Plus (+)
-                if is_range_expanded and body > 0:
-                    status_list.append("🟢 VALID BREAKOUT (Strong Price Push)")
-                else:
-                    status_list.append("❌ FAKE BREAKOUT (Weak Price Trap)")
-            else:  # Sign flipped to Minus (-)
-                if is_range_expanded and body < 0:
-                    status_list.append("🔴 VALID BREAKDOWN (Strong Price Drop)")
-                else:
-                    status_list.append("❌ FAKE BREAKDOWN (Weak Price Trap)")
-        else:
-            # NO sign change -> Column E mein kuch nahi likhega, ek dum blank string rahegi
-            status_list.append("")
-            
+        if curr_c > 0: # Current Trend is Plus (+)
+            if body > 0 and is_range_expanded:
+                status_list.append("🟢 BULLISH RUNNING (Strong Continuation)")
+            elif body < 0:
+                status_list.append("❌ FAKE MOVE TRAP (Price Dropping in Bull Trend)")
+            else:
+                status_list.append("💤 WEAK MOMENTUM (Slow Buying Zone)")
+                
+        else: # Current Trend is Minus (-)
+            if body < 0 and is_range_expanded:
+                status_list.append("🔴 BEARISH RUNNING (Strong Drop Continuation)")
+            elif body > 0:
+                status_list.append("❌ FAKE MOVE TRAP (Price Rising in Bear Trend)")
+            else:
+                status_list.append("💤 WEAK MOMENTUM (Slow Selling Zone)")
+                
     df['Column E'] = status_list
     
-    # Complete Grid Setup (All rows and historical candles preserved)
+    # Full Grid Layout
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
-    show_df = show_df.iloc[::-1]  # Latest candle on top
+    show_df = show_df.iloc[::-1]  # Latest on top
     
-    def color_clean_matrix(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
+    def color_every_candle(val):
+        if "🟢" in val or "🔴" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+        if "❌" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+        if "💤" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
         return ''
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_clean_matrix, subset=['Column E']), use_container_width=True)
+    }).map(color_every_candle, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Market data load nahi ho pa raha hai.")
+    st.error("Data load nahi ho pa raha hai.")
