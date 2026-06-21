@@ -4,21 +4,21 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty DI Trap Filter Stable", layout="wide")
+st.set_page_config(page_title="Nifty DI Trap Filter May 2026", layout="wide")
 st.title("🎯 Nifty 50 Pure Math +DI / -DI 1-Hour Trap Filter System")
-st.write("Tracking Nifty 50 (^NSEI) from June 1, 2026. Anti-crash index mechanism deployed.")
+st.write("Tracking Nifty 50 (^NSEI) from May 1, 2026. Optimized tracking sequence deployed.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely
+# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st May 2026
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", start="2026-06-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2026-05-01", interval="1h")
     if df_raw.empty:
         return pd.DataFrame()
         
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
         
-    # Drop completely empty or mismatched rows to avoid script execution error
+    # Drop empty or mismatched rows to eliminate any execution bugs
     df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
     return df_raw
 
@@ -40,7 +40,7 @@ if not df.empty:
     n_col_b = np.zeros(len(df))
     
     if len(df) > 0:
-        n_col_b[0] = df['Column A'].iloc[0]  # First row = A1 logic
+        n_col_b[0] = df['Column A'].iloc[0]  # First row = A1 anchor logic
         
     for i in range(1, len(df)):
         n_col_b[i] = n_col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - n_col_b[i-1]))
@@ -51,7 +51,7 @@ if not df.empty:
     df['Column C'] = df['Column A'] - df['Column B']
     
     # ---------------------------------------------------------
-    # 🛠️ SAFE MATHEMATICAL +DI / -DI ENGINE CALCULATION (14 Period)
+    # 🛠️ MATHEMATICAL +DI / -DI ENGINE CALCULATION (14 Period)
     # ---------------------------------------------------------
     df['Prev_High'] = df['High'].shift(1)
     df['Prev_Low'] = df['Low'].shift(1)
@@ -82,13 +82,13 @@ if not df.empty:
     df['+DM'] = plus_dm
     df['-DM'] = minus_dm
     
-    # Safe Wilder's Smoothing
+    # Wilder's Smoothing Arrays
     tr_smooth = np.zeros(len(df))
     p_dm_smooth = np.zeros(len(df))
     m_dm_smooth = np.zeros(len(df))
     
     if len(df) >= 15:
-        # Initial sum for base anchoring
+        # Initial sum for 14 period base anchoring
         tr_smooth[14] = df['TR'].iloc[1:15].sum()
         p_dm_smooth[14] = df['+DM'].iloc[1:15].sum()
         m_dm_smooth[14] = df['-DM'].iloc[1:15].sum()
@@ -102,7 +102,7 @@ if not df.empty:
     df['+DM_Smooth'] = p_dm_smooth
     df['-DM_Smooth'] = m_dm_smooth
     
-    # Final DI Percentages with zero division handling
+    # Final DI Percentages with zero-check handling
     df['+DI'] = np.where(df['TR_Smooth'] > 0, (df['+DM_Smooth'] / df['TR_Smooth']) * 100, 0)
     df['-DI'] = np.where(df['TR_Smooth'] > 0, (df['-DM_Smooth'] / df['TR_Smooth']) * 100, 0)
     
@@ -133,9 +133,10 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
-    # Clean baseline visualization filter
-    df = df[df['Raw_Date'] >= '2026-06-01'].copy()
+    # Strictly filter the final display to show from May 1st onwards
+    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
     
+    # Reverse final layout to push the latest calculated candles at the top row
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', '+DI', '-DI', 'Column E']].copy()
     show_df = show_df.iloc[::-1]
     
@@ -151,4 +152,4 @@ if not df.empty:
         '+DI': '{:.2f}', '-DI': '{:.2f}'
     }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Market data pipeline break ho gaya hai.")
+    st.error("Market data pipeline break ho gaya hai. Please check start date parameters.")
