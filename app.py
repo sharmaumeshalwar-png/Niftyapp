@@ -3,15 +3,15 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="India VIX Live Predictor", layout="wide")
-st.title("🎯 India VIX 1-Hour Continuous Price Action Predictor")
-st.write("Tracking India VIX (^INDIAVIX) from March 27 onwards. Column E tracks every candle's volatility momentum live.")
+st.set_page_config(page_title="India VIX Complete System", layout="wide")
+st.title("🎯 India VIX 1-Hour Continuous Predictor (From Jan 1)")
+st.write("Tracking India VIX (^INDIAVIX) from January 1, 2026 onwards. Every candle evaluated live.")
 
-# Fetch 1-Hour Accurate India VIX Data
+# Fetch 1-Hour Accurate India VIX Data from Jan 1
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetching slightly early to let rolling averages settle perfectly by March 27
-    df = yf.download(tickers="^INDIAVIX", start="2026-03-15", interval="1h")
+    # Fetching data directly from the start of the year
+    df = yf.download(tickers="^INDIAVIX", start="2026-01-01", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -37,7 +37,7 @@ if not df.empty:
         col_b[i] = col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - col_b[i-1]))
     df['Column B'] = col_b
     
-    # 4. Column C: A - B (VIX Sign Multiplier Base)
+    # 4. Column C: A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
     # 5. Continuous VIX Volatility Calculations
@@ -54,19 +54,19 @@ if not df.empty:
         a_range = df['Avg_VIX_Range'].iloc[i]
         body = df['VIX_Body'].iloc[i]
         
-        # Checking VIX Range Expansion (Significant expansion means heavy market panic/cool-off)
+        # Checking VIX Range Expansion
         is_range_expanded = v_range > (a_range * 1.05)
         
-        if curr_c > 0:  # VIX Trend is Plus (+) -> Fear is Increasing in Market
+        if curr_c > 0:  # VIX Trend is Plus (+) -> Fear Spike
             if body > 0 and is_range_expanded:
-                status_list.append("🟢 FEAR SPIKE RUNNING (Strong VIX Expansion - Nifty Danger)")
+                status_list.append("🟢 FEAR SPIKE RUNNING (Strong VIX Expansion)")
             elif body < 0:
                 status_list.append("❌ FAKE VIX RISE (Price Dropping in VIX Bull Trend)")
             else:
                 status_list.append("💤 SLOW FEAR BUILDING (Weak VIX Momentum)")
-        else:  # VIX Trend is Minus (-) -> Market is Relaxing / Cooling Down
+        else:  # VIX Trend is Minus (-) -> Market Cooling
             if body < 0 and is_range_expanded:
-                status_list.append("🔴 VIX COOLING RUNNING (Strong Down Continuation - Nifty Safe)")
+                status_list.append("🔴 VIX COOLING RUNNING (Strong Drop Continuation)")
             elif body > 0:
                 status_list.append("❌ FAKE VIX DROP (Price Rising in VIX Bear Trend)")
             else:
@@ -74,8 +74,8 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
-    # Strict Filter: Keep data strictly from March 27, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-03-27'].copy()
+    # Keep data strictly from January 1, 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
     # Final Grid Layout for India VIX (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
@@ -85,11 +85,11 @@ if not df.empty:
         if "🟢" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;' # Red for Fear Spike
         if "🔴" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;' # Green for Calm Market
         if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap
-        if "💤" in val: return 'background-color: #7f8c8d; color: white;' # Grey for Side-ways
+        if "💤" in val: return 'background-color: #7f8c8d; color: white;' # Grey for Sideways
         return ''
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
     }).map(color_vix_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("India VIX data fetch nahi ho pa raha hai.")
+    st.error("India VIX data available nahi hai.")
