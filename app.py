@@ -3,14 +3,15 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty 50 2025-2026 System", layout="wide")
-st.title("🎯 Nifty 50 1-Hour Continuous Predictor (From Jan 2025)")
-st.write("Tracking Nifty 50 (^NSEI) from January 1, 2025 onwards. Every historical candle evaluated live.")
+st.set_page_config(page_title="Nifty 50 2026 Live System", layout="wide")
+st.title("🎯 Nifty 50 1-Hour Continuous Predictor (From Jan 2026)")
+st.write("Tracking Nifty 50 (^NSEI) from January 1, 2026 onwards. Every historical candle evaluated live.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data from January 1, 2025
+# Fetch 1-Hour Accurate Nifty 50 Data from January 1, 2026
 @st.cache_data(ttl=300)
 def load_data():
-    df = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h")
+    # Fetching data from January 2026 onwards for fresh market trend analysis
+    df = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -27,9 +28,8 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop (Excel Logic adapted for Nifty Price)
-    # Note: Nifty ka price bada hota hai, isliye tracking multiplier 0.01 (1%) rakha hai
-    multiplier = 0.01 
+    # 3. Column B: Running Loop (The Balanced 0.03 Multiplier Zone)
+    multiplier = 0.03 
     col_b = np.zeros(len(df))
     if len(df) > 0:
         col_b[0] = df['Column A'].iloc[0]
@@ -54,7 +54,7 @@ if not df.empty:
         a_range = df['Avg_Nifty_Range'].iloc[i]
         body = df['Nifty_Body'].iloc[i]
         
-        # Checking Range Expansion (Volume/Volatility Breakout)
+        # Checking Range Expansion (Volatility Breakout)
         if pd.isna(a_range):
             is_range_expanded = False
         else:
@@ -77,8 +77,8 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
-    # Keep data strictly from January 1, 2025 onwards
-    df = df[df['Raw_Date'] >= '2025-01-01'].copy()
+    # Keep data strictly from January 1, 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
     # Final Grid Layout for Nifty 50 (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
@@ -87,7 +87,7 @@ if not df.empty:
     def color_nifty_grid(val):
         if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;' # Green for Bullish
         if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;' # Red for Bearish
-        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap / Fake Move
+        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap
         if "💤" in val: return 'background-color: #7f8c8d; color: white;' # Grey for Sideways
         return ''
 
