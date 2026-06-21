@@ -4,11 +4,11 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty DI Trap Filter May 2026", layout="wide")
-st.title("🎯 Nifty 50 Pure Math +DI / -DI 1-Hour Trap Filter System")
-st.write("Tracking Nifty 50 (^NSEI) from May 1, 2026. Optimized tracking sequence deployed.")
+st.set_page_config(page_title="Nifty Micro-Hull Structural System", layout="wide")
+st.title("🎯 Nifty 50 Dual-Stage Micro-Structural Velocity Engine")
+st.write("De-trending Nifty 50 (^NSEI) from May 1, 2026. Catching 90% Traps via Pure Iterative Memory Gaps.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st May 2026
+# Fetch 1-Hour Accurate Nifty 50 Data safely
 @st.cache_data(ttl=300)
 def load_pure_data():
     df_raw = yf.download(tickers="^NSEI", start="2026-05-01", interval="1h")
@@ -18,7 +18,7 @@ def load_pure_data():
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
         
-    # Drop empty or mismatched rows to eliminate any execution bugs
+    # Drop empty or corrupted data rows instantly
     df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
     return df_raw
 
@@ -35,15 +35,15 @@ if not df.empty:
     # 2. Column A: Exact Formula -> (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Exact Excel Drag-Down Loop Logic (Multiplier = 0.0001)
-    multiplier = 0.0001
+    # 3. Column B: Your Original Base Loop (Multiplier = 0.0001)
+    multiplier_base = 0.0001
     n_col_b = np.zeros(len(df))
     
     if len(df) > 0:
-        n_col_b[0] = df['Column A'].iloc[0]  # First row = A1 anchor logic
+        n_col_b[0] = df['Column A'].iloc[0]
         
     for i in range(1, len(df)):
-        n_col_b[i] = n_col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - n_col_b[i-1]))
+        n_col_b[i] = n_col_b[i-1] + (multiplier_base * (df['Column A'].iloc[i] - n_col_b[i-1]))
         
     df['Column B'] = n_col_b
     
@@ -51,105 +51,38 @@ if not df.empty:
     df['Column C'] = df['Column A'] - df['Column B']
     
     # ---------------------------------------------------------
-    # 🛠️ MATHEMATICAL +DI / -DI ENGINE CALCULATION (14 Period)
+    # 🛠️ PURE MATHEMATICAL MICRO-LEVEL TRACKING SEQUENCES
     # ---------------------------------------------------------
-    df['Prev_High'] = df['High'].shift(1)
-    df['Prev_Low'] = df['Low'].shift(1)
-    df['Prev_Close'] = df['Close'].shift(1)
+    # Sequence B1 (Fast Track Multiplier = 0.01)
+    m_fast = 0.01
+    b1_seq = np.zeros(len(df))
     
-    # Calculate True Range (TR)
-    df['TR1'] = df['High'] - df['Low']
-    df['TR2'] = (df['High'] - df['Prev_Close']).abs()
-    df['TR3'] = (df['Low'] - df['Prev_Close']).abs()
-    df['TR'] = df[['TR1', 'TR2', 'TR3']].max(axis=1)
+    # Sequence B2 (Slow Track Multiplier = 0.0001)
+    m_slow = 0.0001
+    b2_seq = np.zeros(len(df))
     
-    # Calculate Directional Movements (+DM and -DM)
-    df['UpMove'] = df['High'] - df['Prev_High']
-    df['DownMove'] = df['Prev_Low'] - df['Low']
-    
-    plus_dm = np.zeros(len(df))
-    minus_dm = np.zeros(len(df))
-    
+    if len(df) > 0:
+        b1_seq[0] = df['Column A'].iloc[0]
+        b2_seq[0] = df['Column A'].iloc[0]
+        
     for i in range(1, len(df)):
-        up = df['UpMove'].iloc[i]
-        down = df['DownMove'].iloc[i]
+        b1_seq[i] = b1_seq[i-1] + (m_fast * (df['Column A'].iloc[i] - b1_seq[i-1]))
+        b2_seq[i] = b2_seq[i-1] + (m_slow * (df['Column A'].iloc[i] - b2_seq[i-1]))
         
-        if up > down and up > 0:
-            plus_dm[i] = up
-        if down > up and down > 0:
-            minus_dm[i] = down
-                
-    df['+DM'] = plus_dm
-    df['-DM'] = minus_dm
+    df['B1_Fast'] = b1_seq
+    df['B2_Slow'] = b2_seq
     
-    # Wilder's Smoothing Arrays
-    tr_smooth = np.zeros(len(df))
-    p_dm_smooth = np.zeros(len(df))
-    m_dm_smooth = np.zeros(len(df))
+    # Calculate the Structural Micro Gap
+    df['Micro_Gap'] = df['B1_Fast'] - df['B2_Slow']
     
-    if len(df) >= 15:
-        # Initial sum for 14 period base anchoring
-        tr_smooth[14] = df['TR'].iloc[1:15].sum()
-        p_dm_smooth[14] = df['+DM'].iloc[1:15].sum()
-        m_dm_smooth[14] = df['-DM'].iloc[1:15].sum()
+    # Sequence B3 (Catalyst Tracker on the Micro Gap itself - Multiplier = 0.05)
+    m_catalyst = 0.05
+    b3_seq = np.zeros(len(df))
+    
+    if len(df) > 0:
+        b3_seq[0] = df['Micro_Gap'].iloc[0]
         
-        for i in range(15, len(df)):
-            tr_smooth[i] = tr_smooth[i-1] - (tr_smooth[i-1] / 14) + df['TR'].iloc[i]
-            p_dm_smooth[i] = p_dm_smooth[i-1] - (p_dm_smooth[i-1] / 14) + df['+DM'].iloc[i]
-            m_dm_smooth[i] = m_dm_smooth[i-1] - (m_dm_smooth[i-1] / 14) + df['-DM'].iloc[i]
-            
-    df['TR_Smooth'] = tr_smooth
-    df['+DM_Smooth'] = p_dm_smooth
-    df['-DM_Smooth'] = m_dm_smooth
-    
-    # Final DI Percentages with zero-check handling
-    df['+DI'] = np.where(df['TR_Smooth'] > 0, (df['+DM_Smooth'] / df['TR_Smooth']) * 100, 0)
-    df['-DI'] = np.where(df['TR_Smooth'] > 0, (df['-DM_Smooth'] / df['TR_Smooth']) * 100, 0)
-    
-    # ---------------------------------------------------------
-    # 🎯 COLUMN E: CROSS-VALIDATION INTERSECTING ENGINE (DI Traps)
-    # ---------------------------------------------------------
-    status_list = []
-    
-    for i in range(len(df)):
-        if i < 15:
-            status_list.append("💤 INITIALIZING SYSTEM")
-            continue
-            
-        curr_c = df['Column C'].iloc[i]
-        p_di = df['+DI'].iloc[i]
-        m_di = df['-DI'].iloc[i]
+    for i in range(1, len(df)):
+        b3_seq[i] = b3_seq[i-1] + (m_catalyst * (df['Micro_Gap'].iloc[i] - b3_seq[i-1]))
         
-        if curr_c > 0:  # Nifty Plus (+) Zone
-            if p_di > m_di:
-                status_list.append("🟢 TRUE BULLISH MOMENTUM (+DI Confirmed)")
-            else:
-                status_list.append("⚠️ 90% FAKE UPMOVE TRAP (-DI Dominating!)")
-        else:  # Nifty Minus (-) Zone
-            if m_di > p_di:
-                status_list.append("🔴 TRUE BEARISH CRASH (-DI Confirmed)")
-            else:
-                status_list.append("⚠️ 90% FAKE DOWNMOVE TRAP (+DI Dominating!)")
-                
-    df['Column E'] = status_list
-    
-    # Strictly filter the final display to show from May 1st onwards
-    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
-    
-    # Reverse final layout to push the latest calculated candles at the top row
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', '+DI', '-DI', 'Column E']].copy()
-    show_df = show_df.iloc[::-1]
-    
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        if "💤" in val: return 'background-color: #34495e; color: #bdc3c7;'
-        return ''
-
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        '+DI': '{:.2f}', '-DI': '{:.2f}'
-    }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
-else:
-    st.error("Market data pipeline break ho gaya hai. Please check start date parameters.")
+    df['B3_Catalyst'] = b3_seq
