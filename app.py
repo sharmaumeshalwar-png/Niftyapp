@@ -3,15 +3,15 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Nifty March 27 Targeted System", layout="wide")
-st.title("🎯 Nifty 1-Hour Continuous Predictor (From March 27 onwards)")
-st.write("Column E: Active on EVERY single candle, capturing dynamic momentum changes and immediate traps.")
+st.set_page_config(page_title="India VIX Live Predictor", layout="wide")
+st.title("🎯 India VIX 1-Hour Continuous Price Action Predictor")
+st.write("Tracking India VIX (^INDIAVIX) from March 27 onwards. Column E tracks every candle's volatility momentum live.")
 
-# Fetch 1-Hour Accurate Data starting strictly from March 27, 2026
+# Fetch 1-Hour Accurate India VIX Data
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetching a bit earlier to let rolling 20-period averages settle perfectly by March 27
-    df = yf.download(tickers="^NSEI", start="2026-03-15", interval="1h")
+    # Fetching slightly early to let rolling averages settle perfectly by March 27
+    df = yf.download(tickers="^INDIAVIX", start="2026-03-15", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -28,7 +28,7 @@ if not df.empty:
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # 3. Column B: Running Loop (Excel Formula Multiplier - 0.0001)
+    # 3. Column B: Running Loop (Excel Logic - 0.0001 multiplier applied to VIX)
     multiplier = 0.0001
     col_b = np.zeros(len(df))
     if len(df) > 0:
@@ -37,57 +37,59 @@ if not df.empty:
         col_b[i] = col_b[i-1] + (multiplier * (df['Column A'].iloc[i] - col_b[i-1]))
     df['Column B'] = col_b
     
-    # 4. Column C: A - B
+    # 4. Column C: A - B (VIX Sign Multiplier Base)
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # 5. Continuous Price Action Math
-    df['Candle_Range'] = df['High'] - df['Low']
-    df['Avg_Range_20'] = df['Candle_Range'].rolling(window=20).mean()
-    df['Real_Body'] = df['Close'] - df['Open']
+    # 5. Continuous VIX Volatility Calculations
+    df['VIX_Range'] = df['High'] - df['Low']
+    df['Avg_VIX_Range'] = df['VIX_Range'].rolling(window=20).mean()
+    df['VIX_Body'] = df['Close'] - df['Open']
     
-    # 6. Column E: Continuous Live Behavioral Analysis
+    # 6. Column E: Continuous Live Behavioral Analysis on India VIX
     status_list = ["Baseline"]
     
     for i in range(1, len(df)):
         curr_c = df['Column C'].iloc[i]
-        c_range = df['Candle_Range'].iloc[i]
-        a_range = df['Avg_Range_20'].iloc[i]
-        body = df['Real_Body'].iloc[i]
+        v_range = df['VIX_Range'].iloc[i]
+        a_range = df['Avg_VIX_Range'].iloc[i]
+        body = df['VIX_Body'].iloc[i]
         
-        is_range_expanded = c_range > (a_range * 1.05)
+        # Checking VIX Range Expansion (Significant expansion means heavy market panic/cool-off)
+        is_range_expanded = v_range > (a_range * 1.05)
         
-        if curr_c > 0:  # Trend is Plus (+)
+        if curr_c > 0:  # VIX Trend is Plus (+) -> Fear is Increasing in Market
             if body > 0 and is_range_expanded:
-                status_list.append("🟢 BULLISH RUNNING (Strong Continuation)")
+                status_list.append("🟢 FEAR SPIKE RUNNING (Strong VIX Expansion - Nifty Danger)")
             elif body < 0:
-                status_list.append("❌ FAKE MOVE TRAP (Price Dropping in Bull Trend)")
+                status_list.append("❌ FAKE VIX RISE (Price Dropping in VIX Bull Trend)")
             else:
-                status_list.append("💤 WEAK MOMENTUM (Slow Buying Zone)")
-        else:  # Trend is Minus (-)
+                status_list.append("💤 SLOW FEAR BUILDING (Weak VIX Momentum)")
+        else:  # VIX Trend is Minus (-) -> Market is Relaxing / Cooling Down
             if body < 0 and is_range_expanded:
-                status_list.append("🔴 BEARISH RUNNING (Strong Drop Continuation)")
+                status_list.append("🔴 VIX COOLING RUNNING (Strong Down Continuation - Nifty Safe)")
             elif body > 0:
-                status_list.append("❌ FAKE MOVE TRAP (Price Rising in Bear Trend)")
+                status_list.append("❌ FAKE VIX DROP (Price Rising in VIX Bear Trend)")
             else:
-                status_list.append("💤 WEAK MOMENTUM (Slow Selling Zone)")
+                status_list.append("💤 SLOW CALMING (Weak Down Momentum)")
                 
     df['Column E'] = status_list
     
-    # Strict Filter: Keep data only from March 27, 2026 onwards
+    # Strict Filter: Keep data strictly from March 27, 2026 onwards
     df = df[df['Raw_Date'] >= '2026-03-27'].copy()
     
-    # Final Grid Layout (Latest on Top)
+    # Final Grid Layout for India VIX (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]
     
-    def color_dynamic_grid(val):
-        if "🟢" in val or "🔴" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "❌" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "💤" in val: return 'background-color: #e67e22; color: white; font-weight: bold;'
+    def color_vix_grid(val):
+        if "🟢" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;' # Red for Fear Spike
+        if "🔴" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;' # Green for Calm Market
+        if "❌" in val: return 'background-color: #e67e22; color: white; font-weight: bold;' # Orange for Trap
+        if "💤" in val: return 'background-color: #7f8c8d; color: white;' # Grey for Side-ways
         return ''
 
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
-    }).map(color_dynamic_grid, subset=['Column E']), use_container_width=True)
+    }).map(color_vix_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Data processing failed.")
+    st.error("India VIX data fetch nahi ho pa raha hai.")
