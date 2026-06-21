@@ -1,114 +1,74 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import time
 
-# Page configuration
-st.set_page_config(page_title="Nifty Live Custom Tracker", layout="wide")
-st.title("📊 Nifty 1-Minute Live Custom Tracker")
-st.write("Real-time formula evaluation & Option Selling / Blast alerts.")
+st.set_page_config(page_title="Nifty Custom 1-Hour System", layout="wide")
+st.title("📊 Nifty 1-Hour Custom Algorithmic Dashboard")
+st.write("Formula Applied: Column B Multiplier = 0.0001 | Timeframe: 1-Hour Candle")
 
-# Initialize sessions for database storage
-if 'df_data' not in st.session_state:
-    # Starting baseline row to avoid index errors for previous rows
-    st.session_state.df_data = pd.DataFrame([{
-        "Row": 1,
-        "Col_A_Close": 23500.0,
-        "High": 23510.0,
-        "Low": 23490.0,
-        "Col_B_Avg": 23500.0,      # (High + Low) / 2
-        "Col_M": 10.0,              # Placeholders for your custom M & N columns
-        "Col_N": 5.0,               
-        "Col_C_Formula": 23500.0,  
-        "Col_D_Diff": 0.0,
-        "Signal": "WAIT"
-    }])
+# Fetch 1-Hour Nifty Data
+@st.cache_data(ttl=300)
+def load_data():
+    # Fetching 1 month of hourly data
+    df = yf.download(tickers="^NSEI", period="1mo", interval="1h")
+    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    return df
 
-# Sidebar controls
-st.sidebar.header("System Controls")
-live_toggle = st.sidebar.toggle("Start Live Feed", value=True)
-refresh_rate = st.sidebar.slider("Refresh Rate (Seconds)", 1, 10, 2)
+df = load_data()
 
-placeholder = st.empty()
-
-# 8-Step Loop Execution
-while live_toggle:
-    # 1. Fetch current dataframe
-    df = st.session_state.df_data.copy()
-    prev_row = df.iloc[-1]
-    next_row_num = len(df) + 1
+if not df.empty:
+    df = df.reset_index()
     
-    # 2. Simulate Live Nifty 1-Min Candle Data (Step 1 & Step 2)
-    base_price = prev_row["Col_A_Close"] + np.random.uniform(-15, 15)
-    high_val = base_price + np.random.uniform(2, 10)
-    low_val = base_price - np.random.uniform(2, 10)
-    close_val = np.random.uniform(low_val, high_val)
+    # 1. Column D: Date and Time formatting (e.g., '03 May 10:15')
+    # Handling yfinance datetime column name which is usually 'Datetime'
+    time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
+    df['Column D'] = pd.to_datetime(df[time_col]).dt.strftime('%d %b %H:%M')
     
-    # 3. Step 3: Column B = (High + Low) / 2
-    col_b_avg = (high_val + low_val) / 2
+    # 2. Column A: (High + Low) / 2
+    df['Column A'] = (df['High'] + df['Low']) / 2
     
-    # Simulate custom metrics for M and N to avoid blank data
-    col_m_val = np.random.uniform(-5, 5)
-    col_n_val = np.random.uniform(-5, 5)
+    # 3. Column B: Running Excel formula with 0.0001 multiplier
+    multiplier = 0.0001
+    col_b = np.zeros(len(df))
     
-    # 4. Step 4: Column C = B_current + 0.001 * (M_current - N_previous)
-    # Excel terminology translated: B2_current + 0.001 * (M3 - N2)
-    col_c_formula = col_b_avg + 0.001 * (col_m_val - prev_row["Col_N"])
-    
-    # 5. Step 5: Column D = A (Close) - B (Avg)
-    col_d_diff = close_val - col_b_avg
-    
-    # 6. Step 6 & 7: 90% Reversal vs 10% Blast Detection Logic
-    # Testing direction change from the previous row's difference
-    if np.sign(col_d_diff) != np.sign(prev_row["Col_D_Diff"]):
-        # If velocity spikes abnormally, it's a 10% Blast Move
-        if abs(col_d_diff) > 8.0:
-            signal = "💥 BLAST MOVE"
-        else:
-            signal = "🎯 OPTION SELL"
-    else:
-        signal = "WAIT"
+    if len(df) > 0:
+        col_b[0] = df['Column A'].iloc[0]  # First row: B1 = A1
         
-    # Create new row dictionary
-    new_row = {
-        "Row": next_row_num,
-        "Col_A_Close": round(close_val, 2),
-        "High": round(high_val, 2),
-        "Low": round(low_val, 2),
-        "Col_B_Avg": round(col_b_avg, 2),
-        "Col_M": round(col_m_val, 4),
-        "Col_N": round(col_n_val, 4),
-        "Col_C_Formula": round(col_c_formula, 4),
-        "Col_D_Diff": round(col_d_diff, 2),
-        "Signal": signal
-    }
+    for i in range(1, len(df)):
+        a_current = df['Column A'].iloc[i]
+        b_prev = col_b[i-1]
+        col_b[i] = b_prev + (multiplier * (a_current - b_prev))
+        
+    df['Column B'] = col_b
     
-    # Append and keep tracking
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    st.session_state.df_data = df
+    # 4. Column C: A - B
+    df['Column C'] = df['Column A'] - df['Column B']
     
-    # 8. Step 8: Render Clean Layout Output
-    with placeholder.container():
-        # Metric alerts on top
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("Current Nifty", f"₹ {new_row['Col_A_Close']}")
-        kpi2.metric("Latest Signal", new_row['Signal'])
-        kpi3.metric("Current Gap (Col D)", f"{new_row['Col_D_Diff']}")
-        
-        # Style dataframe for scannability
-        def style_signals(val):
-            if val == "🎯 OPTION SELL":
-                return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-            elif val == "💥 BLAST MOVE":
-                return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-            return ''
-
-        styled_df = df.tail(20).style.map(style_signals)
-        
-        st.subheader("Live Tracker Sheet (Last 20 Rows)")
-        st.dataframe(styled_df, use_container_width=True, height=500)
-        
-    time.sleep(refresh_rate)
-
-if not live_toggle:
-    st.info("Live feed stopped. Toggle 'Start Live Feed' to resume tracking.")
+    # Top Metrics Display
+    latest_a = float(df['Column A'].iloc[-1])
+    latest_b = float(df['Column B'].iloc[-1])
+    latest_c = float(df['Column C'].iloc[-1])
+    latest_time = str(df['Column D'].iloc[-1])
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Latest Candle Time (Col D)", latest_time)
+    col2.metric("Column A (H+L)/2", f"₹ {latest_a:.2f}")
+    col3.metric("Column B (Running)", f"₹ {latest_b:.4f}")
+    col4.metric("Column C (A - B)", f"{latest_c:.4f}")
+    
+    st.subheader("📋 System Logs - Custom Mathematical Table")
+    
+    # Rearranging columns for display order: D, A, B, C
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C']].copy()
+    
+    # Reverse to see latest candles on top
+    show_df = show_df.iloc[::-1]
+    
+    st.dataframe(show_df.style.format({
+        'Column A': '{:.2f}', 
+        'Column B': '{:.4f}', 
+        'Column C': '{:.4f}'
+    }), use_container_width=True)
+else:
+    st.error("Market data load karne mein dikkat aa rahi hai.")
