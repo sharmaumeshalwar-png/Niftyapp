@@ -3,15 +3,15 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="India VIX 2024-2026 System", layout="wide")
-st.title("🎯 India VIX 1-Hour Continuous Predictor (From Jan 2024)")
-st.write("Tracking India VIX (^INDIAVIX) from January 1, 2024 onwards. Every historical candle evaluated live.")
+st.set_page_config(page_title="India VIX 2025-2026 System", layout="wide")
+st.title("🎯 India VIX 1-Hour Continuous Predictor (From Jan 2025)")
+st.write("Tracking India VIX (^INDIAVIX) from January 1, 2025 onwards. Every historical candle evaluated live.")
 
-# Fetch 1-Hour Accurate India VIX Data from January 1, 2024
+# Fetch 1-Hour Accurate India VIX Data from January 1, 2025
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetching directly from Jan 2024 for deep historical analysis
-    df = yf.download(tickers="^INDIAVIX", start="2024-01-01", interval="1h")
+    # Fetching directly from Jan 2025 for continuous baseline tracking
+    df = yf.download(tickers="^INDIAVIX", start="2025-01-01", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -55,7 +55,6 @@ if not df.empty:
         body = df['VIX_Body'].iloc[i]
         
         # Checking VIX Range Expansion
-        # Handling NaN for initial values of moving average
         if pd.isna(a_range):
             is_range_expanded = False
         else:
@@ -78,8 +77,8 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
-    # Keep data strictly from January 1, 2024 onwards
-    df = df[df['Raw_Date'] >= '2024-01-01'].copy()
+    # Keep data strictly from January 1, 2025 onwards
+    df = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     # Final Grid Layout for India VIX (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
@@ -96,4 +95,4 @@ if not df.empty:
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
     }).map(color_vix_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("India VIX historical data from Jan 2024 available nahi hai.")
+    st.error("India VIX historical data from Jan 2025 available nahi hai.")
