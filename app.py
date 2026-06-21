@@ -3,15 +3,15 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="India VIX Complete System", layout="wide")
-st.title("🎯 India VIX 1-Hour Continuous Predictor (From Jan 1)")
-st.write("Tracking India VIX (^INDIAVIX) from January 1, 2026 onwards. Every candle evaluated live.")
+st.set_page_config(page_title="India VIX 2025-2026 System", layout="wide")
+st.title("🎯 India VIX 1-Hour Continuous Predictor (From June 2025)")
+st.write("Tracking India VIX (^INDIAVIX) from June 1, 2025 onwards. Every historical candle evaluated live.")
 
-# Fetch 1-Hour Accurate India VIX Data from Jan 1
+# Fetch 1-Hour Accurate India VIX Data from June 1, 2025
 @st.cache_data(ttl=300)
 def load_data():
-    # Fetching data directly from the start of the year
-    df = yf.download(tickers="^INDIAVIX", start="2026-01-01", interval="1h")
+    # Fetching directly from June 2025 for long-term historical analysis
+    df = yf.download(tickers="^INDIAVIX", start="2025-06-01", interval="1h")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     return df
 
@@ -23,7 +23,7 @@ if not df.empty:
     # 1. Column D: Date and Time
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %H:%M')
+    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     # 2. Column A: (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2
@@ -74,8 +74,8 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
-    # Keep data strictly from January 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    # Keep data strictly from June 1, 2025 onwards
+    df = df[df['Raw_Date'] >= '2025-06-01'].copy()
     
     # Final Grid Layout for India VIX (Latest on Top)
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E']].copy()
@@ -92,4 +92,4 @@ if not df.empty:
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}'
     }).map(color_vix_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("India VIX data available nahi hai.")
+    st.error("India VIX long-term data available nahi hai.")
