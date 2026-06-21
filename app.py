@@ -4,16 +4,16 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty-VIX 90% Trap Filter 2026", layout="wide")
-st.title("🎯 Nifty 50 + India VIX 1-Hour Traps & Divergence System")
-st.write("Tracking Nifty (^NSEI) and VIX (^INDIAVIX) from April 1, 2026 onwards. Filtering the 90% Fake Out Moves.")
+st.set_page_config(page_title="Nifty-VIX 90% Trap Filter May 2026", layout="wide")
+st.title("🎯 Nifty 50 + India VIX 1-Hour Traps & Divergence System (May 2026)")
+st.write("Tracking Nifty (^NSEI) and VIX (^INDIAVIX) from May 1, 2026 onwards. Filtering the 90% Fake Out Moves.")
 
 # Fetch 1-Hour Data safely by downloading separately to bypass yfinance multi-ticker hourly limits
 @st.cache_data(ttl=300)
 def load_combined_data():
-    # Setting the exact baseline date requested: April 1, 2026
-    df_nifty = yf.download(tickers="^NSEI", start="2026-04-01", interval="1h")
-    df_vix = yf.download(tickers="^INDIAVIX", start="2026-04-01", interval="1h")
+    # Setting the exact baseline date requested: May 1, 2026
+    df_nifty = yf.download(tickers="^NSEI", start="2026-05-01", interval="1h")
+    df_vix = yf.download(tickers="^INDIAVIX", start="2026-05-01", interval="1h")
     
     # Flatten columns if multi-index is present
     df_nifty.columns = [col[0] if isinstance(col, tuple) else col for col in df_nifty.columns]
@@ -110,6 +110,9 @@ if not df.empty:
                 
     df['Column E'] = status_list
     
+    # Filter view to strictly show from May 1, 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
+    
     # Reverse final matrix data view to push latest candles to the top row
     show_df = df[['Column D', 'Nifty_A', 'Nifty_B', 'Nifty_C', 'Vix_C', 'Column E']].copy()
     show_df = show_df.iloc[::-1]
@@ -126,4 +129,4 @@ if not df.empty:
         'Nifty_A': '{:.2f}', 'Nifty_B': '{:.4f}', 'Nifty_C': '{:.4f}', 'Vix_C': '{:.4f}'
     }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
 else:
-    st.error("Data fetch error: Yahoo Finance se April 2026 ka hourly data load nahi ho paya.")
+    st.error("Data fetch error: Yahoo Finance se May 2026 ka hourly data load nahi ho paya.")
