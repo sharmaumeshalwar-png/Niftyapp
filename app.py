@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# 1. PREMIUM BLACK THEME CONFIGURATION (Ensuring complete dark matrix layout)
+# 1. PREMIUM BLACK THEME CONFIGURATION
 st.set_page_config(page_title="Nifty Pure Black Cascade", layout="wide")
 
 st.markdown("""
@@ -26,7 +26,7 @@ st.markdown("""
 st.markdown("""
     <div class="title-block">
         <h1>🎯 Nifty 50 Pure Cascade Black System</h1>
-        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> (I row 2) - (I row 1)</p>
+        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> Strict Forward Row Math (Row 2 - Row 1)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -53,7 +53,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATH CASCADE (8-Step Calculation Verification)
+    # 3. CORE 5-STAGE MATH CASCADE (Up to Step 8 Verification)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -92,16 +92,15 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K CALCULATOR (Strict Sign subtraction)
+    # 4. COLUMN K CALCULATOR
     sign_f = np.sign(df['Column F'].values).astype(float)
     sign_h = np.sign(df['Column H'].values).astype(float)
     df['Column K'] = sign_f - sign_h
     
-    # 5. COLUMN L MATH: Strict Row 2 - Row 1 Differential Flow
-    col_l = np.zeros(total_rows, dtype=float)
-    for i in range(1, total_rows):
-        col_l[i] = col_i[i] - col_i[i-1]
-    df['Column L'] = col_l
+    # 🛠️ 5. CORRECTED COLUMN L MATH: (Strict Row 2 - Row 1 Forward Differential)
+    # Data is processed in sequential order here before flipping the UI view
+    df['Column L'] = df['Column I'].diff().astype(float)
+    df['Column L'] = df['Column L'].fillna(0.0) # Pehli absolute row ke liye structure fill
     
     # 6. SIGN STATUS LOGIC BLOCK
     status_list = ["System Booting"]
@@ -122,12 +121,12 @@ if not df.empty:
                 
     df['Signal_Status'] = status_list
 
-    # 7. FILTER & REVERSE RENDERING FOR HIGH VISIBILITY
+    # 7. FILTER & VISUAL FLIP FOR TOP CANDLE DISPLAY
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
         show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1]  # Latest candle on top
+        show_df = show_df.iloc[::-1]  # UI Flip: Latest candle goes to top
         
         # Grid Custom Styles matching the premium black theme
         def color_trap_grid(val):
