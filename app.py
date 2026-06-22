@@ -54,7 +54,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Step 1 to 8 Counting)
+    # 3. CORE 5-STAGE MATHEMATICAL CASCADE
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -104,7 +104,7 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 🛠️ 6. NEW STRUCTURE: COLUMN M TEXT GENERATOR & THEME TRACKER
+    # 6. COLUMN M TEXT GENERATOR & THEME TRACKER
     col_m_text = ["➡️ CONTINUOUS"] * total_rows
     l_change_flag = np.zeros(total_rows, dtype=bool)
     
@@ -141,12 +141,12 @@ if not df.empty:
             else:  status_list.append("⚠️ 90% PUT TRAP")
     df['Signal_Status'] = status_list
 
-    # 7. FILTER & DISPLAY PREPARATION (Jan 1, 2025 Layout)
-    df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
+    # 🛠️ 7. FILTER & DISPLAY PREPARATION (Jan 1, 2026 Layout)
+    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
     if not df_filtered.empty:
         show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'L_Sign_Change', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1].reset_index(drop=True)  # Reverse layout securely
+        show_df = show_df.iloc[::-1].reset_index(drop=True) 
         
         # 8. THEME RENDERING PIPELINE FOR COLUMN M & SIGNALS
         def style_signal_cells(val):
@@ -155,20 +155,16 @@ if not df.empty:
             if "⚠️" in val: return 'background-color: #b45309; color: #fef08a; font-weight: bold;'
             return 'background-color: #1f2937; color: #d1d5db;'
 
-        # 🛠️ STYLING RULES DIRECTLY FOR COLUMN M
         def apply_column_m_theme(row):
             styles = [''] * len(row)
             m_index = row.index.get_loc('Column M')
             
-            # If backend flagged true sign change, make Column M Absolute Black
             if row['L_Sign_Change'] == True:
                 styles[m_index] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
             else:
-                # Otherwise Column M remains Pure White
                 styles[m_index] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
             return styles
 
-        # Render complete grid frame container
         st.dataframe(
             show_df.style.format({
                 'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
@@ -182,6 +178,6 @@ if not df.empty:
             use_container_width=True
         )
     else:
-        st.warning("January 1, 2025 filtered range empty.")
+        st.warning("January 1, 2026 filtered range empty.")
 else:
     st.error("Data pipeline load error.")
