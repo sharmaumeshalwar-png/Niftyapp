@@ -4,14 +4,14 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty 5-Stage Ultimate Cascade", layout="wide")
+st.set_page_config(page_title="Nifty 5-Stage Cascade June 2025", layout="wide")
 st.title("🎯 Nifty 50 5-Stage Ultimate Cascading Loop System")
-st.write("5 Layers of Pure Mathematical Price Stabilization. Final signals driven strictly by Column K (I - J).")
+st.write("Displaying continuous 1-Hour rows from June 1, 2025. Driven by Column K (I - J) with deep historical anchoring.")
 
-# Fetch Data safely from Jan 1st
+# Fetch Data safely from Jan 1st, 2025 for perfect math anchoring
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
@@ -81,7 +81,7 @@ if not df.empty:
         col_i[i] = col_i[i-1] + (multiplier * (float(df['Column H'].values[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
-    # 9. Column J: Smooth Loop of Column I (Stage 5 Stable - FIXED)
+    # 9. Column J: Smooth Loop of Column I (Stage 5 Stable)
     col_j = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
         col_j[0] = float(col_i[0])
@@ -89,7 +89,7 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 10. Column K: Final Master Deviation -> I - J (NEW LEG)
+    # 10. Column K: Final Master Deviation -> I - J
     df['Column K'] = col_i - col_j
     
     # 🌟 ULTIMATE 5-STAGE SIGNAL ENGINE (Strictly driven by Column K Response)
@@ -102,34 +102,40 @@ if not df.empty:
         k_is_rising = curr_k > prev_k
         
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if k_is_rising:  # 5th Layer core deviation is accelerating upward -> 10% Real Alpha Move
+            if k_is_rising:  # 5th Layer core deviation is accelerating upward
                 status_list.append("🟢 K-STAGE BULLISH (Absolute Trend)")
             else:  # Surface is plus but deep 5th-layer filter is dropping -> 90% CALL TRAP
                 status_list.append("⚠️ 90% CALL TRAP (Column K Negative Dispersion!)")
         else:  # Surface price is showing New/Minus (-)
-            if not k_is_rising:  # 5th Layer core deviation is collapsing downward -> Real Crash
+            if not k_is_rising:  # 5th Layer core deviation is collapsing downward
                 status_list.append("🔴 K-STAGE BEARISH (Absolute Melt)")
             else:  # Surface is minus but deep 5th-layer filter is expanding/absorbing -> 90% PUT TRAP
                 status_list.append("⚠️ 90% PUT TRAP (Column K Accumulation!)")
                 
     df['Signal_Status'] = status_list
 
-    # Complete dataset display from Jan 1st to latest candle row
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
-    show_df = show_df.iloc[::-1]  # Latest candle on top
+    # 🔥 FILTER TRICK: Calculation Jan 2025 se hui, par filter strictly June 1, 2025 se karega
+    df_filtered = df[df['Raw_Date'] >= '2025-06-01'].copy()
     
-    # Grid Theme Color Engine
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        return ''
+    if not df_filtered.empty:
+        # Arrange grid layout with proper sequence of columns
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1]  # Latest candle on top
+        
+        # Grid Theme Color Engine
+        def color_trap_grid(val):
+            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+            return ''
 
-    # Precision Decimal Formatter Block
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-        'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.4f}'
-    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+        # Precision Decimal Formatter Block
+        st.dataframe(show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.4f}'
+        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+    else:
+        st.warning("June 2025 ka filtered data range khali hai.")
 else:
     st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
