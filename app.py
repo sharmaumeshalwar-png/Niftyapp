@@ -4,15 +4,15 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty E-I Cascade Jan 2025", layout="wide")
-st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - I)")
-st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered continuously from January 1, 2025.")
+st.set_page_config(page_title="Nifty Pure E-J Sign Matrix", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - J)")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of J). Running continuously from January 1, 2025.")
 
-# Robust Data Fetcher to prevent blank screens
+# Robust Data Fetcher to ensure continuous history without blank screens
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # Fetching from Jan 1, 2025 onwards directly
-    df_raw = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h")
+    # Fetching trailing 2 years to bypass any API freeze and get heavy historical padding
+    df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
@@ -50,7 +50,7 @@ if not df.empty:
     df['Column B'] = col_b
     
     # 3. Column C: Pure Deviation -> A - B
-    df['Column C'] = (df['Column A'] - df['─Column B']).astype(float) if '─Column B' in df.columns else (df['Column A'] - df['Column B']).astype(float)
+    df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     # 4. Column E: Smooth Loop of Column C (Stage 2 Stable)
     col_e = np.zeros(total_rows, dtype=float)
@@ -90,47 +90,52 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 🛠️ 10. COLUMN K: FIXED EXACTLY -> (Sign of E) - (Sign of I)
+    # 🛠️ 10. COLUMN K: STRICTLY SIGN SUBTRACTION -> (Sign of E) - (Sign of J)
     sign_e = np.sign(col_e).astype(float)
-    sign_i = np.sign(col_i).astype(float)
-    df['Column K'] = sign_e - sign_i
+    sign_j = np.sign(col_j).astype(float)
+    df['Column K'] = sign_e - sign_j
     
-    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE (E - I Match)
+    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE (E - J Match)
     status_list = ["System Booting"]
     for i in range(1, total_rows):
         curr_k = float(df['Column K'].values[i])
         curr_c = float(df['Column C'].values[i])
         
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if curr_k == 2.0 or curr_k == 0.0:  
-                status_list.append("🟢 SIGN BULLISH (E-I Confirmed)")
-            else:  # K is negative (-2) -> E is minus, I is plus -> 90% CALL TRAP
-                status_list.append("⚠️ 90% CALL TRAP (E-I Inversion Alert!)")
-        else:  # Surface price is showing New/Minus (-)
-            if curr_k == -2.0 or curr_k == 0.0:  
-                status_list.append("🔴 SIGN BEARISH (E-I Confirmed)")
-            else:  # K is positive (2) -> E is plus, I is minus -> 90% PUT TRAP
-                status_list.append("⚠️ 90% PUT TRAP (E-I Inversion Alert!)")
+            if curr_k == 2.0 or curr_k == 0.0:  # Short-term loop E leads or matches J positively
+                status_list.append("🟢 SIGN BULLISH (E-J Confirmed)")
+            else:  # K is negative (-2) -> E is minus, J is plus -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (E-J Inversion Alert!)")
+        else:  # Surface price is showing Minus (-)
+            if curr_k == -2.0 or curr_k == 0.0:  # Short-term loop E leads or matches J negatively
+                status_list.append("🔴 SIGN BEARISH (E-J Confirmed)")
+            else:  # K is positive (2) -> E is plus, J is minus -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (E-J Inversion Alert!)")
                 
     df['Signal_Status'] = status_list
 
-    # Pure Presentation Layout from Jan 1st, 2025 onwards without trimming
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
-    show_df = show_df.iloc[::-1]  # Latest candle on top
+    # 🔥 PRESENTATION FILTER: Backend has full padding depth, UI displays strictly from January 1, 2025
+    df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
-    # Grid Theme Color Engine
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        return ''
+    if not df_filtered.empty:
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1]  # Latest candle on top
+        
+        # Grid Theme Color Engine
+        def color_trap_grid(val):
+            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+            return ''
 
-    # Dynamic Frame Render
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-        'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-        'Column K': '{:.0f}'  # Strict single digit integer layout for signs (-2, 0, 2)
-    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+        # Dynamic Frame Render safely without object formatting mismatch
+        st.dataframe(show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+            'Column K': '{:.0f}'  # Strict single digit integer layout (-2, 0, 2)
+        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+    else:
+        st.warning("January 1, 2025 filtered range empty.")
 else:
-    st.error("Data pipeline load error: Data stream structure couldn't be fetched.")
+    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
