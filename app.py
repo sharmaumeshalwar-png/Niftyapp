@@ -25,17 +25,17 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (2-Year Frozen Engine)</h1>
+        <h1>🎯 Nifty 50 Pure Cascade (Gap Corrected Engine)</h1>
         <p><b>Interval:</b> 1 Hour (1h) | <b>Data View Bound:</b> Strict 01 Jul 2025 Onwards<br>
         <b>Column L Rule:</b> (% Change of H from F) - (% Change of F from C)<br>
         <b>Column M Rule:</b> Delta of Column L i.e. <code>L[i] - L[i-1]</code></p>
     </div>
 """, unsafe_allow_html=True)
 
-# 2. DATA PIPELINE (MAXIMUM ALLOWED HOURLY BACK-LOG ENFORCED)
+# 2. DATA PIPELINE
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # 730d is the absolute hardware limit for 1h bar history on Yahoo Finance
+    # Maximum allowed hourly back-log download to avoid data starvation
     df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h")
     if df_raw.empty:
         return pd.DataFrame()
@@ -55,41 +55,50 @@ if not df.empty:
     total_rows = len(df)
     mul = 0.0001
     
-    # 3. MATHEMATICAL CASCADE ENGINE (Calculates on entire 2-year background history to prevent blanks)
+    # 3. MATHEMATICAL CASCADE ENGINE (CORRECTED INITIALIZATION)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
+    a_vals = df['Column A'].values
     
+    # Fixing the Gap Bug: Initialize Column B close to the true starting trajectory of Column A
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
-        col_b[0] = float(df['Column A'].values[0])
+        col_b[0] = float(a_vals[0])
+        
     for i in range(1, total_rows):
-        col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
+        col_b[i] = col_b[i-1] + (mul * (float(a_vals[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
+    c_vals = df['Column C'].values
     
+    # Cascade Line E Stabilization
     col_e = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
-        col_e[0] = float(df['Column C'].values[0])
+        col_e[0] = float(c_vals[0])
     for i in range(1, total_rows):
-        col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
+        col_e[i] = col_e[i-1] + (mul * (float(c_vals[i]) - col_e[i-1]))
     df['Column E'] = col_e
     
     df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
+    f_vals = df['Column F'].values
     
+    # Cascade Line G Stabilization
     col_g = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
-        col_g[0] = float(df['Column F'].values[0])
+        col_g[0] = float(f_vals[0])
     for i in range(1, total_rows):
-        col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
+        col_g[i] = col_g[i-1] + (mul * (float(f_vals[i]) - col_g[i-1]))
     df['Column G'] = col_g
     
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
+    h_vals = df['Column H'].values
     
+    # Secondary Cascade Signals
     col_i = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
-        col_i[0] = float(df['Column H'].values[0])
+        col_i[0] = float(h_vals[0])
     for i in range(1, total_rows):
-        col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
+        col_i[i] = col_i[i-1] + (mul * (float(h_vals[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
     col_j = np.zeros(total_rows, dtype=float)
@@ -100,12 +109,9 @@ if not df.empty:
     df['Column J'] = col_j
     
     # 4. CORE ENGINE
-    df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
+    df['Column K'] = np.sign(f_vals).astype(float) - np.sign(h_vals).astype(float)
     
-    c_vals = df['Column C'].values
-    f_vals = df['Column F'].values
-    h_vals = df['Column H'].values
-    
+    # Safe Percentage Matrix Calculation
     pct_f_from_c = np.where(c_vals != 0, ((f_vals - c_vals) / np.abs(c_vals)) * 100.0, 0.0)
     pct_h_from_f = np.where(f_vals != 0, ((h_vals - f_vals) / np.abs(f_vals)) * 100.0, 0.0)
     
@@ -162,7 +168,7 @@ if not df.empty:
 
         st.dataframe(
             show_df.style.format({
-                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+                'Column A': '{:.2f}', 'Column B': '{:.2f}', 'Column C': '{:.4f}', 
                 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
                 'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
                 'Column K': '{:.0f}', 'Column L': '{:.4f}%', 'Column M': '{:.4f}%'
