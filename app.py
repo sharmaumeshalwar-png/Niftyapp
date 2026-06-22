@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #3b82f6;
+            border-left: 5px solid #10b981;
             margin-bottom: 25px;
         }
     </style>
@@ -32,32 +32,26 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (1-Hour Flawless Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
-        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Sequential Exponential Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Range:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
+        <b>New Rule:</b> E is exp of C | F is exp of E | G is exp of F | H is exp of G (Using Multiplier formula same as B).</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE (CRITICAL HOURLY MULTIINDEX FLATTENER)
+# 2. DATA PIPELINE (FLAT HOURLY ENGINE)
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
 def load_pure_data_hourly():
     try:
-        # Fetching max stable range for 1H interval
         df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h", progress=False)
         if df_raw.empty:
             return pd.DataFrame()
             
-        # [CRITICAL FIX] Level mapping layers ko flat strings mein convert karna
         if isinstance(df_raw.columns, pd.MultiIndex):
-            # Yahoo Finance ke naye structure ke mutabik columns flatten karna
             df_raw.columns = [col[0] if isinstance(col, tuple) else col for col in df_raw.columns]
         
-        # Column names ko standardize karna (strip spaces)
         df_raw.columns = [str(col).strip() for col in df_raw.columns]
-        
-        # Clean check for required price paths
         df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
         return df_raw
     except Exception:
@@ -69,53 +63,70 @@ if not df.empty:
     df = df.reset_index()
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    # Clock time representation format inside Column D
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
     mul = 0.0001
     
     # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE (BACK-CALCULATIONS PRESERVED)
+    # 3. SEQUENTIAL EXPONENTIAL CASCADE ENGINE (SAME MULTIPLIER FORMULA)
     # ==============================================================================
+    # A = (High + Low) / 2
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
+    # B = Exp of A
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
+    # C = A - B
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
+    # E = Exp of C (Aapke Rule ke mutabik)
     col_e = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_e[0] = float(df['Column C'].values[0])
     for i in range(1, total_rows):
         col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
     df['Column E'] = col_e
     
-    df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
-    
-    col_g = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_g[0] = float(df['Column F'].values[0])
+    # F = Exp of E (Aapke Rule ke mutabik)
+    col_f = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_f[0] = float(col_e[0])
     for i in range(1, total_rows):
-        col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
+        col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
+    df['Column F'] = col_f
+    
+    # G = Exp of F (Aapke Rule ke mutabik)
+    col_g = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_g[0] = float(col_f[0])
+    for i in range(1, total_rows):
+        col_g[i] = col_g[i-1] + (mul * (col_f[i] - col_g[i-1]))
     df['Column G'] = col_g
     
-    df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
-    
-    col_i = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
+    # H = Exp of G (Aapke Rule ke mutabik)
+    col_h = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_h[0] = float(col_g[0])
     for i in range(1, total_rows):
-        col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
+        col_h[i] = col_h[i-1] + (mul * (col_g[i] - col_h[i-1]))
+    df['Column H'] = col_h
+    
+    # I = Exp of H
+    col_i = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_i[0] = float(col_h[0])
+    for i in range(1, total_rows):
+        col_i[i] = col_i[i-1] + (mul * (col_h[i] - col_i[i-1]))
     df['Column I'] = col_i
     
+    # J = Exp of I
     col_j = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_j[0] = float(col_i[0])
     for i in range(1, total_rows):
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
+    # 4. COLUMN K & L CALCULATION (Based on New F and H sequential vectors)
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -158,7 +169,7 @@ if not df.empty:
     df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
     if df_f.empty:
-        df_f = df.copy() # Fallback to prevent sudden white blanking
+        df_f = df.copy() 
         
     if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
@@ -200,4 +211,4 @@ if not df.empty:
     else:
         st.warning("No data points verified inside the display window.")
 else:
-    st.error("Data pipeline load error. Engine structure sync timed out.")
+    st.error("Data pipeline load error.")
