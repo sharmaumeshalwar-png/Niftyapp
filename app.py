@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty E-I Sign Cascade", layout="wide")
+st.set_page_config(page_title="Nifty E-I Cascade Oct 2025", layout="wide")
 st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - I)")
-st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered from January 1, 2026.")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered continuously from October 1, 2025.")
 
 # Robust Data Fetcher to prevent blank screens
 @st.cache_data(ttl=300)
@@ -106,7 +106,7 @@ if not df.empty:
                 status_list.append("🟢 SIGN BULLISH (E-I Confirmed)")
             else:  # K is negative (-2) -> E is minus, I is plus -> 90% CALL TRAP
                 status_list.append("⚠️ 90% CALL TRAP (E-I Inversion Alert!)")
-        else:  # Surface price is showing Minus (-)
+        else:  # Surface price is showing New/Minus (-)
             if curr_k == -2.0 or curr_k == 0.0:  
                 status_list.append("🔴 SIGN BEARISH (E-I Confirmed)")
             else:  # K is positive (2) -> E is plus, I is minus -> 90% PUT TRAP
@@ -114,8 +114,8 @@ if not df.empty:
                 
     df['Signal_Status'] = status_list
 
-    # 🔥 STABLE PRESENTATION FILTER: Backend computation has full depth, UI renders strictly from Jan 1, 2026
-    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    # 🔥 FIXED DISPLAY FILTER: UI renders strictly from October 1, 2025 onwards
+    df_filtered = df[df['Raw_Date'] >= '2025-10-01'].copy()
     
     if not df_filtered.empty:
         show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
@@ -136,6 +136,6 @@ if not df.empty:
             'Column K': '{:.0f}'  # Strict single digit integer layout for signs (-2, 0, 2)
         }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
     else:
-        st.warning("January 1, 2026 filtered range empty.")
+        st.warning("October 1, 2025 filtered range empty.")
 else:
     st.error("Data pipeline load error: Data stream structure couldn't be fetched.")
