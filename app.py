@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Quantitative Cascade", layout="wide")
-st.title("🎯 Nifty 50 5-Stage Quantitative Value Cascade System")
-st.write("Column K is strictly calculated as: Column C + Column F + Column H (Exact Values with Signs). Running continuously from January 1, 2025.")
+st.set_page_config(page_title="Nifty Pure F-H Sign Matrix", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (F - H)")
+st.write("Column K is strictly calculated as: (Sign of F) - (Sign of H). Running continuously from January 1, 2025.")
 
 # Robust Data Fetcher to ensure continuous history without blank screens
 @st.cache_data(ttl=300)
@@ -90,25 +90,31 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 🛠️ 10. COLUMN K: QUANTITATIVE VALUE SUMMATION -> C + F + H (With exact values and signs)
-    df['Column K'] = df['Column C'] + df['Column F'] + df['Column H']
+    # 🛠️ 10. COLUMN K: STRICTLY SIGN SUBTRACTION -> (Sign of F) - (Sign of H)
+    sign_f = np.sign(df['Column F'].values).astype(float)
+    sign_h = np.sign(df['Column H'].values).astype(float)
+    df['Column K'] = sign_f - sign_h
     
-    # 🌟 VALUE-DIRECTION ENGINE
+    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE (F - H Match)
     status_list = ["System Booting"]
     for i in range(1, total_rows):
         curr_k = float(df['Column K'].values[i])
+        curr_c = float(df['Column C'].values[i])
         
-        # Kyunki yeh real values hain, agar net sum positive hai toh momentum bullish hai
-        if curr_k > 0:
-            status_list.append(f"🟢 VALUE BULLISH (Net Wave: +{curr_k:.2f})")
-        elif curr_k < 0:
-            status_list.append(f"🔴 VALUE BEARISH (Net Wave: {curr_k:.2f})")
-        else:
-            status_list.append("⚪ VALUE NEUTRAL (Absolute Equilibrium)")
+        if curr_c > 0:  # Surface price is showing Plus (+)
+            if curr_k == 2.0 or curr_k == 0.0:  # Short-term loop F leads or matches H positively
+                status_list.append("🟢 SIGN BULLISH (F-H Confirmed)")
+            else:  # K is negative (-2) -> F is minus, H is plus -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (F-H Inversion Alert!)")
+        else:  # Surface price is showing Minus (-)
+            if curr_k == -2.0 or curr_k == 0.0:  # Short-term loop F leads or matches H negatively
+                status_list.append("🔴 SIGN BEARISH (F-H Confirmed)")
+            else:  # K is positive (2) -> F is plus, H is minus -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (F-H Inversion Alert!)")
                 
     df['Signal_Status'] = status_list
 
-    # 🔥 PRESENTATION FILTER: UI displays strictly from January 1, 2025
+    # 🔥 PRESENTATION FILTER: Backend has full padding depth, UI displays strictly from January 1, 2025
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
@@ -119,16 +125,17 @@ if not df.empty:
         def color_trap_grid(val):
             if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
             if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
             return ''
 
-        # Dynamic Frame Render
+        # Dynamic Frame Render safely without object formatting mismatch
         st.dataframe(show_df.style.format({
             'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
             'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
             'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-            'Column K': '{:.4f}'  # Float layout kyunki ab yeh exact values carry kar raha hai
+            'Column K': '{:.0f}'  # Strict single digit integer layout (-2, 0, 2)
         }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
     else:
         st.warning("January 1, 2025 filtered range empty.")
 else:
-    st.error("Data pipeline load error.")
+    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
