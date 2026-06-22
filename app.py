@@ -2,6 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import warnings
+import os
+
+# Red False Warnings aur Internal Data Leak Bugs ko suppress karne ke liye setup
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # ==============================================================================
 # 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
@@ -22,30 +28,39 @@ st.markdown("""
             border-left: 5px solid #ec4899;
             margin-bottom: 25px;
         }
+        .stAlert { background-color: #1f2937 !important; color: #ffffff !important; }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
     <div class="title-block">
-        <h1>⚡ Nifty 50 Pure Cascade (1-Hour Candle Matrix Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Max Allowed Rolling Window<br>
+        <h1>⚡ Nifty 50 Pure Cascade (1-Hour Clean Matrix Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Rolling Window Matrix<br>
         <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE (MAX HOURLY RETRIEVAL SAFEGUARD)
+# 2. DATA PIPELINE (WITH ABSOLUTE WARNING SUPPRESSION)
 # ==============================================================================
-@st.cache_data(ttl=180)
+@st.cache_data(ttl=120, show_spinner=False)
 def load_pure_data():
-    # '730d' is the absolute maximum allowed range for hourly interval data in Yahoo Finance
-    df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h")
-    if df_raw.empty:
+    try:
+        # Hourly restriction ke anusaar '730d' range use ho rahi hai
+        df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h", progress=False)
+        if df_raw.empty:
+            return pd.DataFrame()
+        
+        # Multi-index structure ko strictly flat dataframe columns mein change karna
+        if isinstance(df_raw.columns, pd.MultiIndex):
+            df_raw.columns = df_raw.columns.get_level_values(0)
+        else:
+            df_raw.columns = [str(col).strip() for col in df_raw.columns]
+            
+        df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+        return df_raw
+    except Exception as e:
         return pd.DataFrame()
-    if isinstance(df_raw.columns, pd.MultiIndex):
-        df_raw.columns = df_raw.columns.get_level_values(0)
-    df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
-    return df_raw
 
 df = load_pure_data()
 
@@ -53,14 +68,13 @@ if not df.empty:
     df = df.reset_index()
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    # Hour filter formatting including clock time
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
     mul = 0.0001
     
     # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE (8-STEP VERIFICATION TRACKING)
+    # 3. MATHEMATICAL CASCADE ENGINE
     # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
@@ -100,7 +114,7 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. HOURLY K & L MATRIX CORE
+    # 4. HOURLY K & L ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -108,9 +122,7 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # ==============================================================================
-    # 5. COLUMN M HOURLY LOGIC ENGINE
-    # ==============================================================================
+    # 5. COLUMN M ENGINE
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
@@ -125,4 +137,58 @@ if not df.empty:
             last_v = curr_s
             
     df['Column M'] = m_txt
-    df['L_Sign_Change'] = ch
+    df['L_Sign_Change'] = chg_flag
+
+    # 6. SIGNAL TRACKER WITH CONFIRMED TRAP FILTERS
+    sig = ["System Booting"]
+    for i in range(1, total_rows):
+        k = float(df['Column K'].values[i])
+        c = float(df['Column C'].values[i])
+        l_curr = float(col_l[i])
+        l_prev = float(col_l[i-1]) if i > 0 else 0.0
+        
+        if c > 0:
+            if k in [2.0, 0.0]:
+                sig.append("🟢 SIGN BULLISH")
+            else:
+                if l_curr > 0 and l_curr <= l_prev:
+                    sig.append("⚠️ CONFIRMED CALL TRAP")
+                else:
+                    sig.append("🚀 GENUINE UP-BREAKOUT (10%)")
+        else:
+            if k in [-2.0, 0.0]:
+                sig.append("🔴 SIGN BEARISH")
+            else:
+                if l_curr < 0 and l_curr >= l_prev:
+                    sig.append("⚠️ CONFIRMED PUT TRAP")
+                else:
+                    sig.append("💥 GENUINE DOWN-BREAKOUT (10%)")
+                    
+    df['Signal_Status'] = sig
+
+    # ==============================================================================
+    # 7. HOURLY ROLLING RENDER ENGINE (DYNAMIC STRIP VIEW)
+    # ==============================================================================
+    df_f = df.copy()
+    
+    if not df_f.empty:
+        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        
+        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
+        flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
+
+        def grid_style(row):
+            idx = row.name
+            st_list = [''] * len(row)
+            m_pos = row.index.get_loc('Column M')
+            s_pos = row.index.get_loc('Signal_Status')
+            
+            # Column M Matrix Rules (Absolute Black vs Pure White)
+            if idx < len(flags) and flags.iloc[idx]:
+                st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+            else:
+                st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
+                
+            # Signal Custom Status Cell Customization
+            val = str(row['Signal_Status'])
+            if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399;
