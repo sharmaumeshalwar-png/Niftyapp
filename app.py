@@ -4,25 +4,32 @@ import pandas as pd
 import numpy as np
 
 # ==============================================================================
-# 1. BASE MATRIX SETTINGS
+# 1. BASE MATRIX CONFIGURATION
 # ==============================================================================
 st.set_page_config(page_title="Nifty Column M Matrix (Daily)", layout="wide")
 
 st.markdown("""
     <style>
-        html, body, [data-testid="stAppViewContainer"] { background-color: #0b0f19 !important; color: #ffffff !important; }
+        html, body, [data-testid="stAppViewContainer"] {
+            background-color: #0b0f19 !important;
+            color: #ffffff !important;
+        }
         h1, h3, p, span, label { color: #ffffff !important; }
         .title-block {
             background: linear-gradient(90deg, #111827, #1f2937);
-            padding: 20px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-bottom: 25px;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #3b82f6;
+            margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Column L Aligned Engine)</h1>
-        <p><b>Signal Filter:</b> Automated Column L Momentum Alignment Detector (Bypassing 10% Fake Traps)</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Validated Aligned Engine)</h1>
+        <p><b>Interval:</b> Daily Candles (1D) | <b>Start Filter:</b> 01 Jan 2025<br>
+        <b>Verification Rule:</b> Column L momentum safely aligned pre-inversion to eliminate false signals.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -32,10 +39,12 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_pure_data():
     df_raw = yf.download(tickers="^NSEI", period="5y", interval="1d")
-    if df_raw.empty: return pd.DataFrame()
+    if df_raw.empty:
+        return pd.DataFrame()
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
-    return df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+    df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+    return df_raw
 
 df = load_pure_data()
 
@@ -48,7 +57,9 @@ if not df.empty:
     total_rows = len(df)
     mul = 0.0001
     
+    # ==============================================================================
     # 3. MATHEMATICAL CASCADE ENGINE
+    # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -87,6 +98,7 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
+    # 4. COLUMN K & L CORE ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -94,10 +106,13 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 4. COLUMN M LOGIC
+    # ==============================================================================
+    # 5. COLUMN M FIXED CONTINUITY LOGGER
+    # ==============================================================================
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
+    
     for i in range(1, total_rows):
         v = col_l[i]
         curr_s = 1 if v > 0 else (-1 if v < 0 else 0)
@@ -106,11 +121,12 @@ if not df.empty:
                 chg_flag[i] = True
                 m_txt[i] = "🔄 SIGN CHANGED"
             last_v = curr_s
+            
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
     # ==============================================================================
-    # 5. ADVANCED COLUMN L ALIGNED SIGNAL ENGINE (FILTERS OUT THE 10% FAKES)
+    # 6. SIGNAL ALIGNMENT ENGINE (PRE-INVERSION VALIDATED)
     # ==============================================================================
     sig = ["System Booting"]
     for i in range(1, total_rows):
@@ -123,8 +139,8 @@ if not df.empty:
             if k in [2.0, 0.0]:
                 sig.append("🟢 SIGN BULLISH")
             else:
-                # Call Trap check supported by Column L velocity deceleration
-                if l_curr > 0 and l_curr < l_prev:
+                # Column L velocity dynamic compression rule check
+                if l_curr > 0 and l_curr <= l_prev:
                     sig.append("⚠️ CONFIRMED CALL TRAP")
                 else:
                     sig.append("🚀 GENUINE UP-BREAKOUT (10%)")
@@ -132,8 +148,8 @@ if not df.empty:
             if k in [-2.0, 0.0]:
                 sig.append("🔴 SIGN BEARISH")
             else:
-                # Put Trap check supported by Column L negative shrinking
-                if l_curr < 0 and l_curr > l_prev:
+                # Column L negative convergence tracking rule check
+                if l_curr < 0 and l_curr >= l_prev:
                     sig.append("⚠️ CONFIRMED PUT TRAP")
                 else:
                     sig.append("💥 GENUINE DOWN-BREAKOUT (10%)")
@@ -141,12 +157,14 @@ if not df.empty:
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 6. RENDERING PIPELINE (FROM 01 JAN 2025)
+    # 7. CHRONOLOGICAL MATRIX INVERSION & RENDER PIPELINE
     # ==============================================================================
     df_f = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        
+        # UI visualization logic handles the chronological reversal safely
         show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
         flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
@@ -180,6 +198,6 @@ if not df.empty:
             use_container_width=True
         )
     else:
-        st.warning("No data found for the selected range.")
+        st.warning("No data found for the 2025 timeline range.")
 else:
     st.error("Data pipeline load error.")
