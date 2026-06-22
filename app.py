@@ -4,24 +4,24 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty E-J Fixed 2026", layout="wide")
-st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - J)")
-st.write("Strictly Displaying Data from January 1, 2026. Powered by Pure Sign-Difference Matrix (E - J).")
+st.set_page_config(page_title="Nifty E-I Sign Cascade", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - I)")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered from January 1, 2026.")
 
-# Fetch Data safely from Jan 1st, 2026
+# Robust Data Fetcher to prevent blank screens
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # Fetch data cleanly
-    df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
+    # Fetching trailing 2 years to bypass any API freeze and get heavy historical padding
+    df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
         
-    # Flatten MultiIndex columns if yfinance returns them
+    # Flatten MultiIndex columns if present
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
         
-    # Clean empty rows
+    # Clean rows with missing price marks to stop loop breakdown
     df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
     return df_raw
 
@@ -30,9 +30,9 @@ df = load_pure_data()
 if not df.empty:
     df = df.reset_index()
     
-    # Column D: Date and Time Formatter with STRICT Timezone Removal (Fixes Blank Screen)
+    # Column D: Date and Time Formatter Block
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
-    df['Raw_Date'] = pd.to_datetime(df[time_col]).dt.tz_localize(None) # 🔥 CRITICAL FIX
+    df['Raw_Date'] = pd.to_datetime(df[time_col])
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
@@ -57,4 +57,85 @@ if not df.empty:
     if total_rows > 0:
         col_e[0] = float(df['Column C'].values[0])
     for i in range(1, total_rows):
-        col_e[i] = col_e[i-1]
+        col_e[i] = col_e[i-1] + (multiplier * (float(df['Column C'].values[i]) - col_e[i-1]))
+    df['Column E'] = col_e
+    
+    # 5. Column F: Next-Gen Deviation -> C - E
+    df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
+    
+    # 6. Column G: Smooth Loop of Column F (Stage 3 Stable)
+    col_g = np.zeros(total_rows, dtype=float)
+    if total_rows > 0:
+        col_g[0] = float(df['Column F'].values[0])
+    for i in range(1, total_rows):
+        col_g[i] = col_g[i-1] + (multiplier * (float(df['Column F'].values[i]) - col_g[i-1]))
+    df['Column G'] = col_g
+    
+    # 7. Column H: Third-Gen Deviation -> F - G
+    df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
+    
+    # 8. Column I: Smooth Loop of Column H (Stage 4 Stable)
+    col_i = np.zeros(total_rows, dtype=float)
+    if total_rows > 0:
+        col_i[0] = float(df['Column H'].values[0])
+    for i in range(1, total_rows):
+        col_i[i] = col_i[i-1] + (multiplier * (float(df['Column H'].values[i]) - col_i[i-1]))
+    df['Column I'] = col_i
+    
+    # 9. Column J: Smooth Loop of Column I (Stage 5 Stable)
+    col_j = np.zeros(total_rows, dtype=float)
+    if total_rows > 0:
+        col_j[0] = float(col_i[0])
+    for i in range(1, total_rows):
+        col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
+    df['Column J'] = col_j
+    
+    # 🛠️ 10. COLUMN K: FIXED EXACTLY -> (Sign of E) - (Sign of I)
+    sign_e = np.sign(col_e).astype(float)
+    sign_i = np.sign(col_i).astype(float)
+    df['Column K'] = sign_e - sign_i
+    
+    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE (E - I Match)
+    status_list = ["System Booting"]
+    for i in range(1, total_rows):
+        curr_k = float(df['Column K'].values[i])
+        curr_c = float(df['Column C'].values[i])
+        
+        if curr_c > 0:  # Surface price is showing Plus (+)
+            if curr_k == 2.0 or curr_k == 0.0:  
+                status_list.append("🟢 SIGN BULLISH (E-I Confirmed)")
+            else:  # K is negative (-2) -> E is minus, I is plus -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (E-I Inversion Alert!)")
+        else:  # Surface price is showing Minus (-)
+            if curr_k == -2.0 or curr_k == 0.0:  
+                status_list.append("🔴 SIGN BEARISH (E-I Confirmed)")
+            else:  # K is positive (2) -> E is plus, I is minus -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (E-I Inversion Alert!)")
+                
+    df['Signal_Status'] = status_list
+
+    # 🔥 STABLE PRESENTATION FILTER: Backend computation has full depth, UI renders strictly from Jan 1, 2026
+    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    
+    if not df_filtered.empty:
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1]  # Latest candle on top
+        
+        # Grid Theme Color Engine
+        def color_trap_grid(val):
+            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+            return ''
+
+        # Dynamic Frame Render
+        st.dataframe(show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+            'Column K': '{:.0f}'  # Strict single digit integer layout for signs (-2, 0, 2)
+        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+    else:
+        st.warning("January 1, 2026 filtered range empty.")
+else:
+    st.error("Data pipeline load error: Data stream structure couldn't be fetched.")
