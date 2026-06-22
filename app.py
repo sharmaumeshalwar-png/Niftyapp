@@ -4,21 +4,20 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Structural Core Stable", layout="wide")
-st.title("🎯 Nifty 50 Mathematical Price-Density Variance Engine")
-st.write("De-trending Nifty 50 (^NSEI) from May 1, 2026. Zero-division error patch deployed.")
+st.set_page_config(page_title="Nifty Cascade Chain System", layout="wide")
+st.title("🎯 Nifty 50 Infinite Cascading Loop System")
+st.write("Multi-Stage Price Stabilization Chain running from January 1. Every step filters the previous deviation.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely
+# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st Jan
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", start="2026-05-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
     if df_raw.empty:
         return pd.DataFrame()
         
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
         
-    # Drop empty or corrupted data rows instantly
     df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
     return df_raw
 
@@ -27,94 +26,89 @@ df = load_pure_data()
 if not df.empty:
     df = df.reset_index()
     
-    # 1. Column D: Date and Time Formatter
+    # Column D: Date and Time Formatter
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
-    # 2. Column A: Exact Formula -> (High + Low) / 2
+    # Total rows available for the sequential loop
+    total_rows = len(df)
+    multiplier = 0.0001
+    
+    # 1. Column A: Exact Formula -> (High + Low) / 2
     df['Column A'] = (df['High'] + df['Low']) / 2.0
     
-    # 3. Column B: Your Original Base Loop (Multiplier = 0.0001)
-    multiplier_base = 0.0001
-    n_col_b = np.zeros(len(df))
+    # 2. Column B: Smooth Loop of Column A
+    col_b = np.zeros(total_rows)
+    if total_rows > 0:
+        col_b[0] = float(df['Column A'].iloc[0])
+    for i in range(1, total_rows):
+        col_b[i] = col_b[i-1] + (multiplier * (float(df['Column A'].iloc[i]) - col_b[i-1]))
+    df['Column B'] = col_b
     
-    if len(df) > 0:
-        n_col_b[0] = float(df['Column A'].iloc[0])
-        
-    for i in range(1, len(df)):
-        n_col_b[i] = n_col_b[i-1] + (multiplier_base * (float(df['Column A'].iloc[i]) - n_col_b[i-1]))
-        
-    df['Column B'] = n_col_b
-    
-    # 4. Column C: Exact Formula -> A - B Deviation
+    # 3. Column C: Pure Deviation -> A - B
     df['Column C'] = df['Column A'] - df['Column B']
     
-    # ---------------------------------------------------------
-    # 🛠️ PURE MATHEMATICAL MICRO-DENSITY TRACKING ARRAYS
-    # ---------------------------------------------------------
-    # Micro-Range Dispersion Track
-    df['Candle_Range'] = (df['High'] - df['Low']).astype(float)
+    # 4. Column E: Smooth Loop of Column C (Stabilizing C)
+    col_e = np.zeros(total_rows)
+    if total_rows > 0:
+        col_e[0] = float(df['Column C'].iloc[0])
+    for i in range(1, total_rows):
+        col_e[i] = col_e[i-1] + (multiplier * (float(df['Column C'].iloc[i]) - col_e[i-1]))
+    df['Column E'] = col_e
     
-    # Running Average Loop for Volatility Base (Multiplier = 0.01 for Micro-Breathing Space)
-    multiplier_range = 0.01
-    range_b = np.zeros(len(df))
+    # 5. Column F: Next-Gen Deviation -> C - E
+    df['Column F'] = df['Column C'] - df['Column E']
     
-    if len(df) > 0:
-        range_b[0] = float(df['Candle_Range'].iloc[0]) if float(df['Candle_Range'].iloc[0]) > 0 else 1.0
+    # 6. Column G: Smooth Loop of Column F (Stabilizing F)
+    col_g = np.zeros(total_rows)
+    if total_rows > 0:
+        col_g[0] = float(df['Column F'].iloc[0])
+    for i in range(1, total_rows):
+        col_g[i] = col_g[i-1] + (multiplier * (float(df['Column F'].iloc[i]) - col_g[i-1]))
+    df['Column G'] = col_g
+    
+    # 🌟 NEW SUPER SIGNAL ENGINE (Based on Final G Column Velocity)
+    # Checking the final stabilized deviation to reveal the 10% Gold Moves vs 90% Traps
+    status_list = ["System Booting"]
+    for i in range(1, total_rows):
+        curr_g = col_g[i]
+        prev_g = col_g[i-1]
+        curr_c = df['Column C'].iloc[i]
         
-    for i in range(1, len(df)):
-        range_b[i] = range_b[i-1] + (multiplier_range * (float(df['Candle_Range'].iloc[i]) - range_b[i-1]))
+        g_is_rising = curr_g > prev_g
         
-    df['Range_B'] = range_b
-    
-    # Calculate the Core Density Compression Ratio (DCR) Safely
-    # Using python lambda structure to completely eliminate "Script Execution Error" due to division
-    df['DCR'] = df.apply(lambda row: float(row['Column C']) / float(row['Range_B']) if float(row['Range_B']) > 0.0001 else 0.0, axis=1)
-    
-    # ---------------------------------------------------------
-    # 🎯 COLUMN E: PRICE-DENSITY VELOCITY TRAP INTERSECTION
-    # ---------------------------------------------------------
-    status_list = ["Baseline System Boot"]
-    
-    for i in range(1, len(df)):
-        curr_c = float(df['Column C'].iloc[i])
-        dcr = float(df['DCR'].iloc[i])
-        
-        # --- THE REFINED GEOMETRIC 90% VS 10% TRAP FILTER MATRIX ---
-        if curr_c > 0:  # Column C is Plus (+)
-            if dcr > 0.5:  # Organic structural expansion breakout -> 10% Real Move
-                status_list.append("🟢 TRUE BULLISH MOMENTUM (DCR Expansion Verified)")
-            else:  # Price artificially squeezed into a vacuum -> THE 90% CALL TRAP DETECTED!
-                status_list.append("⚠️ 90% FAKE UPMOVE TRAP (Micro Density Compression!)")
+        if curr_c > 0:  # Surface price is showing Plus (+)
+            if g_is_rising:  # Deep cascade sequence is also expanding up -> 10% Real Move
+                status_list.append("🟢 CASCADE BULLISH (Strong Trend)")
+            else:  # Surface is plus but deep cascade is falling -> 90% CALL TRAP
+                status_list.append("⚠️ 90% FAKE UPMOVE (Cascade Alert!)")
+        else:  # Surface price is showing Minus (-)
+            if not g_is_rising:  # Deep cascade sequence is breaking down -> Real Crash
+                status_list.append("🔴 CASCADE BEARISH (Strong Melt)")
+            else:  # Surface is minus but deep cascade is absorbing -> 90% PUT TRAP
+                status_list.append("⚠️ 90% FAKE DOWNMOVE (Short Covering!)")
                 
-        else:  # Column C is New/Minus (-)
-            if dcr < -0.5:  # Organic structural collapse breakdown -> Real Melt
-                status_list.append("🔴 TRUE BEARISH CRASH (DCR Expansion Verified)")
-            else:  # Price artificially held within the density block -> THE 90% PUT TRAP DETECTED!
-                status_list.append("⚠️ 90% FAKE DOWNMOVE TRAP (Micro Space Compression!)")
-                
-    df['Column E'] = status_list
+    df['Signal_Status'] = status_list
+
+    # Filter to display cleanly from January 1, 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
-    # Trim output display boundary cleanly for 1st May 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-05-01'].copy()
+    # Arrange grid layout with proper sequence of columns
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Signal_Status']].copy()
+    show_df = show_df.iloc[::-1]  # Latest rows on top
     
-    # Reverse dataset array to throw latest 1-Hour rows at the top of the grid
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Range_B', 'DCR', 'Column E']].copy()
-    show_df = show_df.iloc[::-1]
-    
-    # Distinct Dashboard Layout Hex-Theming
+    # Grid Theme Color Engine
     def color_trap_grid(val):
         if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
         if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
         if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        if "💤" in val: return 'background-color: #34495e; color: #bdc3c7;'
         return ''
 
-    # Precision Decimal Formatter Block
+    # Dynamic Frame Render
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        'Range_B': '{:.4f}', 'DCR': '{:.4f}'
-    }).map(color_trap_grid, subset=['Column E']), use_container_width=True)
+        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}'
+    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
 else:
-    st.error("Data ingestion failure: Data stream structure couldn't be mounted on Streamlit.")
+    st.error("Data pipeline load error.")
