@@ -25,9 +25,9 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Fixed L Style Reversal)</h1>
-        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> (I row 2) - (I row 1)<br>
-        <b>Rule:</b> Column L turns <b>Absolute Black</b> with White Text on Sign Change. Otherwise, <b>Pure White</b> with Black Text.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Fixed Column I & L Parsing)</h1>
+        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> Strict Visual Row Math [Row 2 - Row 1]<br>
+        <b>Visual Matrix Rule:</b> Sign Change = <b>Absolute Black Cell</b> + White Text. Otherwise = <b>Pure White Cell</b> + Black Text.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -54,7 +54,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Counting Steps to 8)
+    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Step 1 to 8 Counting)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -81,6 +81,7 @@ if not df.empty:
     
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
     
+    # 🌟 COLUMN I ABSOLUTE CALCULATION LOCKED
     col_i = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
     for i in range(1, total_rows):
@@ -98,12 +99,6 @@ if not df.empty:
     sign_h = np.sign(df['Column H'].values).astype(float)
     df['Column K'] = sign_f - sign_h
     
-    # 5. COLUMN L CALCULATION: (Sequential Row 2 - Row 1)
-    col_l = np.zeros(total_rows, dtype=float)
-    for i in range(1, total_rows):
-        col_l[i] = col_i[i] - col_i[i-1]
-    df['Column L'] = col_l
-
     # SIGNAL STATUS GENERATOR
     status_list = ["System Booting"]
     for i in range(1, total_rows):
@@ -117,35 +112,43 @@ if not df.empty:
             else:  status_list.append("⚠️ 90% PUT TRAP")
     df['Signal_Status'] = status_list
 
-    # 6. FILTER & DISPLAY PREPARATION (Jan 1, 2025 onwards)
+    # 5. FILTER & DISPLAY INVERSION (Latest data on top)
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
-        # Inverting data so latest data goes to the top row
-        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Signal_Status']].copy()
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
         show_df = show_df.iloc[::-1].reset_index(drop=True)
         
-        # 🛠️ 7. DIRECT CELL-LEVEL COLOR INJECTION LOGIC FOR COLUMN L
-        # Grid processing row-by-row on the final visual table layout
+        # 🛠️ 6. STRICT VISUAL COLUMN L CORRECTION ENGINE
+        # Screen rows setup: Index '0' is Row 1 (Latest), Index '1' is Row 2 (Previous)
         display_rows = len(show_df)
-        l_styles = []
+        col_l_visual = np.zeros(display_rows, dtype=float)
         
-        for i in range(display_rows):
-            # Last element check handler (boundary control)
-            if i < display_rows - 1:
-                val_current = show_df.loc[i, 'Column L']
-                val_previous = show_df.loc[i+1, 'Column L'] # Row below it in the inverted view is the previous historical row
-                
-                # Check absolute sign shift condition
-                if (val_current > 0 and val_previous < 0) or (val_current < 0 and val_previous > 0):
-                    l_styles.append('background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1px solid #3b82f6;')
-                else:
-                    l_styles.append('background-color: #ffffff !important; color: #000000 !important; font-weight: bold;')
+        for i in range(display_rows - 1):
+            # Formula: (Row 2 of Column I) - (Row 1 of Column I)
+            # In inverted array: Index i+1 is visual Row 2, Index i is visual Row 1
+            col_l_visual[i] = float(show_df.loc[i+1, 'Column I']) - float(show_df.loc[i, 'Column I'])
+            
+        show_df['Column L'] = col_l_visual
+
+        # 🛠️ 7. PURE VISUAL SIGN REVERSAL ENGINE
+        l_styles = [''] * display_rows
+        
+        # Scan from bottom to top of the display grid to check consecutive sign shifts
+        for i in range(display_rows - 2, -1, -1):
+            val_current = col_l_visual[i]      # Current cell
+            val_previous = col_l_visual[i+1]   # Historically previous cell (one row below on screen)
+            
+            # Check strict mathematical sign change (+ to - OR - to +)
+            if (val_current > 0 and val_previous < 0) or (val_current < 0 and val_previous > 0):
+                l_styles[i] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1px solid #3b82f6;'
             else:
-                # Fallback for the very last row in the list
-                l_styles.append('background-color: #ffffff !important; color: #000000 !important; font-weight: bold;')
-        
-        # Injecting styles straight into a helper DataFrame column to bypass Styler index mismatch bugs
+                l_styles[i] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
+                
+        # Default fallback for the absolute bottom edge row
+        if display_rows > 0:
+            l_styles[-1] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
+            
         show_df['L_Style_String'] = l_styles
 
         # 8. THEME RENDERING PIPELINE
@@ -155,14 +158,13 @@ if not df.empty:
             if "⚠️" in val: return 'background-color: #b45309; color: #fef08a; font-weight: bold;'
             return 'background-color: #1f2937; color: #d1d5db;'
 
-        # Final layout injection mapping function
         def apply_direct_l_style(row):
             styles = [''] * len(row)
             l_index = row.index.get_loc('Column L')
             styles[l_index] = row['L_Style_String']
             return styles
 
-        # Render complete customized container grid
+        # Render complete customized grid
         st.dataframe(
             show_df.style.format({
                 'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
