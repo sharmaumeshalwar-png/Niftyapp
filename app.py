@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# 1. BASE CONFIGURATION
-st.set_page_config(page_title="Nifty 2026 Engine", layout="wide")
+# 1. PREMIUM DARK BASE CONFIGURATION
+st.set_page_config(page_title="Nifty Column M Matrix", layout="wide")
 
 st.markdown("""
     <style>
@@ -25,12 +25,13 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (2026 Clean Engine)</h1>
-        <p><b>Timeline:</b> From 1 Jan 2026 onwards | <b>Column L Rule:</b> Dynamic B&W Style Locked on True Sign Flip.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Column M Theme Controller)</h1>
+        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> (I row 2) - (I row 1) Value Only<br>
+        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# 2. DATA PIPELINE WITH TRAILING PADDING
+# 2. DATA PIPELINE
 @st.cache_data(ttl=300)
 def load_pure_data():
     df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
@@ -53,7 +54,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Step 1 to 8 Counting Checked)
+    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Step 1 to 8 Counting)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -92,34 +93,40 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # Column K Calculation
+    # 4. COLUMN K MATH
     sign_f = np.sign(df['Column F'].values).astype(float)
     sign_h = np.sign(df['Column H'].values).astype(float)
     df['Column K'] = sign_f - sign_h
     
-    # 4. COLUMN L MATRIX MATH
+    # 5. COLUMN L MATH: Strict Chronological Delta
     col_l = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 5. STATEFUL SIGN CHANGE DETECTOR
-    l_styles = []
+    # 🛠️ 6. NEW STRUCTURE: COLUMN M TEXT GENERATOR & THEME TRACKER
+    col_m_text = ["➡️ CONTINUOUS"] * total_rows
+    l_change_flag = np.zeros(total_rows, dtype=bool)
+    
     last_valid_sign = 0
-    for i in range(total_rows):
-        val_l = col_l[i]
-        if val_l > 0: current_sign = 1
-        elif val_l < 0: current_sign = -1
-        else: current_sign = 0
-            
-        if last_valid_sign != 0 and current_sign != 0 and current_sign != last_valid_sign:
-            l_styles.append('background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1px solid #3b82f6;')
+    for i in range(1, total_rows):
+        current_val = col_l[i]
+        
+        if current_val > 0:
+            current_sign = 1
+        elif current_val < 0:
+            current_sign = -1
         else:
-            l_styles.append('background-color: #ffffff !important; color: #000000 !important; font-weight: bold;')
+            current_sign = 0
             
         if current_sign != 0:
+            if last_valid_sign != 0 and current_sign != last_valid_sign:
+                l_change_flag[i] = True
+                col_m_text[i] = "🔄 SIGN CHANGED"
             last_valid_sign = current_sign
-    df['L_Style_String'] = l_styles
+            
+    df['Column M'] = col_m_text
+    df['L_Sign_Change'] = l_change_flag
 
     # SIGNAL STATUS GENERATOR
     status_list = ["System Booting"]
@@ -134,35 +141,47 @@ if not df.empty:
             else:  status_list.append("⚠️ 90% PUT TRAP")
     df['Signal_Status'] = status_list
 
-    # 6. FILTER FROM 1 JAN 2026 & VIEW REVERSAL
-    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    # 7. FILTER & DISPLAY PREPARATION (Jan 1, 2025 Layout)
+    df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
-        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'L_Style_String', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1].reset_index(drop=True)
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'L_Sign_Change', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1].reset_index(drop=True)  # Reverse layout securely
         
-        # 7. RENDERING STYLES
+        # 8. THEME RENDERING PIPELINE FOR COLUMN M & SIGNALS
         def style_signal_cells(val):
             if "🟢" in val: return 'background-color: #064e3b; color: #34d399; font-weight: bold;'
             if "🔴" in val: return 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
             if "⚠️" in val: return 'background-color: #b45309; color: #fef08a; font-weight: bold;'
             return 'background-color: #1f2937; color: #d1d5db;'
 
-        def apply_direct_l_style(row):
+        # 🛠️ STYLING RULES DIRECTLY FOR COLUMN M
+        def apply_column_m_theme(row):
             styles = [''] * len(row)
-            l_index = row.index.get_loc('Column L')
-            styles[l_index] = row['L_Style_String']
+            m_index = row.index.get_loc('Column M')
+            
+            # If backend flagged true sign change, make Column M Absolute Black
+            if row['L_Sign_Change'] == True:
+                styles[m_index] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+            else:
+                # Otherwise Column M remains Pure White
+                styles[m_index] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
             return styles
 
-        # 8. SAFE GRID FORMATTING STRINGS MAP (Single line layout representation to prevent truncation error)
-        fmt_dict = {'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}', 'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.0f}', 'Column L': '{:.6f}'}
-
+        # Render complete grid frame container
         st.dataframe(
-            show_df.style.format(fmt_dict).map(style_signal_cells, subset=['Signal_Status']).apply(apply_direct_l_style, axis=1),
-            column_order=['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Signal_Status'],
+            show_df.style.format({
+                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+                'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+                'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+                'Column K': '{:.0f}', 'Column L': '{:.6f}'
+            })
+            .map(style_signal_cells, subset=['Signal_Status'])
+            .apply(apply_column_m_theme, axis=1),
+            column_order=['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status'],
             use_container_width=True
         )
     else:
-        st.warning("January 1, 2026 filtered range empty.")
+        st.warning("January 1, 2025 filtered range empty.")
 else:
     st.error("Data pipeline load error.")
