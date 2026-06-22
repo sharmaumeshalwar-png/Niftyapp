@@ -25,9 +25,10 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Daily Candle Theme Controller)</h1>
+        <h1>🎯 Nifty 50 Pure Cascade (Updated Column L & M Engine)</h1>
         <p><b>Interval:</b> Daily Candles (1D) | <b>Start Filter:</b> 01 Jan 2026<br>
-        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
+        <b>Column L Rule:</b> (% Change of H from F) - (% Change of F from C)<br>
+        <b>Column M Rule:</b> Delta of Column L i.e. <code>L[i] - L[i-1]</code></p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -97,30 +98,26 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K & L CORE ENGINE
+    # 4. UPDATED COLUMN K & L CORE ENGINE (Percentage Shift Logic)
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
-    col_l = np.zeros(total_rows, dtype=float)
-    for i in range(1, total_rows):
-        col_l[i] = col_i[i] - col_i[i-1]
-    df['Column L'] = col_l
-
-    # 5. COLUMN M VALIDATOR
-    m_txt = ["➡️ CONTINUOUS"] * total_rows
-    chg_flag = np.zeros(total_rows, dtype=bool)
-    last_v = 0
+    # Avoid Division by Zero using np.where
+    c_vals = df['Column C'].values
+    f_vals = df['Column F'].values
+    h_vals = df['Column H'].values
     
+    pct_f_from_c = np.where(c_vals != 0, ((f_vals - c_vals) / np.abs(c_vals)) * 100.0, 0.0)
+    pct_h_from_f = np.where(f_vals != 0, ((h_vals - f_vals) / np.abs(f_vals)) * 100.0, 0.0)
+    
+    # Column L = Net percentage shift
+    df['Column L'] = pct_h_from_f - pct_f_from_c
+
+    # 5. UPDATED COLUMN M VALIDATOR (M2 = L2 - L1)
+    col_l = df['Column L'].values
+    col_m = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
-        v = col_l[i]
-        curr_s = 1 if v > 0 else (-1 if v < 0 else 0)
-        if curr_s != 0:
-            if last_v != 0 and curr_s != last_v:
-                chg_flag[i] = True
-                m_txt[i] = "🔄 SIGN CHANGED"
-            last_v = curr_s
-            
-    df['Column M'] = m_txt
-    df['L_Sign_Change'] = chg_flag
+        col_m[i] = col_l[i] - col_l[i-1]
+    df['Column M'] = col_m
 
     # 6. SIGNALS TRACKER
     sig = ["System Booting"]
@@ -139,18 +136,20 @@ if not df.empty:
     if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
         show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
-        flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
         def grid_style(row):
-            idx = row.name
             st_list = [''] * len(row)
             m_pos = row.index.get_loc('Column M')
             s_pos = row.index.get_loc('Signal_Status')
             
-            if idx < len(flags) and flags.iloc[idx]:
-                st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+            # Dynamic Styling for Column M numeric shifts
+            m_val = float(row['Column M'])
+            if m_val > 0:
+                st_list[m_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold; border-left: 3px solid #10b981;'
+            elif m_val < 0:
+                st_list[m_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold; border-left: 3px solid #ef4444;'
             else:
-                st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
+                st_list[m_pos] = 'background-color: #1f2937; color: #ffffff;'
                 
             val = str(row['Signal_Status'])
             if "🟢" in val:
@@ -168,7 +167,7 @@ if not df.empty:
                 'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
                 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
                 'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-                'Column K': '{:.0f}', 'Column L': '{:.6f}'
+                'Column K': '{:.0f}', 'Column L': '{:.4f}%', 'Column M': '{:.4f}%'
             }).apply(grid_style, axis=1),
             use_container_width=True
         )
