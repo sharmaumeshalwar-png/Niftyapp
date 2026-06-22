@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty 4-Stage Cascade Jan 1", layout="wide")
-st.title("🎯 Nifty 50 4-Stage Infinite Cascading Loop System")
-st.write("Deep Mathematical Price Stabilization Chain running and displaying continuously from January 1, 2026.")
+st.set_page_config(page_title="Nifty 5-Stage Ultimate Cascade", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Ultimate Cascading Loop System")
+st.write("5 Layers of Pure Mathematical Price Stabilization. Final signals driven strictly by Column K (I - J).")
 
 # Fetch Data safely from Jan 1st
 @st.cache_data(ttl=300)
@@ -81,30 +81,41 @@ if not df.empty:
         col_i[i] = col_i[i-1] + (multiplier * (float(df['Column H'].values[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
-    # 🌟 ULTIMATE 4-STAGE SIGNAL ENGINE (Based on Final Column I Velocity)
+    # 9. Column J: Smooth Loop of Column I (Stage 5 Stable - FIXED)
+    col_j = np.zeros(total_rows, dtype=float)
+    if total_rows > 0:
+        col_j[0] = float(col_i[0])
+    for i in range(1, total_rows):
+        col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
+    df['Column J'] = col_j
+    
+    # 10. Column K: Final Master Deviation -> I - J (NEW LEG)
+    df['Column K'] = col_i - col_j
+    
+    # 🌟 ULTIMATE 5-STAGE SIGNAL ENGINE (Strictly driven by Column K Response)
     status_list = ["System Booting"]
     for i in range(1, total_rows):
-        curr_i = col_i[i]
-        prev_i = col_i[i-1]
+        curr_k = df['Column K'].values[i]
+        prev_k = df['Column K'].values[i-1]
         curr_c = float(df['Column C'].values[i])
         
-        i_is_rising = curr_i > prev_i
+        k_is_rising = curr_k > prev_k
         
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if i_is_rising:  # Deep 4th layer sequence is expanding up -> 10% Real Move
-                status_list.append("🟢 4-STAGE BULLISH (High Conviction)")
-            else:  # Surface is plus but deep micro-stabilizer is falling -> 90% CALL TRAP
-                status_list.append("⚠️ 90% CALL TRAP (Deep Cascade Alert!)")
+            if k_is_rising:  # 5th Layer core deviation is accelerating upward -> 10% Real Alpha Move
+                status_list.append("🟢 K-STAGE BULLISH (Absolute Trend)")
+            else:  # Surface is plus but deep 5th-layer filter is dropping -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (Column K Negative Dispersion!)")
         else:  # Surface price is showing New/Minus (-)
-            if not i_is_rising:  # Deep 4th layer sequence is breaking down -> Real Crash
-                status_list.append("🔴 4-STAGE BEARISH (High Conviction)")
-            else:  # Surface is minus but deep micro-stabilizer is absorbing -> 90% PUT TRAP
-                status_list.append("⚠️ 90% PUT TRAP (Short Covering!)")
+            if not k_is_rising:  # 5th Layer core deviation is collapsing downward -> Real Crash
+                status_list.append("🔴 K-STAGE BEARISH (Absolute Melt)")
+            else:  # Surface is minus but deep 5th-layer filter is expanding/absorbing -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (Column K Accumulation!)")
                 
     df['Signal_Status'] = status_list
 
-    # Pure Raw Render without any date trimming - strictly from Jan 1st to latest candle
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Signal_Status']].copy()
+    # Complete dataset display from Jan 1st to latest candle row
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
     show_df = show_df.iloc[::-1]  # Latest candle on top
     
     # Grid Theme Color Engine
@@ -114,11 +125,11 @@ if not df.empty:
         if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
         return ''
 
-    # Dynamic Frame Render with explicit floating formats up to 4 decimal precision
+    # Precision Decimal Formatter Block
     st.dataframe(show_df.style.format({
         'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
         'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-        'Column H': '{:.4f}', 'Column I': '{:.4f}'
+        'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.4f}'
     }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
 else:
     st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
