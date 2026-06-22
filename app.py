@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Pure Sign Cascade", layout="wide")
-st.title("🎯 Nifty 50 5-Stage Pure Sign-Difference Cascade System")
-st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Real-time tracking from June 1, 2025.")
+st.set_page_config(page_title="Nifty E-J Sign Cascade", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - J)")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of J). Running continuously from June 1, 2025.")
 
 # Fetch Data safely from Jan 1st, 2025 for perfect math anchoring
 @st.cache_data(ttl=300)
@@ -89,27 +89,27 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 🛠️ 10. COLUMN K: PURE SIGN DIFFERENCE MATRIX -> (Sign of E) - (Sign of I)
+    # 🛠️ 10. COLUMN K: FIXED SIGN DIFFERENCE -> (Sign of E) - (Sign of J)
     sign_e = np.sign(col_e)
-    sign_i = np.sign(col_i)
-    df['Column K'] = (sign_e - sign_i).astype(float)
+    sign_j = np.sign(col_j)
+    df['Column K'] = (sign_e - sign_j).astype(float)
     
-    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE
+    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE (E - J Match)
     status_list = ["System Booting"]
     for i in range(1, total_rows):
         curr_k = df['Column K'].values[i]
         curr_c = float(df['Column C'].values[i])
         
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if curr_k == 2 or curr_k == 0:  # Structural velocity confirms or holds momentum
-                status_list.append("🟢 SIGN BULLISH (Trend Confirmed)")
-            else:  # K is negative (-2) -> Signs mismatch -> 90% CALL TRAP
-                status_list.append("⚠️ 90% CALL TRAP (Sign Inversion Alert!)")
+            if curr_k == 2 or curr_k == 0:  # Short-term E loop leads or matches positively
+                status_list.append("🟢 SIGN BULLISH (E-J Confirmed)")
+            else:  # K is negative (-2) -> E is minus, J is plus -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (E-J Inversion Alert!)")
         else:  # Surface price is showing Minus (-)
-            if curr_k == -2 or curr_k == 0:  # Structural drop holds momentum
-                status_list.append("🔴 SIGN BEARISH (Trend Confirmed)")
-            else:  # K is positive (2) -> Signs mismatch -> 90% PUT TRAP
-                status_list.append("⚠️ 90% PUT TRAP (Sign Inversion Alert!)")
+            if curr_k == -2 or curr_k == 0:  # Short-term E loop leads or matches negatively
+                status_list.append("🔴 SIGN BEARISH (E-J Confirmed)")
+            else:  # K is positive (2) -> E is plus, J is minus -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (E-J Inversion Alert!)")
                 
     df['Signal_Status'] = status_list
 
@@ -121,19 +121,4 @@ if not df.empty:
         show_df = show_df.iloc[::-1]  # Latest candle on top
         
         # Grid Theme Color Engine
-        def color_trap_grid(val):
-            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-            return ''
-
-        # Dynamic Frame Render
-        st.dataframe(show_df.style.format({
-            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.0f}'  # Int format for signs (-2, 0, 2)
-        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
-    else:
-        st.warning("June 2025 filtered range empty.")
-else:
-    st.error("Data pipeline load error.")
+        def color_
