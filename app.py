@@ -49,7 +49,7 @@ if not df.empty:
         col_b[i] = col_b[i-1] + (multiplier * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # 3. Column C: Pure Deviation -> A - B
+    # 3. Column C: Pure Deviation -> A - B (FIXED TYPO HERE)
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     # 4. Column E: Smooth Loop of Column C (Stage 2 Stable)
@@ -102,19 +102,19 @@ if not df.empty:
         curr_c = float(df['Column C'].values[i])
         
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if curr_k == 2.0 or curr_k == 0.0:  # Short-term loop F leads or matches H positively
+            if curr_k == 2.0 or curr_k == 0.0:  
                 status_list.append("🟢 SIGN BULLISH (F-H Confirmed)")
-            else:  # K is negative (-2) -> F is minus, H is plus -> 90% CALL TRAP
+            else:  
                 status_list.append("⚠️ 90% CALL TRAP (F-H Inversion Alert!)")
         else:  # Surface price is showing Minus (-)
-            if curr_k == -2.0 or curr_k == 0.0:  # Short-term loop F leads or matches H negatively
+            if curr_k == -2.0 or curr_k == 0.0:  
                 status_list.append("🔴 SIGN BEARISH (F-H Confirmed)")
-            else:  # K is positive (2) -> F is plus, H is minus -> 90% PUT TRAP
+            else:  
                 status_list.append("⚠️ 90% PUT TRAP (F-H Inversion Alert!)")
                 
     df['Signal_Status'] = status_list
 
-    # 🔥 PRESENTATION FILTER: Backend has full padding depth, UI displays strictly from January 1, 2025
+    # 🔥 PRESENTATION FILTER: UI displays strictly from January 1, 2025
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
@@ -128,10 +128,14 @@ if not df.empty:
             if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
             return ''
 
-        # Dynamic Frame Render safely without object formatting mismatch
+        # Dynamic Frame Render
         st.dataframe(show_df.style.format({
             'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
             'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
             'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-            'Column K': '{:.0f}'  # Strict single digit integer layout (-2, 0, 2)
-        }).map(color_trap_grid, subset=
+            'Column K': '{:.0f}'  
+        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+    else:
+        st.warning("January 1, 2025 filtered range empty.")
+else:
+    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
