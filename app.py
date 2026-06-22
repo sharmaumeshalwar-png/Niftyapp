@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# 1. PREMIUM DARK BASE CONFIGURATION
-st.set_page_config(page_title="Nifty Fixed Column L Engine", layout="wide")
+# 1. BASE SYSTEM AND LAYOUT CONFIGURATION
+st.set_page_config(page_title="Nifty Fixed Core Matrix", layout="wide")
 
 st.markdown("""
     <style>
@@ -25,13 +25,13 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Fixed Column I & L Parsing)</h1>
-        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> Strict Visual Row Math [Row 2 - Row 1]<br>
-        <b>Visual Matrix Rule:</b> Sign Change = <b>Absolute Black Cell</b> + White Text. Otherwise = <b>Pure White Cell</b> + Black Text.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Strict Core Logic Lock)</h1>
+        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> Strict Row 2 - Row 1 Math<br>
+        <b>Visual Styling:</b> Sign Change = <b>Absolute Black Cell</b> + White Text. Otherwise = <b>Pure White Cell</b> + Black Text.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# 2. DATA PIPELINE WITH TRAILING BUFFER
+# 2. DATA PIPELINE WITH PADDING
 @st.cache_data(ttl=300)
 def load_pure_data():
     df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
@@ -54,7 +54,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (Step 1 to 8 Counting)
+    # 3. CORE 5-STAGE MATHEMATICAL CASCADE (8-Step Exact Verification)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -81,7 +81,7 @@ if not df.empty:
     
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
     
-    # 🌟 COLUMN I ABSOLUTE CALCULATION LOCKED
+    # Column I Safe Compute
     col_i = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
     for i in range(1, total_rows):
@@ -94,11 +94,39 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K CALCULATOR
+    # Column K Formula Lock
     sign_f = np.sign(df['Column F'].values).astype(float)
     sign_h = np.sign(df['Column H'].values).astype(float)
     df['Column K'] = sign_f - sign_h
     
+    # 🛠️ 4. STABLE COLUMN L GENERATION (Chronological Math Base)
+    # This directly calculates: Current Row I - Previous Row I
+    df['Column L'] = df['Column I'].diff().astype(float)
+    df['Column L'] = df['Column L'].fillna(0.0)
+
+    # 🛠️ 5. STABLE CHRONOLOGICAL SIGN CHANGE DETECTOR (Zero-Safe Check)
+    l_values = df['Column L'].values
+    l_change_flag = np.zeros(total_rows, dtype=bool)
+    
+    # Tracking historical signs before visual flip takes place
+    last_valid_sign = 0
+    for i in range(1, total_rows):
+        current_val = l_values[i]
+        
+        if current_val > 0:
+            current_sign = 1
+        elif current_val < 0:
+            current_sign = -1
+        else:
+            current_sign = 0
+            
+        if current_sign != 0:
+            if last_valid_sign != 0 and current_sign != last_valid_sign:
+                l_change_flag[i] = True  # Strict True Sign Flip Alert!
+            last_valid_sign = current_sign
+            
+    df['L_Sign_Change'] = l_change_flag
+
     # SIGNAL STATUS GENERATOR
     status_list = ["System Booting"]
     for i in range(1, total_rows):
@@ -112,59 +140,33 @@ if not df.empty:
             else:  status_list.append("⚠️ 90% PUT TRAP")
     df['Signal_Status'] = status_list
 
-    # 5. FILTER & DISPLAY INVERSION (Latest data on top)
+    # 6. FILTER AND INVERT VIEW FOR DISPLAY (1 Jan 2025 Layout)
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
-        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1].reset_index(drop=True)
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'L_Sign_Change', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1].reset_index(drop=True)  # Latest top view setup
         
-        # 🛠️ 6. STRICT VISUAL COLUMN L CORRECTION ENGINE
-        # Screen rows setup: Index '0' is Row 1 (Latest), Index '1' is Row 2 (Previous)
-        display_rows = len(show_df)
-        col_l_visual = np.zeros(display_rows, dtype=float)
-        
-        for i in range(display_rows - 1):
-            # Formula: (Row 2 of Column I) - (Row 1 of Column I)
-            # In inverted array: Index i+1 is visual Row 2, Index i is visual Row 1
-            col_l_visual[i] = float(show_df.loc[i+1, 'Column I']) - float(show_df.loc[i, 'Column I'])
-            
-        show_df['Column L'] = col_l_visual
-
-        # 🛠️ 7. PURE VISUAL SIGN REVERSAL ENGINE
-        l_styles = [''] * display_rows
-        
-        # Scan from bottom to top of the display grid to check consecutive sign shifts
-        for i in range(display_rows - 2, -1, -1):
-            val_current = col_l_visual[i]      # Current cell
-            val_previous = col_l_visual[i+1]   # Historically previous cell (one row below on screen)
-            
-            # Check strict mathematical sign change (+ to - OR - to +)
-            if (val_current > 0 and val_previous < 0) or (val_current < 0 and val_previous > 0):
-                l_styles[i] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1px solid #3b82f6;'
-            else:
-                l_styles[i] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
-                
-        # Default fallback for the absolute bottom edge row
-        if display_rows > 0:
-            l_styles[-1] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
-            
-        show_df['L_Style_String'] = l_styles
-
-        # 8. THEME RENDERING PIPELINE
+        # 7. COLOR MATRIX FORMULATION
         def style_signal_cells(val):
             if "🟢" in val: return 'background-color: #064e3b; color: #34d399; font-weight: bold;'
             if "🔴" in val: return 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
             if "⚠️" in val: return 'background-color: #b45309; color: #fef08a; font-weight: bold;'
             return 'background-color: #1f2937; color: #d1d5db;'
 
-        def apply_direct_l_style(row):
+        # 🛠️ STRICT CELL CONDITION RULES FOR BLACK & WHITE SELECTION
+        def apply_l_cell_theme(row):
             styles = [''] * len(row)
             l_index = row.index.get_loc('Column L')
-            styles[l_index] = row['L_Style_String']
+            
+            # Using the pre-calculated calculation flag directly
+            if row['L_Sign_Change'] == True:
+                styles[l_index] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+            else:
+                styles[l_index] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
             return styles
 
-        # Render complete customized grid
+        # Render complete customized container grid Frame
         st.dataframe(
             show_df.style.format({
                 'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
@@ -173,7 +175,7 @@ if not df.empty:
                 'Column K': '{:.0f}', 'Column L': '{:.6f}'
             })
             .map(style_signal_cells, subset=['Signal_Status'])
-            .apply(apply_direct_l_style, axis=1),
+            .apply(apply_l_cell_theme, axis=1),
             column_order=['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Signal_Status'],
             use_container_width=True
         )
