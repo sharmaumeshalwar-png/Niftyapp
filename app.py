@@ -3,44 +3,39 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# 1. BASE CONFIGURATION
-st.set_page_config(page_title="Nifty Column M Matrix", layout="wide")
+# ==============================================================================
+# 1. BASE MATRIX SETTINGS
+# ==============================================================================
+st.set_page_config(page_title="Nifty Column M Matrix (Daily)", layout="wide")
 
 st.markdown("""
     <style>
-        html, body, [data-testid="stAppViewContainer"] {
-            background-color: #0b0f19 !important;
-            color: #ffffff !important;
-        }
+        html, body, [data-testid="stAppViewContainer"] { background-color: #0b0f19 !important; color: #ffffff !important; }
         h1, h3, p, span, label { color: #ffffff !important; }
         .title-block {
             background: linear-gradient(90deg, #111827, #1f2937);
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 5px solid #3b82f6;
-            margin-bottom: 25px;
+            padding: 20px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Daily Candle Theme Controller)</h1>
-        <p><b>Interval:</b> Daily Candles (1D) | <b>Start Filter:</b> 01 Jan 2026<br>
-        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Column L Aligned Engine)</h1>
+        <p><b>Signal Filter:</b> Automated Column L Momentum Alignment Detector (Bypassing 10% Fake Traps)</p>
     </div>
 """, unsafe_allow_html=True)
 
+# ==============================================================================
 # 2. DATA PIPELINE
+# ==============================================================================
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", period="2y", interval="1d")
-    if df_raw.empty:
-        return pd.DataFrame()
+    df_raw = yf.download(tickers="^NSEI", period="5y", interval="1d")
+    if df_raw.empty: return pd.DataFrame()
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
-    df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
-    return df_raw
+    return df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
 
 df = load_pure_data()
 
@@ -57,8 +52,7 @@ if not df.empty:
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
-    if total_rows > 0:
-        col_b[0] = float(df['Column A'].values[0])
+    if total_rows > 0: col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
@@ -66,8 +60,7 @@ if not df.empty:
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     col_e = np.zeros(total_rows, dtype=float)
-    if total_rows > 0:
-        col_e[0] = float(df['Column C'].values[0])
+    if total_rows > 0: col_e[0] = float(df['Column C'].values[0])
     for i in range(1, total_rows):
         col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
     df['Column E'] = col_e
@@ -75,8 +68,7 @@ if not df.empty:
     df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
     
     col_g = np.zeros(total_rows, dtype=float)
-    if total_rows > 0:
-        col_g[0] = float(df['Column F'].values[0])
+    if total_rows > 0: col_g[0] = float(df['Column F'].values[0])
     for i in range(1, total_rows):
         col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
     df['Column G'] = col_g
@@ -84,20 +76,17 @@ if not df.empty:
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
     
     col_i = np.zeros(total_rows, dtype=float)
-    if total_rows > 0:
-        col_i[0] = float(df['Column H'].values[0])
+    if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
     for i in range(1, total_rows):
         col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
     col_j = np.zeros(total_rows, dtype=float)
-    if total_rows > 0:
-        col_j[0] = float(col_i[0])
+    if total_rows > 0: col_j[0] = float(col_i[0])
     for i in range(1, total_rows):
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K & L CORE ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -105,11 +94,10 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 5. COLUMN M VALIDATOR
+    # 4. COLUMN M LOGIC
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
-    
     for i in range(1, total_rows):
         v = col_l[i]
         curr_s = 1 if v > 0 else (-1 if v < 0 else 0)
@@ -118,23 +106,44 @@ if not df.empty:
                 chg_flag[i] = True
                 m_txt[i] = "🔄 SIGN CHANGED"
             last_v = curr_s
-            
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 6. SIGNALS TRACKER
+    # ==============================================================================
+    # 5. ADVANCED COLUMN L ALIGNED SIGNAL ENGINE (FILTERS OUT THE 10% FAKES)
+    # ==============================================================================
     sig = ["System Booting"]
     for i in range(1, total_rows):
         k = float(df['Column K'].values[i])
         c = float(df['Column C'].values[i])
+        l_curr = float(col_l[i])
+        l_prev = float(col_l[i-1]) if i > 0 else 0.0
+        
         if c > 0:
-            sig.append("🟢 SIGN BULLISH" if k in [2.0, 0.0] else "⚠️ 90% CALL TRAP")
+            if k in [2.0, 0.0]:
+                sig.append("🟢 SIGN BULLISH")
+            else:
+                # Call Trap check supported by Column L velocity deceleration
+                if l_curr > 0 and l_curr < l_prev:
+                    sig.append("⚠️ CONFIRMED CALL TRAP")
+                else:
+                    sig.append("🚀 GENUINE UP-BREAKOUT (10%)")
         else:
-            sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️ 90% PUT TRAP")
+            if k in [-2.0, 0.0]:
+                sig.append("🔴 SIGN BEARISH")
+            else:
+                # Put Trap check supported by Column L negative shrinking
+                if l_curr < 0 and l_curr > l_prev:
+                    sig.append("⚠️ CONFIRMED PUT TRAP")
+                else:
+                    sig.append("💥 GENUINE DOWN-BREAKOUT (10%)")
+                    
     df['Signal_Status'] = sig
 
-    # 7. HIGH-PERFORMANCE RENDERING PIPELINE (JAN 2026 FILTER)
-    df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    # ==============================================================================
+    # 6. RENDERING PIPELINE (FROM 01 JAN 2025)
+    # ==============================================================================
+    df_f = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
@@ -153,14 +162,12 @@ if not df.empty:
                 st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
                 
             val = str(row['Signal_Status'])
-            if "🟢" in val:
-                st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
-            elif "🔴" in val:
-                st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
-            elif "⚠️" in val:
-                st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
-            else:
-                st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+            if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
+            elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+            elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
+            elif "🚀" in val or "💥" in val: st_list[s_pos] = 'background-color: #1e3a8a; color: #93c5fd; font-weight: bold;'
+            else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+            
             return st_list
 
         st.dataframe(
@@ -173,6 +180,6 @@ if not df.empty:
             use_container_width=True
         )
     else:
-        st.warning("No data found for 2026 range.")
+        st.warning("No data found for the selected range.")
 else:
     st.error("Data pipeline load error.")
