@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # ==============================================================================
-# 1. PREMIUM DARK BASE CONFIGURATION
+# 1. BASE MATRIX SETTINGS
 # ==============================================================================
 st.set_page_config(page_title="Nifty Column M Matrix", layout="wide")
 
@@ -34,7 +34,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE VIA YFINANCE
+# 2. DATA PIPELINE
 # ==============================================================================
 @st.cache_data(ttl=300)
 def load_pure_data():
@@ -50,23 +50,22 @@ df = load_pure_data()
 
 if not df.empty:
     df = df.reset_index()
-    
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
-    multiplier = 0.0001
+    mul = 0.0001
     
     # ==============================================================================
-    # 3. CORE 5-STAGE MATHEMATICAL CASCADE
+    # 3. MATHEMATICAL CASCADE ENGINE
     # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
-        col_b[i] = col_b[i-1] + (multiplier * (float(df['Column A'].values[i]) - col_b[i-1]))
+        col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
@@ -74,7 +73,7 @@ if not df.empty:
     col_e = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_e[0] = float(df['Column C'].values[0])
     for i in range(1, total_rows):
-        col_e[i] = col_e[i-1] + (multiplier * (float(df['Column C'].values[i]) - col_e[i-1]))
+        col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
     df['Column E'] = col_e
     
     df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
@@ -82,7 +81,7 @@ if not df.empty:
     col_g = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_g[0] = float(df['Column F'].values[0])
     for i in range(1, total_rows):
-        col_g[i] = col_g[i-1] + (multiplier * (float(df['Column F'].values[i]) - col_g[i-1]))
+        col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
     df['Column G'] = col_g
     
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
@@ -90,40 +89,8 @@ if not df.empty:
     col_i = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
     for i in range(1, total_rows):
-        col_i[i] = col_i[i-1] + (multiplier * (float(df['Column H'].values[i]) - col_i[i-1]))
+        col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
     col_j = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_j[0] = float(col_i[0])
-    for i in range(1, total_rows):
-        col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
-    df['Column J'] = col_j
-    
-    # 4. COLUMN K MATRIX MATHEMATICS
-    sign_f = np.sign(df['Column F'].values).astype(float)
-    sign_h = np.sign(df['Column H'].values).astype(float)
-    df['Column K'] = sign_f - sign_h
-    
-    # 5. COLUMN L MATHEMATICS
-    col_l = np.zeros(total_rows, dtype=float)
-    for i in range(1, total_rows):
-        col_l[i] = col_i[i] - col_i[i-1]
-    df['Column L'] = col_l
-
-    # 6. COLUMN M ENGINE & TRACKER MATRIX RULE
-    col_m_text = ["➡️ CONTINUOUS"] * total_rows
-    l_change_flag = np.zeros(total_rows, dtype=bool)
-    
-    last_valid_sign = 0
-    for i in range(1, total_rows):
-        current_val = col_l[i]
-        
-        if current_val > 0:
-            current_sign = 1
-        elif current_val < 0:
-            current_sign = -1
-        else:
-            current_sign = 0
-            
-        if current_sign != 0:
-            if last_valid
