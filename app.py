@@ -35,7 +35,6 @@ st.markdown("""
 # 2. DATA PIPELINE
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # 2y period safe hai taaki July 2025 ke start ke liye mathematical indicators acche se stabilize ho sakein
     df_raw = yf.download(tickers="^NSEI", period="2y", interval="1d")
     if df_raw.empty:
         return pd.DataFrame()
@@ -99,7 +98,7 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K & L CORE ENGINE
+    # 4. CORE ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     c_vals = df['Column C'].values
@@ -111,7 +110,7 @@ if not df.empty:
     
     df['Column L'] = pct_h_from_f - pct_f_from_c
 
-    # 5. COLUMN M VALIDATOR (M[i] = L[i] - L[i-1])
+    # 5. COLUMN M VALIDATOR
     col_l = df['Column L'].values
     col_m = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
@@ -126,4 +125,50 @@ if not df.empty:
         if c > 0:
             sig.append("🟢 SIGN BULLISH" if k in [2.0, 0.0] else "⚠️ 90% CALL TRAP")
         else:
-            sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️
+            sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️ 90% PUT TRAP")
+    df['Signal_Status'] = sig
+
+    # 7. RENDERING PIPELINE (01 JULY 2025)
+    df_f = df[df['Raw_Date'] >= '2025-07-01'].copy()
+    
+    if not df_f.empty:
+        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
+
+        def grid_style(row):
+            st_list = [''] * len(row)
+            m_pos = row.index.get_loc('Column M')
+            s_pos = row.index.get_loc('Signal_Status')
+            
+            m_val = float(row['Column M'])
+            if m_val > 0:
+                st_list[m_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold; border-left: 3px solid #10b981;'
+            elif m_val < 0:
+                st_list[m_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold; border-left: 3px solid #ef4444;'
+            else:
+                st_list[m_pos] = 'background-color: #1f2937; color: #ffffff;'
+                
+            val = str(row['Signal_Status'])
+            if "🟢" in val:
+                st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
+            elif "🔴" in val:
+                st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+            elif "⚠️" in val:
+                st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
+            else:
+                st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+            return st_list
+
+        st.dataframe(
+            show_df.style.format({
+                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+                'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+                'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+                'Column K': '{:.0f}', 'Column L': '{:.4f}%', 'Column M': '{:.4f}%'
+            }).apply(grid_style, axis=1),
+            use_container_width=True
+        )
+    else:
+        st.warning("No data found for the selected date range.")
+else:
+    st.error("Data pipeline load error.")
