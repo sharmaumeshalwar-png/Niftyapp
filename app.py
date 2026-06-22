@@ -4,15 +4,14 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Cascade Chain Fixed", layout="wide")
+st.set_page_config(page_title="Nifty Cascade Chain June 2026", layout="wide")
 st.title("🎯 Nifty 50 Infinite Cascading Loop System")
-st.write("Multi-Stage Price Stabilization Chain running from March 1, 2026. Anti-crash data patch deployed.")
+st.write("Multi-Stage Price Stabilization Chain running from June 1, 2026. Every step filters the previous deviation.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely
+# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st June 2026
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # Fetching hourly data from 1st March 2026 safely
-    df_raw = yf.download(tickers="^NSEI", start="2026-03-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2026-06-01", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
@@ -93,8 +92,8 @@ if not df.empty:
                 
     df['Signal_Status'] = status_list
 
-    # Filter to display cleanly from March 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-03-01'].copy()
+    # Filter to display cleanly from June 1, 2026 onwards
+    df = df[df['Raw_Date'] >= '2026-06-01'].copy()
     
     # Arrange grid layout with proper sequence of columns
     show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Signal_Status']].copy()
@@ -113,4 +112,4 @@ if not df.empty:
         'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}'
     }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
 else:
-    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
+    st.error("Data pipeline load error: Data stream structure couldn't be mounted on
