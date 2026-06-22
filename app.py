@@ -9,9 +9,9 @@ warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # ==============================================================================
-# 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
+# 1. BASE CONFIGURATION & LAYOUT SETTINGS
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column M Matrix (1-Hour)", layout="wide")
+st.set_page_config(page_title="Nifty Hourly Matrix Engine", layout="wide")
 
 st.markdown("""
     <style>
@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #ec4899;
+            border-left: 5px solid #3b82f6;
             margin-bottom: 25px;
         }
     </style>
@@ -32,22 +32,24 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>⚡ Nifty 50 Pure Cascade (1-Hour Full-Proof Matrix)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>St_List Error Fixed</b><br>
-        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
+        <h1>⚡ Nifty 50 Pure Cascade (Hourly Matrix Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) | <b>Data Range:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
+        <b>Rule:</b> Safe mathematical arrays generated pre-truncation to maintain 100% precision.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE
+# 2. DATA PIPELINE (FROZEN 2-YEAR HISTORICAL EXTRACTOR)
 # ==============================================================================
-@st.cache_data(ttl=120, show_spinner=False)
-def load_pure_data():
+@st.cache_data(ttl=300, show_spinner=False)
+def load_frozen_hourly_data():
     try:
+        # Fetching max allowed 730 days (2 Years) of frozen hourly data points
         df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h", progress=False)
         if df_raw.empty:
             return pd.DataFrame()
         
+        # Flattening columns setup to ensure no structure shifting
         if isinstance(df_raw.columns, pd.MultiIndex):
             df_raw.columns = df_raw.columns.get_level_values(0)
         else:
@@ -55,10 +57,10 @@ def load_pure_data():
             
         df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
         return df_raw
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
-df = load_pure_data()
+df = load_frozen_hourly_data()
 
 if not df.empty:
     df = df.reset_index()
@@ -70,7 +72,7 @@ if not df.empty:
     mul = 0.0001
     
     # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE
+    # 3. MATHEMATICAL CASCADE ENGINE (CALCULATED ON WHOLE FROZEN TIMELINE)
     # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
@@ -117,7 +119,7 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 4. COLUMN M MATRIX
+    # 4. COLUMN M MATRIX SIGN CONTROLLER
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
@@ -134,7 +136,7 @@ if not df.empty:
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 5. SIGNAL ALIGNED MATRIX
+    # 5. VELOCITY ALIGNED HOURLY TRAP ENGINE
     sig = ["System Booting"]
     for i in range(1, total_rows):
         k = float(df['Column K'].values[i])
@@ -162,47 +164,50 @@ if not df.empty:
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 6. FIXED STYLING PIPELINE (DYNAMIC LENGTH BOUNDS)
+    # 6. HARDCODED OPENING FILTER: DISPLAY FROM 01 JAN 2026
     # ==============================================================================
-    df_f = df.copy()
-    cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
-    show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
-    flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
+    if not df_filtered.empty:
+        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        
+        # Chronological inversion to see the latest hours on top
+        show_df = df_filtered[cols].copy().iloc[::-1].reset_index(drop=True)
+        flags = df_filtered['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
-    def grid_style(row):
-        # dynamic array logic completely fixes 'invalid st_list' error
-        st_list = [''] * len(row)
-        idx = row.name
-        
-        # Safe boundary target allocation
-        m_pos = row.index.get_loc('Column M') if 'Column M' in row.index else -1
-        s_pos = row.index.get_loc('Signal_Status') if 'Signal_Status' in row.index else -1
-        
-        if m_pos != -1:
-            if idx < len(flags) and flags.iloc[idx]:
-                st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
-            else:
-                st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
-                
-        if s_pos != -1:
-            val = str(row['Signal_Status'])
-            if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
-            elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
-            elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
-            elif "🚀" in val or "💥" in val: st_list[s_pos] = 'background-color: #1e3a8a; color: #93c5fd; font-weight: bold;'
-            else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+        def grid_style(row):
+            st_list = [''] * len(row)
+            idx = row.name
             
-        return st_list
+            m_pos = row.index.get_loc('Column M') if 'Column M' in row.index else -1
+            s_pos = row.index.get_loc('Signal_Status') if 'Signal_Status' in row.index else -1
+            
+            if m_pos != -1:
+                if idx < len(flags) and flags.iloc[idx]:
+                    st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+                else:
+                    st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
+                    
+            if s_pos != -1:
+                val = str(row['Signal_Status'])
+                if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
+                elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+                elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
+                elif "🚀" in val or "💥" in val: st_list[s_pos] = 'background-color: #1e3a8a; color: #93c5fd; font-weight: bold;'
+                else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+                
+            return st_list
 
-    st.dataframe(
-        show_df.style.format({
-            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-            'Column K': '{:.0f}', 'Column L': '{:.6f}'
-        }).apply(grid_style, axis=1),
-        use_container_width=True
-    )
+        st.dataframe(
+            show_df.style.format({
+                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+                'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+                'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+                'Column K': '{:.0f}', 'Column L': '{:.6f}'
+            }).apply(grid_style, axis=1),
+            use_container_width=True
+        )
+    else:
+        st.warning("No hourly data matches the 01 Jan 2026 opening boundary.")
 else:
-    st.error("Data pipeline load error.")
+    st.error("Data pipeline load error. Yahoo Finance hourly limits blocked.")
