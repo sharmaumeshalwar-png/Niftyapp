@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # ==============================================================================
-# 1. BASE MATRIX SETTINGS
+# 1. BASE MATRIX CONFIGURATION
 # ==============================================================================
 st.set_page_config(page_title="Nifty Column M Matrix (Daily)", layout="wide")
 
@@ -38,7 +38,6 @@ st.markdown("""
 # ==============================================================================
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # 5y kiya hai taaki 2025 se pehle ka mathematical cascade smooth calculate ho sake
     df_raw = yf.download(tickers="^NSEI", period="5y", interval="1d")
     if df_raw.empty:
         return pd.DataFrame()
@@ -59,7 +58,7 @@ if not df.empty:
     mul = 0.0001
     
     # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE (8-STEP VERIFICATION COMPLIANT)
+    # 3. MATHEMATICAL CASCADE ENGINE
     # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
@@ -108,7 +107,7 @@ if not df.empty:
     df['Column L'] = col_l
 
     # ==============================================================================
-    # 5. COLUMN M Engine
+    # 5. COLUMN M MATRIX CONTROLLER
     # ==============================================================================
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
@@ -124,32 +123,4 @@ if not df.empty:
             last_v = curr_s
             
     df['Column M'] = m_txt
-    df['L_Sign_Change'] = chg_flag
-
-    # 6. SIGNALS TRACKER
-    sig = ["System Booting"]
-    for i in range(1, total_rows):
-        k, c = float(df['Column K'].values[i]), float(df['Column C'].values[i])
-        if c > 0:
-            sig.append("🟢 SIGN BULLISH" if k in [2.0, 0.0] else "⚠️ 90% CALL TRAP")
-        else:
-            sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️ 90% PUT TRAP")
-    df['Signal_Status'] = sig
-
-    # ==============================================================================
-    # 7. HIGH-PERFORMANCE RENDERING PIPELINE (UPDATED START FILTER: 2025-01-01)
-    # ==============================================================================
-    df_f = df[df['Raw_Date'] >= '2025-01-01'].copy()
-    
-    if not df_f.empty:
-        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
-        
-        # Chronological Inversion Matrix (Latest on Top)
-        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
-        flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
-
-        def grid_style(row):
-            idx = row.name
-            st_list = [''] * len(row)
-            m_pos = row.index.get_loc('Column M')
-            s_pos = row.index.get_loc('Signal_Status')
+    df
