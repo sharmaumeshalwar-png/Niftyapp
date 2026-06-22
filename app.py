@@ -4,15 +4,15 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty E-I Cascade Oct 2025", layout="wide")
+st.set_page_config(page_title="Nifty E-I Cascade Jan 2025", layout="wide")
 st.title("🎯 Nifty 50 5-Stage Pure Sign Cascade System (E - I)")
-st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered continuously from October 1, 2025.")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Data rendered continuously from January 1, 2025.")
 
 # Robust Data Fetcher to prevent blank screens
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # Fetching trailing 2 years to bypass any API freeze and get heavy historical padding
-    df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
+    # Fetching from Jan 1, 2025 onwards directly
+    df_raw = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
@@ -50,7 +50,7 @@ if not df.empty:
     df['Column B'] = col_b
     
     # 3. Column C: Pure Deviation -> A - B
-    df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
+    df['Column C'] = (df['Column A'] - df['─Column B']).astype(float) if '─Column B' in df.columns else (df['Column A'] - df['Column B']).astype(float)
     
     # 4. Column E: Smooth Loop of Column C (Stage 2 Stable)
     col_e = np.zeros(total_rows, dtype=float)
@@ -114,28 +114,23 @@ if not df.empty:
                 
     df['Signal_Status'] = status_list
 
-    # 🔥 FIXED DISPLAY FILTER: UI renders strictly from October 1, 2025 onwards
-    df_filtered = df[df['Raw_Date'] >= '2025-10-01'].copy()
+    # Pure Presentation Layout from Jan 1st, 2025 onwards without trimming
+    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
+    show_df = show_df.iloc[::-1]  # Latest candle on top
     
-    if not df_filtered.empty:
-        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1]  # Latest candle on top
-        
-        # Grid Theme Color Engine
-        def color_trap_grid(val):
-            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-            return ''
+    # Grid Theme Color Engine
+    def color_trap_grid(val):
+        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+        return ''
 
-        # Dynamic Frame Render
-        st.dataframe(show_df.style.format({
-            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-            'Column K': '{:.0f}'  # Strict single digit integer layout for signs (-2, 0, 2)
-        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
-    else:
-        st.warning("October 1, 2025 filtered range empty.")
+    # Dynamic Frame Render
+    st.dataframe(show_df.style.format({
+        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+        'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+        'Column K': '{:.0f}'  # Strict single digit integer layout for signs (-2, 0, 2)
+    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
 else:
     st.error("Data pipeline load error: Data stream structure couldn't be fetched.")
