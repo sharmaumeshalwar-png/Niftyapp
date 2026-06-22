@@ -4,14 +4,14 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Cascade Chain June 2026", layout="wide")
+st.set_page_config(page_title="Nifty Cascade May Filtered", layout="wide")
 st.title("🎯 Nifty 50 Infinite Cascading Loop System")
-st.write("Multi-Stage Price Stabilization Chain running from June 1, 2026. Every step filters the previous deviation.")
+st.write("Multi-Stage Price Stabilization Chain Displaying Data from May 1, 2026 (Backend Data Anchored from Jan 1 for High Precision).")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st June 2026
+# Fetch Data safely from Jan 1st to give enough historical depth for 0.0001 multiplier
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", start="2026-06-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
     
     if df_raw.empty:
         return pd.DataFrame()
@@ -40,7 +40,7 @@ if not df.empty:
     # 1. Column A: Exact Formula -> (High + Low) / 2
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
-    # 2. Column B: Smooth Loop of Column A
+    # 2. Column B: Smooth Loop of Column A (B2 track stable)
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
         col_b[0] = float(df['Column A'].values[0])
@@ -48,10 +48,10 @@ if not df.empty:
         col_b[i] = col_b[i-1] + (multiplier * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # 3. Column C: Pure Deviation -> A - B
+    # 3. Column C: Pure Deviation -> A - B (Stable C)
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
-    # 4. Column E: Smooth Loop of Column C (Stabilizing C)
+    # 4. Column E: Smooth Loop of Column C (E3 track stable)
     col_e = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
         col_e[0] = float(df['Column C'].values[0])
@@ -59,10 +59,10 @@ if not df.empty:
         col_e[i] = col_e[i-1] + (multiplier * (float(df['Column C'].values[i]) - col_e[i-1]))
     df['Column E'] = col_e
     
-    # 5. Column F: Next-Gen Deviation -> C - E
+    # 5. Column F: Next-Gen Deviation -> C - E (F4 track stable)
     df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
     
-    # 6. Column G: Smooth Loop of Column F (Stabilizing F)
+    # 6. Column G: Smooth Loop of Column F (G5 track stable)
     col_g = np.zeros(total_rows, dtype=float)
     if total_rows > 0:
         col_g[0] = float(df['Column F'].values[0])
@@ -92,24 +92,27 @@ if not df.empty:
                 
     df['Signal_Status'] = status_list
 
-    # Filter to display cleanly from June 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-06-01'].copy()
+    # 🔥 FILTER TRICK: Calculation January se hui, par filter strictly May 1, 2026 se karega
+    df_filtered = df[df['Raw_Date'] >= '2026-05-01'].copy()
     
-    # Arrange grid layout with proper sequence of columns
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Signal_Status']].copy()
-    show_df = show_df.iloc[::-1]  # Latest rows on top
-    
-    # Grid Theme Color Engine
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        return ''
+    if not df_filtered.empty:
+        # Arrange grid layout with proper sequence of columns
+        show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Signal_Status']].copy()
+        show_df = show_df.iloc[::-1]  # Latest rows on top
+        
+        # Grid Theme Color Engine
+        def color_trap_grid(val):
+            if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
+            if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
+            return ''
 
-    # Dynamic Frame Render with explicit floating formats
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}'
-    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+        # Dynamic Frame Render with explicit floating formats
+        st.dataframe(show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}'
+        }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
+    else:
+        st.warning("May 2026 ka filtered data range khali hai.")
 else:
-    st.error("Data pipeline load error: Data stream structure couldn't be mounted on
+    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
