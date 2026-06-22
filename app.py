@@ -4,14 +4,14 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty Cascade Chain System", layout="wide")
+st.set_page_config(page_title="Nifty Cascade Chain March", layout="wide")
 st.title("🎯 Nifty 50 Infinite Cascading Loop System")
-st.write("Multi-Stage Price Stabilization Chain running from January 1. Every step filters the previous deviation.")
+st.write("Multi-Stage Price Stabilization Chain running from March 1, 2026. Every step filters the previous deviation.")
 
-# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st Jan
+# Fetch 1-Hour Accurate Nifty 50 Data safely from 1st March
 @st.cache_data(ttl=300)
 def load_pure_data():
-    df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h")
+    df_raw = yf.download(tickers="^NSEI", start="2026-03-01", interval="1h")
     if df_raw.empty:
         return pd.DataFrame()
         
@@ -69,7 +69,6 @@ if not df.empty:
     df['Column G'] = col_g
     
     # 🌟 NEW SUPER SIGNAL ENGINE (Based on Final G Column Velocity)
-    # Checking the final stabilized deviation to reveal the 10% Gold Moves vs 90% Traps
     status_list = ["System Booting"]
     for i in range(1, total_rows):
         curr_g = col_g[i]
@@ -78,37 +77,4 @@ if not df.empty:
         
         g_is_rising = curr_g > prev_g
         
-        if curr_c > 0:  # Surface price is showing Plus (+)
-            if g_is_rising:  # Deep cascade sequence is also expanding up -> 10% Real Move
-                status_list.append("🟢 CASCADE BULLISH (Strong Trend)")
-            else:  # Surface is plus but deep cascade is falling -> 90% CALL TRAP
-                status_list.append("⚠️ 90% FAKE UPMOVE (Cascade Alert!)")
-        else:  # Surface price is showing Minus (-)
-            if not g_is_rising:  # Deep cascade sequence is breaking down -> Real Crash
-                status_list.append("🔴 CASCADE BEARISH (Strong Melt)")
-            else:  # Surface is minus but deep cascade is absorbing -> 90% PUT TRAP
-                status_list.append("⚠️ 90% FAKE DOWNMOVE (Short Covering!)")
-                
-    df['Signal_Status'] = status_list
-
-    # Filter to display cleanly from January 1, 2026 onwards
-    df = df[df['Raw_Date'] >= '2026-01-01'].copy()
-    
-    # Arrange grid layout with proper sequence of columns
-    show_df = df[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Signal_Status']].copy()
-    show_df = show_df.iloc[::-1]  # Latest rows on top
-    
-    # Grid Theme Color Engine
-    def color_trap_grid(val):
-        if "🟢" in val: return 'background-color: #1fc07c; color: white; font-weight: bold;'
-        if "🔴" in val: return 'background-color: #ff4b4b; color: white; font-weight: bold;'
-        if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
-        return ''
-
-    # Dynamic Frame Render
-    st.dataframe(show_df.style.format({
-        'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-        'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}'
-    }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
-else:
-    st.error("Data pipeline load error.")
+        if curr_c > 0:  # Surface price is
