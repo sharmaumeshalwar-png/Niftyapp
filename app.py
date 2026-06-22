@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# 1. PREMIUM BLACK THEME CONFIGURATION
-st.set_page_config(page_title="Nifty Fixed Row Cascade", layout="wide")
+# 1. PREMIUM BLACK THEME CONFIGURATION (Ensuring complete dark matrix layout)
+st.set_page_config(page_title="Nifty Pure Black Cascade", layout="wide")
 
 st.markdown("""
     <style>
@@ -17,7 +17,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #ef4444;
+            border-left: 5px solid #3b82f6;
             margin-bottom: 25px;
         }
     </style>
@@ -25,13 +25,12 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Fixed L = Row 2 - Row 1)</h1>
-        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> Strict Row 2 - Row 1 Differential Math<br>
-        <b>Rule:</b> Trend Change triggers instantly when price moves opposite to the Column L structural vector.</p>
+        <h1>🎯 Nifty 50 Pure Cascade Black System</h1>
+        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> (I row 2) - (I row 1)</p>
     </div>
 """, unsafe_allow_html=True)
 
-# 2. DATA PIPELINE WITH TRAILING BUFFER
+# 2. DATA PIPELINE WITH PADDING
 @st.cache_data(ttl=300)
 def load_pure_data():
     df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h")
@@ -54,7 +53,7 @@ if not df.empty:
     total_rows = len(df)
     multiplier = 0.0001
     
-    # 3. CORE 5-STAGE MATH CASCADE
+    # 3. CORE 5-STAGE MATH CASCADE (8-Step Calculation Verification)
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
@@ -93,54 +92,51 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K CALCULATOR
+    # 4. COLUMN K CALCULATOR (Strict Sign subtraction)
     sign_f = np.sign(df['Column F'].values).astype(float)
     sign_h = np.sign(df['Column H'].values).astype(float)
     df['Column K'] = sign_f - sign_h
     
-    # 🛠️ FIXED COLUMN L: Strict Row Forward Calculation (Row 2 - Row 1)
+    # 5. COLUMN L MATH: Strict Row 2 - Row 1 Differential Flow
     col_l = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
-        col_l[i] = col_i[i] - col_i[i-1]  # Nayi row values minus purani row values
+        col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
     
-    # 5. STRICT OPPOSITE TREND ENGINE (8-Step Verified Matrix)
+    # 6. SIGN STATUS LOGIC BLOCK
     status_list = ["System Booting"]
     for i in range(1, total_rows):
-        curr_l = float(df['Column L'].values[i])
-        price_move = float(df['Column A'].values[i]) - float(df['Column A'].values[i-1])
         curr_k = float(df['Column K'].values[i])
+        curr_c = float(df['Column C'].values[i])
         
-        # Core Trap Condition: Price action breaks completely opposite to Row Vector L
-        price_opposes_l = (curr_l > 0.0 and price_move < 0.0) or (curr_l < 0.0 and price_move > 0.0)
-        
-        if price_opposes_l:
-            status_list.append("⚡ TREND CHANGE ALERT")
-        else:
-            if curr_k == 2.0 or curr_k == 0.0:
+        if curr_c > 0:
+            if curr_k == 2.0 or curr_k == 0.0:  
                 status_list.append("🟢 SIGN BULLISH")
-            elif curr_k == -2.0 or curr_k == 0.0:
+            else:  
+                status_list.append("⚠️ 90% CALL TRAP")
+        else:
+            if curr_k == -2.0 or curr_k == 0.0:  
                 status_list.append("🔴 SIGN BEARISH")
-            else:
-                status_list.append("⚠️ INVERSION ALERT")
+            else:  
+                status_list.append("⚠️ 90% PUT TRAP")
                 
     df['Signal_Status'] = status_list
 
-    # 6. FILTER AND INVERT VIEW (Jan 1, 2025 Layout Alignment)
+    # 7. FILTER & REVERSE RENDERING FOR HIGH VISIBILITY
     df_filtered = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
     if not df_filtered.empty:
         show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Signal_Status']].copy()
-        show_df = show_df.iloc[::-1]  # Latest candle on top (Screenshot style matching)
+        show_df = show_df.iloc[::-1]  # Latest candle on top
         
-        # Dark Grid CSS Formatter Engine
+        # Grid Custom Styles matching the premium black theme
         def color_trap_grid(val):
-            if "⚡ TREND" in val: return 'background-color: #7b1113; color: #ffffff; font-weight: bold; border: 1.5px solid yellow;'
             if "🟢" in val: return 'background-color: #064e3b; color: #34d399; font-weight: bold;'
             if "🔴" in val: return 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+            if "⚠️" in val: return 'background-color: #b45309; color: #fef08a; font-weight: bold;'
             return 'background-color: #1f2937; color: #d1d5db;'
 
-        # Clean Table Output Render
+        # Frame output
         st.dataframe(show_df.style.format({
             'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
             'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
