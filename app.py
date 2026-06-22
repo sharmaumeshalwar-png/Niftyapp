@@ -2,16 +2,9 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import warnings
-import os
 
-warnings.filterwarnings('ignore')
-os.environ['PYTHONWARNINGS'] = 'ignore'
-
-# ==============================================================================
-# 1. BASE CONFIGURATION & LAYOUT SETTINGS
-# ==============================================================================
-st.set_page_config(page_title="Nifty Hourly Matrix Engine", layout="wide")
+# 1. BASE CONFIGURATION
+st.set_page_config(page_title="Nifty Column M Matrix", layout="wide")
 
 st.markdown("""
     <style>
@@ -32,52 +25,40 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>⚡ Nifty 50 Pure Cascade (Hourly Matrix Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) | <b>Data Range:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
-        <b>Rule:</b> Safe mathematical arrays generated pre-truncation to maintain 100% precision.</p>
+        <h1>🎯 Nifty 50 Pure Cascade (Daily Candle Theme Controller)</h1>
+        <p><b>Interval:</b> Daily Candles (1D) | <b>Start Filter:</b> 01 Jan 2026<br>
+        <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# 2. DATA PIPELINE (FROZEN 2-YEAR HISTORICAL EXTRACTOR)
-# ==============================================================================
-@st.cache_data(ttl=300, show_spinner=False)
-def load_frozen_hourly_data():
-    try:
-        # Fetching max allowed 730 days (2 Years) of frozen hourly data points
-        df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h", progress=False)
-        if df_raw.empty:
-            return pd.DataFrame()
-        
-        # Flattening columns setup to ensure no structure shifting
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            df_raw.columns = df_raw.columns.get_level_values(0)
-        else:
-            df_raw.columns = [str(col).strip() for col in df_raw.columns]
-            
-        df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
-        return df_raw
-    except Exception:
+# 2. DATA PIPELINE
+@st.cache_data(ttl=300)
+def load_pure_data():
+    df_raw = yf.download(tickers="^NSEI", period="2y", interval="1d")
+    if df_raw.empty:
         return pd.DataFrame()
+    if isinstance(df_raw.columns, pd.MultiIndex):
+        df_raw.columns = df_raw.columns.get_level_values(0)
+    df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+    return df_raw
 
-df = load_frozen_hourly_data()
+df = load_pure_data()
 
 if not df.empty:
     df = df.reset_index()
-    time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
+    time_col = 'Date' if 'Date' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
+    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y')
     
     total_rows = len(df)
     mul = 0.0001
     
-    # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE (CALCULATED ON WHOLE FROZEN TIMELINE)
-    # ==============================================================================
+    # 3. MATHEMATICAL CASCADE ENGINE
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
     col_b = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_b[0] = float(df['Column A'].values[0])
+    if total_rows > 0:
+        col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
@@ -85,7 +66,8 @@ if not df.empty:
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     col_e = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_e[0] = float(df['Column C'].values[0])
+    if total_rows > 0:
+        col_e[0] = float(df['Column C'].values[0])
     for i in range(1, total_rows):
         col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
     df['Column E'] = col_e
@@ -93,7 +75,8 @@ if not df.empty:
     df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
     
     col_g = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_g[0] = float(df['Column F'].values[0])
+    if total_rows > 0:
+        col_g[0] = float(df['Column F'].values[0])
     for i in range(1, total_rows):
         col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
     df['Column G'] = col_g
@@ -101,17 +84,20 @@ if not df.empty:
     df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
     
     col_i = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
+    if total_rows > 0:
+        col_i[0] = float(df['Column H'].values[0])
     for i in range(1, total_rows):
         col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
     df['Column I'] = col_i
     
     col_j = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_j[0] = float(col_i[0])
+    if total_rows > 0:
+        col_j[0] = float(col_i[0])
     for i in range(1, total_rows):
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
+    # 4. COLUMN K & L CORE ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -119,7 +105,7 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 4. COLUMN M MATRIX SIGN CONTROLLER
+    # 5. COLUMN M VALIDATOR
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
@@ -136,66 +122,45 @@ if not df.empty:
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 5. VELOCITY ALIGNED HOURLY TRAP ENGINE
+    # 6. SIGNALS TRACKER
     sig = ["System Booting"]
     for i in range(1, total_rows):
         k = float(df['Column K'].values[i])
         c = float(df['Column C'].values[i])
-        l_curr = float(col_l[i])
-        l_prev = float(col_l[i-1]) if i > 0 else 0.0
-        
         if c > 0:
-            if k in [2.0, 0.0]:
-                sig.append("🟢 SIGN BULLISH")
-            else:
-                if l_curr > 0 and l_curr <= l_prev:
-                    sig.append("⚠️ CONFIRMED CALL TRAP")
-                else:
-                    sig.append("🚀 GENUINE UP-BREAKOUT (10%)")
+            sig.append("🟢 SIGN BULLISH" if k in [2.0, 0.0] else "⚠️ 90% CALL TRAP")
         else:
-            if k in [-2.0, 0.0]:
-                sig.append("🔴 SIGN BEARISH")
-            else:
-                if l_curr < 0 and l_curr >= l_prev:
-                    sig.append("⚠️ CONFIRMED PUT TRAP")
-                else:
-                    sig.append("💥 GENUINE DOWN-BREAKOUT (10%)")
-                    
+            sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️ 90% PUT TRAP")
     df['Signal_Status'] = sig
 
-    # ==============================================================================
-    # 6. HARDCODED OPENING FILTER: DISPLAY FROM 01 JAN 2026
-    # ==============================================================================
-    df_filtered = df[df['Raw_Date'] >= '2026-01-01'].copy()
+    # 7. HIGH-PERFORMANCE RENDERING PIPELINE (JAN 2026 FILTER)
+    df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
-    if not df_filtered.empty:
+    if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
-        
-        # Chronological inversion to see the latest hours on top
-        show_df = df_filtered[cols].copy().iloc[::-1].reset_index(drop=True)
-        flags = df_filtered['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
+        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
+        flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
         def grid_style(row):
-            st_list = [''] * len(row)
             idx = row.name
+            st_list = [''] * len(row)
+            m_pos = row.index.get_loc('Column M')
+            s_pos = row.index.get_loc('Signal_Status')
             
-            m_pos = row.index.get_loc('Column M') if 'Column M' in row.index else -1
-            s_pos = row.index.get_loc('Signal_Status') if 'Signal_Status' in row.index else -1
-            
-            if m_pos != -1:
-                if idx < len(flags) and flags.iloc[idx]:
-                    st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
-                else:
-                    st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
-                    
-            if s_pos != -1:
-                val = str(row['Signal_Status'])
-                if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
-                elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
-                elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
-                elif "🚀" in val or "💥" in val: st_list[s_pos] = 'background-color: #1e3a8a; color: #93c5fd; font-weight: bold;'
-                else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+            if idx < len(flags) and flags.iloc[idx]:
+                st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
+            else:
+                st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
                 
+            val = str(row['Signal_Status'])
+            if "🟢" in val:
+                st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
+            elif "🔴" in val:
+                st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+            elif "⚠️" in val:
+                st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
+            else:
+                st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
             return st_list
 
         st.dataframe(
@@ -208,6 +173,6 @@ if not df.empty:
             use_container_width=True
         )
     else:
-        st.warning("No hourly data matches the 01 Jan 2026 opening boundary.")
+        st.warning("No data found for 2026 range.")
 else:
-    st.error("Data pipeline load error. Yahoo Finance hourly limits blocked.")
+    st.error("Data pipeline load error.")
