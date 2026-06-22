@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # ==============================================================================
-# 1. BASE MATRIX SETTINGS
+# 1. BASE MATRIX CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column M Matrix", layout="wide")
+st.set_page_config(page_title="Nifty Column M Matrix (Daily)", layout="wide")
 
 st.markdown("""
     <style>
@@ -27,18 +27,18 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Column M Theme Controller)</h1>
-        <p><b>Column K:</b> (Sign of F) - (Sign of H) | <b>Column L:</b> (I row 2) - (I row 1) Value Only<br>
+        <h1>🎯 Nifty 50 Pure Cascade (Daily Candle Theme Controller)</h1>
+        <p><b>Interval:</b> Daily Candles (1D) | <b>Start Filter:</b> 01 Jan 2026<br>
         <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE WITH SAFE TIMELINE FALLBACK
+# 2. DATA PIPELINE (DAILY INTERFACES)
 # ==============================================================================
 @st.cache_data(ttl=300)
 def load_pure_data():
-    # Hourly data restricted hota hai, isliye historical gap clear karne ke liye '1d' optimal hai
+    # Interval set to '1d' for proper daily candle structures
     df_raw = yf.download(tickers="^NSEI", period="2y", interval="1d")
     if df_raw.empty:
         return pd.DataFrame()
@@ -51,9 +51,9 @@ df = load_pure_data()
 
 if not df.empty:
     df = df.reset_index()
-    time_col = 'Date' if 'Date' in df.columns else ('Datetime' if 'Datetime' in df.columns else df.columns[0])
+    time_col = 'Date' if 'Date' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y')
+    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y') # Daily format tracking
     
     total_rows = len(df)
     mul = 0.0001
@@ -99,7 +99,7 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. COLUMN K & L CORE ENGINE
+    # 4. COLUMN K & L MATRIX LOGIC
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -108,7 +108,7 @@ if not df.empty:
     df['Column L'] = col_l
 
     # ==============================================================================
-    # 5. COLUMN M VALIDATOR
+    # 5. COLUMN M ENGINE & TRACKER MATRIX RULE
     # ==============================================================================
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
@@ -126,7 +126,7 @@ if not df.empty:
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 6. SIGNALS TRACKER
+    # 6. SIGNAL STATUS ENGINE
     sig = ["System Booting"]
     for i in range(1, total_rows):
         k, c = float(df['Column K'].values[i]), float(df['Column C'].values[i])
@@ -137,48 +137,9 @@ if not df.empty:
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 7. HIGH-PERFORMANCE STYLING ENGINE (DYNAMIC TARGET FILTER)
+    # 7. HIGH-PERFORMANCE RENDERING PIPELINE (JAN 2026 STRIP FILTER)
     # ==============================================================================
     df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
-    # Fallback Mechanism: Agar data restricted hai toh poora fetched data load kar do blank chhodne ki jagah
-    if df_f.empty:
-        df_f = df.copy()
-        st.info("Note: Yahoo Finance historical limit reached. Showing full rolling window data instead.")
-    
-    cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
-    show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
-    flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
-
-    def grid_style(row):
-        idx = row.name
-        st_list = [''] * len(row)
-        m_pos = row.index.get_loc('Column M')
-        s_pos = row.index.get_loc('Signal_Status')
-        
-        # Column M Rules
-        if idx < len(flags) and flags.iloc[idx]:
-            st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
-        else:
-            st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
-            
-        # Signal Rules
-        val = str(row['Signal_Status'])
-        if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
-        elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
-        elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
-        else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
-        
-        return st_list
-
-    st.dataframe(
-        show_df.style.format({
-            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
-            'Column K': '{:.0f}', 'Column L': '{:.6f}'
-        }).apply(grid_style, axis=1),
-        use_container_width=True
-    )
-else:
-    st.error("Data pipeline load error. Yahoo Finance fetch failed.")
+    if not df_f.empty:
+        cols =
