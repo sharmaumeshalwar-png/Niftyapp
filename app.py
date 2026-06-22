@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 # Page Configuration Setup
-st.set_page_config(page_title="Nifty 5-Stage Cascade June 2025", layout="wide")
-st.title("🎯 Nifty 50 5-Stage Ultimate Cascading Loop System")
-st.write("Displaying continuous 1-Hour rows from June 1, 2025. Driven by Column K (I - J) with deep historical anchoring.")
+st.set_page_config(page_title="Nifty Pure Sign Cascade", layout="wide")
+st.title("🎯 Nifty 50 5-Stage Pure Sign-Difference Cascade System")
+st.write("Column K is strictly calculated as: (Sign of E) - (Sign of I). Real-time tracking from June 1, 2025.")
 
 # Fetch Data safely from Jan 1st, 2025 for perfect math anchoring
 @st.cache_data(ttl=300)
@@ -89,36 +89,34 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (multiplier * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 10. Column K: Final Master Deviation -> I - J
-    df['Column K'] = col_i - col_j
+    # 🛠️ 10. COLUMN K: PURE SIGN DIFFERENCE MATRIX -> (Sign of E) - (Sign of I)
+    sign_e = np.sign(col_e)
+    sign_i = np.sign(col_i)
+    df['Column K'] = (sign_e - sign_i).astype(float)
     
-    # 🌟 ULTIMATE 5-STAGE SIGNAL ENGINE (Strictly driven by Column K Response)
+    # 🌟 SIGN-DIFFERENCE LOOP VERIFICATION ENGINE
     status_list = ["System Booting"]
     for i in range(1, total_rows):
         curr_k = df['Column K'].values[i]
-        prev_k = df['Column K'].values[i-1]
         curr_c = float(df['Column C'].values[i])
         
-        k_is_rising = curr_k > prev_k
-        
         if curr_c > 0:  # Surface price is showing Plus (+)
-            if k_is_rising:  # 5th Layer core deviation is accelerating upward
-                status_list.append("🟢 K-STAGE BULLISH (Absolute Trend)")
-            else:  # Surface is plus but deep 5th-layer filter is dropping -> 90% CALL TRAP
-                status_list.append("⚠️ 90% CALL TRAP (Column K Negative Dispersion!)")
-        else:  # Surface price is showing New/Minus (-)
-            if not k_is_rising:  # 5th Layer core deviation is collapsing downward
-                status_list.append("🔴 K-STAGE BEARISH (Absolute Melt)")
-            else:  # Surface is minus but deep 5th-layer filter is expanding/absorbing -> 90% PUT TRAP
-                status_list.append("⚠️ 90% PUT TRAP (Column K Accumulation!)")
+            if curr_k == 2 or curr_k == 0:  # Structural velocity confirms or holds momentum
+                status_list.append("🟢 SIGN BULLISH (Trend Confirmed)")
+            else:  # K is negative (-2) -> Signs mismatch -> 90% CALL TRAP
+                status_list.append("⚠️ 90% CALL TRAP (Sign Inversion Alert!)")
+        else:  # Surface price is showing Minus (-)
+            if curr_k == -2 or curr_k == 0:  # Structural drop holds momentum
+                status_list.append("🔴 SIGN BEARISH (Trend Confirmed)")
+            else:  # K is positive (2) -> Signs mismatch -> 90% PUT TRAP
+                status_list.append("⚠️ 90% PUT TRAP (Sign Inversion Alert!)")
                 
     df['Signal_Status'] = status_list
 
-    # 🔥 FILTER TRICK: Calculation Jan 2025 se hui, par filter strictly June 1, 2025 se karega
+    # Filter strictly from June 1, 2025 onwards for clean layout
     df_filtered = df[df['Raw_Date'] >= '2025-06-01'].copy()
     
     if not df_filtered.empty:
-        # Arrange grid layout with proper sequence of columns
         show_df = df_filtered[['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Signal_Status']].copy()
         show_df = show_df.iloc[::-1]  # Latest candle on top
         
@@ -129,13 +127,13 @@ if not df.empty:
             if "⚠️" in val: return 'background-color: #d35400; color: white; font-weight: bold;'
             return ''
 
-        # Precision Decimal Formatter Block
+        # Dynamic Frame Render
         st.dataframe(show_df.style.format({
             'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
             'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.4f}'
+            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 'Column K': '{:.0f}'  # Int format for signs (-2, 0, 2)
         }).map(color_trap_grid, subset=['Signal_Status']), use_container_width=True)
     else:
-        st.warning("June 2025 ka filtered data range khali hai.")
+        st.warning("June 2025 filtered range empty.")
 else:
-    st.error("Data pipeline load error: Data stream structure couldn't be mounted on Streamlit.")
+    st.error("Data pipeline load error.")
