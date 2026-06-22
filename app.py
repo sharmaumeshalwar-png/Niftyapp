@@ -5,7 +5,6 @@ import numpy as np
 import warnings
 import os
 
-# Red False Warnings aur Internal Data Leak Bugs ko suppress karne ke liye setup
 warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
@@ -28,30 +27,27 @@ st.markdown("""
             border-left: 5px solid #ec4899;
             margin-bottom: 25px;
         }
-        .stAlert { background-color: #1f2937 !important; color: #ffffff !important; }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
     <div class="title-block">
-        <h1>⚡ Nifty 50 Pure Cascade (1-Hour Clean Matrix Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Rolling Window Matrix<br>
+        <h1>⚡ Nifty 50 Pure Cascade (1-Hour Full-Proof Matrix)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>St_List Error Fixed</b><br>
         <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE (WITH ABSOLUTE WARNING SUPPRESSION)
+# 2. DATA PIPELINE
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
 def load_pure_data():
     try:
-        # Hourly restriction ke anusaar '730d' range use ho rahi hai
         df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h", progress=False)
         if df_raw.empty:
             return pd.DataFrame()
         
-        # Multi-index structure ko strictly flat dataframe columns mein change karna
         if isinstance(df_raw.columns, pd.MultiIndex):
             df_raw.columns = df_raw.columns.get_level_values(0)
         else:
@@ -114,7 +110,6 @@ if not df.empty:
         col_j[i] = col_j[i-1] + (mul * (col_i[i] - col_j[i-1]))
     df['Column J'] = col_j
     
-    # 4. HOURLY K & L ENGINE
     df['Column K'] = np.sign(df['Column F'].values).astype(float) - np.sign(df['Column H'].values).astype(float)
     
     col_l = np.zeros(total_rows, dtype=float)
@@ -122,7 +117,7 @@ if not df.empty:
         col_l[i] = col_i[i] - col_i[i-1]
     df['Column L'] = col_l
 
-    # 5. COLUMN M ENGINE
+    # 4. COLUMN M MATRIX
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
     last_v = 0
@@ -139,7 +134,7 @@ if not df.empty:
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 6. SIGNAL TRACKER WITH CONFIRMED TRAP FILTERS
+    # 5. SIGNAL ALIGNED MATRIX
     sig = ["System Booting"]
     for i in range(1, total_rows):
         k = float(df['Column K'].values[i])
@@ -167,28 +162,47 @@ if not df.empty:
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 7. HOURLY ROLLING RENDER ENGINE (DYNAMIC STRIP VIEW)
+    # 6. FIXED STYLING PIPELINE (DYNAMIC LENGTH BOUNDS)
     # ==============================================================================
     df_f = df.copy()
+    cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
     
-    if not df_f.empty:
-        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
-        
-        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
-        flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
+    show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
+    flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
-        def grid_style(row):
-            idx = row.name
-            st_list = [''] * len(row)
-            m_pos = row.index.get_loc('Column M')
-            s_pos = row.index.get_loc('Signal_Status')
-            
-            # Column M Matrix Rules (Absolute Black vs Pure White)
+    def grid_style(row):
+        # dynamic array logic completely fixes 'invalid st_list' error
+        st_list = [''] * len(row)
+        idx = row.name
+        
+        # Safe boundary target allocation
+        m_pos = row.index.get_loc('Column M') if 'Column M' in row.index else -1
+        s_pos = row.index.get_loc('Signal_Status') if 'Signal_Status' in row.index else -1
+        
+        if m_pos != -1:
             if idx < len(flags) and flags.iloc[idx]:
                 st_list[m_pos] = 'background-color: #000000 !important; color: #ffffff !important; font-weight: bold; border: 1.5px solid #3b82f6;'
             else:
                 st_list[m_pos] = 'background-color: #ffffff !important; color: #000000 !important; font-weight: bold;'
                 
-            # Signal Custom Status Cell Customization
+        if s_pos != -1:
             val = str(row['Signal_Status'])
-            if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399;
+            if "🟢" in val: st_list[s_pos] = 'background-color: #064e3b; color: #34d399; font-weight: bold;'
+            elif "🔴" in val: st_list[s_pos] = 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold;'
+            elif "⚠️" in val: st_list[s_pos] = 'background-color: #b45309; color: #fef08a; font-weight: bold;'
+            elif "🚀" in val or "💥" in val: st_list[s_pos] = 'background-color: #1e3a8a; color: #93c5fd; font-weight: bold;'
+            else: st_list[s_pos] = 'background-color: #1f2937; color: #d1d5db;'
+            
+        return st_list
+
+    st.dataframe(
+        show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
+            'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+            'Column K': '{:.0f}', 'Column L': '{:.6f}'
+        }).apply(grid_style, axis=1),
+        use_container_width=True
+    )
+else:
+    st.error("Data pipeline load error.")
