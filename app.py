@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # ==============================================================================
-# 1. BASE MATRIX CONFIGURATION
+# 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
 # ==============================================================================
 st.set_page_config(page_title="Nifty Column M Matrix (1-Hour)", layout="wide")
 
@@ -32,61 +32,51 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (1-Hour Network Shielded Controller)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Network Limit Protection Enabled</b><br>
+        <h1>🎯 Nifty 50 Pure Cascade (1-Hour Flawless Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
         <b>Column M Matrix Rule:</b> If Column L sign changes, Column M turns <b>Absolute Black</b>. Otherwise, stays <b>Pure White</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. FAIL-SAFE ADAPTIVE DATA PIPELINE (ELIMINATES THE DATA BLOCKS)
+# 2. DATA PIPELINE (CRITICAL HOURLY MULTIINDEX FLATTENER)
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
-def load_pure_data_failsafe():
-    # Primary Try: Request using the cleaner standard '2y' string endpoint
+def load_pure_data_hourly():
     try:
+        # Fetching max stable range for 1H interval
         df_raw = yf.download(tickers="^NSEI", period="2y", interval="1h", progress=False)
-        if not df_raw.empty and len(df_raw) > 10:
-            return df_raw
-    except Exception:
-        pass
+        if df_raw.empty:
+            return pd.DataFrame()
+            
+        # [CRITICAL FIX] Level mapping layers ko flat strings mein convert karna
+        if isinstance(df_raw.columns, pd.MultiIndex):
+            # Yahoo Finance ke naye structure ke mutabik columns flatten karna
+            df_raw.columns = [col[0] if isinstance(col, tuple) else col for col in df_raw.columns]
         
-    # Secondary Try: If 2y is blocked, fetch maximum allowed standard historical window 730d
-    try:
-        df_raw = yf.download(tickers="^NSEI", period="730d", interval="1h", progress=False)
-        if not df_raw.empty and len(df_raw) > 10:
-            return df_raw
-    except Exception:
-        pass
-
-    # Dynamic Fallback: Pulls the maximum available rolling buffer if higher layers fail
-    try:
-        df_raw = yf.download(tickers="^NSEI", period="1y", interval="1h", progress=False)
+        # Column names ko standardize karna (strip spaces)
+        df_raw.columns = [str(col).strip() for col in df_raw.columns]
+        
+        # Clean check for required price paths
+        df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
         return df_raw
     except Exception:
         return pd.DataFrame()
 
-raw_data = load_pure_data_failsafe()
+df = load_pure_data_hourly()
 
-if not raw_data.empty:
-    df = raw_data.copy()
+if not df.empty:
     df = df.reset_index()
-    
-    # Handle MultiIndex Columns safely
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    else:
-        df.columns = [str(col).strip() for col in df.columns]
-        
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
+    # Clock time representation format inside Column D
     df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
     mul = 0.0001
     
     # ==============================================================================
-    # 3. MATHEMATICAL CASCADE ENGINE
+    # 3. MATHEMATICAL CASCADE ENGINE (BACK-CALCULATIONS PRESERVED)
     # ==============================================================================
     df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
     
@@ -163,13 +153,12 @@ if not raw_data.empty:
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 6. OPENING TIME WINDOW DISPLAY (FROM 01 JAN 2026)
+    # 6. SLICE FILTER LOGIC (OPEN DISPLAY FROM 01 JAN 2026)
     # ==============================================================================
     df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
-    # Adaptive check: if data pool doesn't extend back to Jan 1st yet, fallback gracefully to full range
     if df_f.empty:
-        df_f = df.copy()
+        df_f = df.copy() # Fallback to prevent sudden white blanking
         
     if not df_f.empty:
         cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
@@ -209,4 +198,6 @@ if not raw_data.empty:
             use_container_width=True
         )
     else:
-        st.warning("No dynamic hourly bars available for display alignment.")
+        st.warning("No data points verified inside the display window.")
+else:
+    st.error("Data pipeline load error. Engine structure sync timed out.")
