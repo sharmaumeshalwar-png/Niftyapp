@@ -32,9 +32,9 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (G-Block Momentum Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2025<br>
-        <b>Updated Chain:</b> A = Close | B = Exp(A) | C = A - B | D = Exp(C) | E = Exp(D) | <b>F = Exp(E)</b> | <b>G = F(t) - F(t-1)</b></p>
+        <h1>🎯 Nifty 50 Strict Cascade (2026 Timeline Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2026<br>
+        <b>Chain:</b> A = Close | B = Exp(A) | C = A - B | D = Exp(C) | E = Exp(D) | F = Exp(E) | G = F(t) - F(t-1)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -98,23 +98,23 @@ if not df.empty:
         col_e[i] = col_e[i-1] + (mul * (col_d[i] - col_e[i-1]))
     df['Column E'] = col_e
     
-    # [NEW RULE] Column F = Exponential of E
+    # Column F = Exponential of E
     col_f = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_f[0] = float(col_e[0])
     for i in range(1, total_rows):
         col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
     df['Column F'] = col_f
     
-    # [NEW RULE] Column G = F2 - F1 (Velocity difference of Exponential F: F(t) - F(t-1))
+    # Column G = F(t) - F(t-1)
     col_g = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
         col_g[i] = col_f[i] - col_f[i-1]
     df['Column G'] = col_g
 
     # ==============================================================================
-    # 4. SLICE FILTER DISPLAY LAYER (STRICTLY FROM 01 JAN 2025)
+    # 4. SLICE FILTER DISPLAY LAYER (STRICTLY FROM 01 JAN 2026)
     # ==============================================================================
-    df_f = df[df['Raw_Date'] >= '2025-01-01'].copy()
+    df_f = df[df['Raw_Date'] >= '2026-01-01'].copy()
     
     if df_f.empty:
         df_f = df.copy() 
