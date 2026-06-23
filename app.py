@@ -11,7 +11,7 @@ os.environ['PYTHONWARNINGS'] = 'ignore'
 # ==============================================================================
 # 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column G Matrix (July 2024)", layout="wide")
+st.set_page_config(page_title="Nifty Column G Matrix (Clean Fetch)", layout="wide")
 
 st.markdown("""
     <style>
@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #f59e0b;
+            border-left: 5px solid #10b981;
             margin-bottom: 25px;
         }
     </style>
@@ -32,44 +32,56 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (July 2024 Available Horizon)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 July 2024 (Safe Server Limits)<br>
-        <b>Excel Sync Mode:</b> No server data error. Calculations start clean from 1st July 2024 with zero initial drift.</p>
+        <h1>🎯 Nifty 50 Strict Cascade (Robust Fetch Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 July 2024<br>
+        <b>Fetching Fixed:</b> MultiIndex columns flattened and string spaces stripped to guarantee matrix safety.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE WITH SAFE HOURLY TIMELINE (JULY 2024)
+# 2. DATA PIPELINE (ROBUST CLEAN FETCH ENGINE)
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
-def load_july_2024_synchronized_data():
+def load_clean_fetching_data():
     try:
-        # [SAFE SERVER LIMIT] Setting start to 01 July 2024 for flawless hourly download
+        # Fetching directly from verified safe horizon
         df_raw = yf.download(tickers="^NSEI", start="2024-07-01", interval="1h", progress=False)
+        
         if df_raw.empty:
             return pd.DataFrame()
             
+        # [FETCH FIX 1] Flatten MultiIndex columns if yfinance returns them
         if isinstance(df_raw.columns, pd.MultiIndex):
             df_raw.columns = [col[0] if isinstance(col, tuple) else col for col in df_raw.columns]
         
-        df_raw.columns = [str(col).strip() for col in df_raw.columns]
-        df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+        # [FETCH FIX 2] Standardize column names to string, strip spaces and title case
+        df_raw.columns = [str(col).strip().title() for col in df_raw.columns]
         
-        # Chronological ascending sort (Top row is 01 July 2024)
+        # Ensure required columns exist
+        if 'Close' not in df_raw.columns:
+            return pd.DataFrame()
+            
+        # Clean null values safely
+        df_raw = df_raw.dropna(subset=['Close']).copy()
+        
+        # Chronological sorting for loop integrity
         df_raw = df_raw.sort_index(ascending=True)
         
-        # [EXCEL STABILITY FIX] Dropping the live running hourly row to lock history values
+        # Drop current running hour to lock values
         if len(df_raw) > 1:
             df_raw = df_raw.iloc[:-1].copy()
             
         return df_raw
-    except Exception:
+    except Exception as e:
+        st.error(f"Internal Data Connection Error: {str(e)}")
         return pd.DataFrame()
 
-df = load_july_2024_synchronized_data()
+df = load_clean_fetching_data()
 
 if not df.empty:
     df = df.reset_index()
+    
+    # Identify the timestamp column dynamically
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
     df['Date_Time'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
@@ -78,23 +90,23 @@ if not df.empty:
     mul = 0.0001
     
     # ==============================================================================
-    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE (ANCHORED AT 01 JULY 2024)
+    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE
     # ==============================================================================
-    # Column A = Mapped strictly to finalized close prices
+    # Column A = Strictly Finalized Close Price
     df['Column A'] = df['Close'].astype(float)
     
-    # Column B Loop - Seed hard-matched on 01 July 2024 row to prevent huge initial gap
+    # Column B Loop - Seed hard-matched on first index row
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: 
-        col_b[0] = float(df['Column A'].values[0]) # Zero-gap initialization anchor
+        col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # Column C = Clean Difference Matrix (Will print 0.0000 on the very first row)
+    # Column C = Clean Difference Matrix
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
-    # Column D = Exponential of C (Seed initialized to C[0])
+    # Column D = Exponential of C
     col_d = np.zeros(total_rows, dtype=float)
     if total_rows > 0: 
         col_d[0] = float(df['Column C'].values[0])
@@ -102,7 +114,42 @@ if not df.empty:
         col_d[i] = col_d[i-1] + (mul * (float(df['Column C'].values[i]) - col_d[i-1]))
     df['Column D'] = col_d
     
-    # Column E = Exponential of D (Seed initialized to D[0])
+    # Column E = Exponential of D
     col_e = np.zeros(total_rows, dtype=float)
     if total_rows > 0: 
-        col_e
+        col_e[0] = float(col_d[0])
+    for i in range(1, total_rows):
+        col_e[i] = col_e[i-1] + (mul * (col_d[i] - col_e[i-1]))
+    df['Column E'] = col_e
+    
+    # Column F = Exponential of E
+    col_f = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: 
+        col_f[0] = float(col_e[0])
+    for i in range(1, total_rows):
+        col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
+    df['Column F'] = col_f
+    
+    # Column G = F(t) - F(t-1)
+    col_g = np.zeros(total_rows, dtype=float)
+    for i in range(1, total_rows):
+        col_g[i] = col_f[i] - col_f[i-1]
+    df['Column G'] = col_g
+
+    # ==============================================================================
+    # 4. RENDER GRID INTERFACE (LATEST DATA NEATLY ON TOP)
+    # ==============================================================================
+    final_cols = ['Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G']
+    
+    # Invert rows so the latest entries are at the top
+    show_df = df[final_cols].copy().iloc[::-1].reset_index(drop=True)
+
+    st.dataframe(
+        show_df.style.format({
+            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
+            'Column D': '{:.4f}', 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.6f}'
+        }),
+        use_container_width=True
+    )
+else:
+    st.warning("Data fetch output is currently empty. Re-trying active matrix pipeline...")
