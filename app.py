@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 # 1. SCIENTIFIC UI THEME CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="AGCA-Filter 2026 Horizon", layout="wide")
+st.set_page_config(page_title="AGCA-Filter 2026 Fixed", layout="wide")
 
 st.markdown("""
     <style>
@@ -31,9 +31,8 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 The AGCA-Filter Discovery Engine (2026 Micro-Timeline Mode)</h1>
-        <p><b>Computational Anchor:</b> 01 January 2026 | <b>Filter Mechanics:</b> Dynamic Low-Pass Information Surface Tracking<br>
-        Excel-aligned calculations start fresh from the first candle of 2026 with an adaptive sigmoid-based error multiplier.</p>
+        <h1>🌌 The AGCA-Filter Discovery Engine (Line 106 Fixed)</h1>
+        <p><b>Anchor Point:</b> 01 January 2026 | <b>Fix Applied:</b> Safe scalar data parsing implemented within the exponential Sigmoid block to guarantee crash-free loop execution.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -54,12 +53,12 @@ if reset_system:
     st.rerun()
 
 # ==============================================================================
-# 3. ADVANCED SCIENTIFIC DATA PROCESSING MATRIX (ANCHOR: JAN 2026)
+# 3. ADVANCED SCIENTIFIC DATA PROCESSING MATRIX (FIXED ENGINE)
 # ==============================================================================
 if len(st.session_state.agca_2026_database) == 0 or run_sync:
     with st.spinner("Compiling High-Fidelity 2026 Matrix..."):
         try:
-            # Strictly bounding data pull from 01 Jan 2026 onwards
+            # Bounding data pull from 01 Jan 2026 onwards
             raw_feed = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h", progress=False)
             
             if not raw_feed.empty:
@@ -80,8 +79,8 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                 
                 total_elements = len(frozen_candles)
                 
-                # Initialize structured empty vector arrays
-                col_a = frozen_candles['Close'].astype(float).values
+                # Initialize structured empty vector arrays safely
+                col_a = np.array(frozen_candles['Close'].values, dtype=float).flatten()
                 col_b = np.zeros(total_elements, dtype=float)
                 col_c = np.zeros(total_elements, dtype=float)
                 col_d = np.zeros(total_elements, dtype=float)
@@ -92,7 +91,7 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                 
                 # Strict 01 Jan 2026 Seed Hard-Locking ($B_0 = A_0$)
                 if total_elements > 0:
-                    col_b[0] = col_a[0]
+                    col_b[0] = float(col_a[0])
                     col_c[0] = 0.0
                     col_d[0] = 0.0
                     col_e[0] = 0.0
@@ -102,5 +101,38 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                 
                 # Core Scientific Discovery Loop Processing
                 for t in range(1, total_elements):
-                    # 1. Compute Information Distance Metric
-                    distance_metric = abs(col_a[t] - col_b[t-1]) / (col_b[t-1] if col_b[t-1]
+                    # 1. Compute Information Distance Metric safely using raw scalars
+                    current_a = float(col_a[t])
+                    prev_b = float(col_b[t-1])
+                    
+                    distance_metric = abs(current_a - prev_b) / (prev_b if prev_b != 0 else 1.0)
+                    
+                    # 2. [LINE 106 FIX] Safe scalar casting within sigmoid loop to prevent array dimensions error
+                    exponent_value = -1000.0 * (float(distance_metric) - 0.002)
+                    # Clip exponential to prevent float overflow bounds crashes
+                    exponent_value = max(-50.0, min(50.0, exponent_value))
+                    
+                    alpha_t = 0.00005 + (0.0025 / (1.0 + np.exp(exponent_value)))
+                    dynamic_alpha[t] = alpha_t
+                    
+                    # 3. Cascaded Pipeline Matrix Formulations
+                    col_b[t] = prev_b + (alpha_t * (current_a - prev_b))
+                    col_c[t] = current_a - col_b[t]
+                    
+                    col_d[t] = float(col_d[t-1]) + (alpha_t * (col_c[t] - float(col_d[t-1])))
+                    col_e[t] = float(col_e[t-1]) + (alpha_t * (col_d[t] - float(col_e[t-1])))
+                    col_f[t] = float(col_f[t-1]) + (alpha_t * (col_e[t] - float(col_f[t-1])))
+                    
+                    # Final Velocity Tracker Generation
+                    col_g[t] = col_f[t] - col_f[t-1]
+                
+                # Package verified matrix blocks into master frame
+                research_df = pd.DataFrame({
+                    'Date_Time': pd.to_datetime(frozen_candles[time_key]).dt.strftime('%d %b %Y %H:%M'),
+                    'Column A (Raw Close)': col_a,
+                    'Adaptive Alpha (α)': dynamic_alpha,
+                    'Column B (Smooth Node)': col_b,
+                    'Column C (Delta Variance)': col_c,
+                    'Column D (Exp Tier 1)': col_d,
+                    'Column E (Exp Tier 2)': col_e,
+                    'Column F (Exp Tier
