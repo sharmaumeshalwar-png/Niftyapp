@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 # 1. SCIENTIFIC UI THEME CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="AGCA-Filter 2026 Stable", layout="wide")
+st.set_page_config(page_title="AGCA-Filter 2025 Deep Stable", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,8 +22,8 @@ st.markdown("""
             background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
             padding: 25px;
             border-radius: 12px;
-            border: 1px solid #10b981;
-            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);
+            border: 1px solid #3b82f6;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);
             margin-bottom: 25px;
         }
     </style>
@@ -31,35 +31,36 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 The AGCA-Filter Discovery Engine (Line 138 Absolute Fix)</h1>
-        <p><b>Anchor Point:</b> 01 January 2026 | <b>Structural Patch:</b> Explicit 1-D sequence alignment forced on dataframe assembly parameters to resolve array dimension matrix errors completely.</p>
+        <h1>🌌 The AGCA-Filter Discovery Engine (2025 Deep-Horizon Mode)</h1>
+        <p><b>Computational Anchor Point:</b> 01 January 2025 | <b>Data Longevity:</b> Long-Term History Cascade<br>
+        System anchors firmly on the first trading candle of 2025. All rows freeze dynamically step-by-step from that node.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
 # 2. SESSION STATE MATRIX REGISTRY
 # ==============================================================================
-if 'agca_2026_database' not in st.session_state:
-    st.session_state.agca_2026_database = pd.DataFrame()
+if 'agca_2025_database' not in st.session_state:
+    st.session_state.agca_2025_database = pd.DataFrame()
 
 # Control Dashboard Layout
-st.sidebar.subheader("🔬 2026 Engine Controls")
-run_sync = st.sidebar.button("🔄 Execute 2026 Handshake Loop")
-reset_system = st.sidebar.button("🗑️ Reset 2026 Storage Core")
+st.sidebar.subheader("🔬 2025 Deep Engine Controls")
+run_sync = st.sidebar.button("🔄 Execute 2025-2026 Handshake Loop")
+reset_system = st.sidebar.button("🗑️ Reset Deep Storage Core")
 
 if reset_system:
-    st.session_state.agca_2026_database = pd.DataFrame()
-    st.sidebar.success("2026 Dataset wiped successfully.")
+    st.session_state.agca_2025_database = pd.DataFrame()
+    st.sidebar.success("Deep Dataset wiped successfully.")
     st.rerun()
 
 # ==============================================================================
-# 3. ADVANCED SCIENTIFIC DATA PROCESSING MATRIX (FIXED ENGINE)
+# 3. ADVANCED SCIENTIFIC DATA PROCESSING MATRIX (ANCHOR: 2025)
 # ==============================================================================
-if len(st.session_state.agca_2026_database) == 0 or run_sync:
-    with st.spinner("Compiling High-Fidelity 2026 Matrix..."):
+if len(st.session_state.agca_2025_database) == 0 or run_sync:
+    with st.spinner("Compiling High-Fidelity Deep 2025-2026 Matrix..."):
         try:
-            # Bounding data pull from 01 Jan 2026 onwards
-            raw_feed = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h", progress=False)
+            # Strictly bounding data pull from 01 Jan 2025 onwards
+            raw_feed = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h", progress=False)
             
             if not raw_feed.empty:
                 if isinstance(raw_feed.columns, pd.MultiIndex):
@@ -90,7 +91,7 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                 dynamic_alpha = np.zeros(total_elements, dtype=float)
                 time_list = []
                 
-                # Strict 01 Jan 2026 Seed Hard-Locking ($B_0 = A_0$)
+                # Strict 01 Jan 2025 Seed Hard-Locking ($B_0 = A_0$)
                 if total_elements > 0:
                     col_b[0] = float(col_a[0])
                     col_c[0] = 0.0
@@ -130,7 +131,7 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                     # Final Velocity Tracker Generation
                     col_g[t] = col_f[t] - col_f[t-1]
                 
-                # [LINE 138 FIX PROTECTION] Converting everything explicitly to 1D flattened lists to ensure dataframe sync safety
+                # Dimensional protection via explicit list flattening structures
                 research_df = pd.DataFrame({
                     'Date_Time': list(time_list),
                     'Column A (Raw Close)': [float(x) for x in col_a],
@@ -143,18 +144,18 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                     'Column G (AGCA Attractor Signal)': [float(x) for x in col_g]
                 })
                 
-                st.session_state.agca_2026_database = research_df
+                st.session_state.agca_2025_database = research_df
                 
         except Exception as ex:
             st.error(f"Scientific array generation pipeline compromised: {str(ex)}")
 
 # ==============================================================================
-# 4. PRESENTATION GRID DISPLAY
+# 4. PRESENTATION GRID DISPLAY (LATEST TICKS ON TOP)
 # ==============================================================================
-output_matrix = st.session_state.agca_2026_database.copy()
+output_matrix = st.session_state.agca_2025_database.copy()
 
 if not output_matrix.empty:
-    st.write(f"### 📊 2026 Micro-Matrix Stream: **{len(output_matrix)} Data Blocks Hard-Locked**")
+    st.write(f"### 📊 Deep Matrix Stream: **{len(output_matrix)} Total Data Blocks Hard-Locked**")
     
     # Invert view layers so that the absolute latest completed hour sits neatly on top
     inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
@@ -173,4 +174,4 @@ if not output_matrix.empty:
         use_container_width=True
     )
 else:
-    st.warning("Quantum storage core empty for year 2026. Trigger handshake loop via sidebar panel.")
+    st.warning("Quantum storage core empty for year 2025-2026. Trigger handshake loop via sidebar panel.")
