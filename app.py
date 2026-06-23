@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #10b981;
+            border-left: 5px solid #3b82f6;
             margin-bottom: 25px;
         }
     </style>
@@ -32,9 +32,9 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Pure Cascade (Anti-Drift Dynamic Wave Engine)</h1>
+        <h1>🎯 Nifty 50 Pure Cascade (Strict Forward Exponential Engine)</h1>
         <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2025<br>
-        <b>Fixed:</b> Eliminated the continuous value increase drift in Column H by applying wave balancing logic.</p>
+        <b>Current Logic Chain:</b> A = Close | B = Exp(A) | C = Exp(B) | D = Exp(C) | E = D(t) - D(t-1)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -63,51 +63,73 @@ if not df.empty:
     df = df.reset_index()
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
+    df['Column D_Time'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
     mul = 0.0001
     
     # ==============================================================================
-    # 3. BALANCED CASCADE WAVE ENGINE (PREVENTS LINEAR DRIFT)
+    # 3. ADVANCED SEQUENTIAL FORWARD ENGINE (A -> B -> C -> D -> E)
     # ==============================================================================
-    df['Column A'] = ((df['High'] + df['Low']) / 2.0).astype(float)
+    # Column A = Strictly Candle Close Price
+    df['Column A'] = df['Close'].astype(float)
     
-    # B = Exp of A
+    # Column B = Exponential of A
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_b[0] = float(df['Column A'].values[0])
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # C = A - B
-    df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
-    
-    # E = Exp of C
-    col_e = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_e[0] = float(df['Column C'].values[0])
+    # Column C = Exponential of B
+    col_c = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_c[0] = float(col_b[0])
     for i in range(1, total_rows):
-        col_e[i] = col_e[i-1] + (mul * (float(df['Column C'].values[i]) - col_e[i-1]))
+        col_c[i] = col_c[i-1] + (mul * (col_b[i] - col_c[i-1]))
+    df['Column C'] = col_c
+    
+    # Column D = Exponential of C
+    col_d = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_d[0] = float(col_c[0])
+    for i in range(1, total_rows):
+        col_d[i] = col_d[i-1] + (mul * (col_c[i] - col_d[i-1]))
+    df['Column D'] = col_d
+    
+    # Column E = D2 - D1 (Velocity rate differential: D(t) - D(t-1))
+    col_e = np.zeros(total_rows, dtype=float)
+    for i in range(1, total_rows):
+        col_e[i] = col_d[i] - col_d[i-1]
     df['Column E'] = col_e
     
-    # [FIXED EFFECT] F acts as differential oscillator to break perpetual accumulation
-    df['Column F'] = (df['Column C'] - df['Column E']).astype(float)
+    # ==============================================================================
+    # 4. DERIVATIVE LAYER MATRIX FOR SIGNALS SYNC
+    # ==============================================================================
+    # F = Exp of E
+    col_f = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_f[0] = float(col_e[0])
+    for i in range(1, total_rows):
+        col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
+    df['Column F'] = col_f
     
     # G = Exp of F
     col_g = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_g[0] = float(df['Column F'].values[0])
+    if total_rows > 0: col_g[0] = float(col_f[0])
     for i in range(1, total_rows):
-        col_g[i] = col_g[i-1] + (mul * (float(df['Column F'].values[i]) - col_g[i-1]))
+        col_g[i] = col_g[i-1] + (mul * (col_f[i] - col_g[i-1]))
     df['Column G'] = col_g
     
-    # H = G wave differential breaker (Will fluctuate dynamically now)
-    df['Column H'] = (df['Column F'] - df['Column G']).astype(float)
+    # H = Exp of G
+    col_h = np.zeros(total_rows, dtype=float)
+    if total_rows > 0: col_h[0] = float(col_g[0])
+    for i in range(1, total_rows):
+        col_h[i] = col_h[i-1] + (mul * (col_g[i] - col_h[i-1]))
+    df['Column H'] = col_h
     
     # I = Exp of H
     col_i = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: col_i[0] = float(df['Column H'].values[0])
+    if total_rows > 0: col_i[0] = float(col_h[0])
     for i in range(1, total_rows):
-        col_i[i] = col_i[i-1] + (mul * (float(df['Column H'].values[i]) - col_i[i-1]))
+        col_i[i] = col_i[i-1] + (mul * (col_h[i] - col_i[i-1]))
     df['Column I'] = col_i
     
     # J = Exp of I
@@ -125,7 +147,7 @@ if not df.empty:
     df['Column L'] = col_l
 
     # ==============================================================================
-    # 4. COLUMN M MATRIX CONTROLLER
+    # 5. COLUMN M MATRIX CONTROLLER
     # ==============================================================================
     m_txt = ["➡️ CONTINUOUS"] * total_rows
     chg_flag = np.zeros(total_rows, dtype=bool)
@@ -143,18 +165,18 @@ if not df.empty:
     df['Column M'] = m_txt
     df['L_Sign_Change'] = chg_flag
 
-    # 5. SIGNALS MATRIX
+    # 6. SIGNALS MATRIX
     sig = ["System Booting"]
     for i in range(1, total_rows):
-        k, c = float(df['Column K'].values[i]), float(df['Column C'].values[i])
-        if c > 0:
+        k, e_val = float(df['Column K'].values[i]), float(df['Column E'].values[i])
+        if e_val > 0:
             sig.append("🟢 SIGN BULLISH" if k in [2.0, 0.0] else "⚠️ 90% CALL TRAP")
         else:
             sig.append("🔴 SIGN BEARISH" if k in [-2.0, 0.0] else "⚠️ 90% PUT TRAP")
     df['Signal_Status'] = sig
 
     # ==============================================================================
-    # 6. SLICE FILTER LOGIC (OPEN DISPLAY FROM 01 JAN 2025 | STRICT EXTRA COLUMNS BLOCK)
+    # 7. SLICE FILTER LOGIC (OPEN DISPLAY FROM 01 JAN 2025)
     # ==============================================================================
     df_f = df[df['Raw_Date'] >= '2025-01-01'].copy()
     
@@ -162,9 +184,18 @@ if not df.empty:
         df_f = df.copy() 
         
     if not df_f.empty:
-        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        # Structured column naming grid format
+        df_f['Column D'] = df_f['Column D_Time']
+        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
         
-        show_df = df_f[cols].copy().iloc[::-1].reset_index(drop=True)
+        # Eliminating duplicate column naming processing errors in pandas
+        show_df = df_f.copy().iloc[::-1].reset_index(drop=True)
+        show_df = show_df.loc[:, ~show_df.columns.duplicated()]
+        
+        # Explicit target list rendering sequence
+        final_cols = ['Column D_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        show_df = show_df[final_cols]
+        
         flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
         def grid_style(row):
@@ -191,9 +222,9 @@ if not df.empty:
 
         st.dataframe(
             show_df.style.format({
-                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-                'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.4f}',
-                'Column H': '{:.4f}', 'Column I': '{:.4f}', 'Column J': '{:.4f}', 
+                'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 'Column D': '{:.4f}',
+                'Column E': '{:.6f}', 'Column F': '{:.6f}', 'Column G': '{:.6f}',
+                'Column H': '{:.6f}', 'Column I': '{:.6f}', 'Column J': '{:.6f}', 
                 'Column K': '{:.0f}', 'Column L': '{:.6f}'
             }).apply(grid_style, axis=1),
             use_container_width=True
