@@ -11,7 +11,7 @@ os.environ['PYTHONWARNINGS'] = 'ignore'
 # ==============================================================================
 # 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column G Matrix (Jan 2025)", layout="wide")
+st.set_page_config(page_title="Nifty Column G Matrix (Jan 2024)", layout="wide")
 
 st.markdown("""
     <style>
@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #0ea5e9;
+            border-left: 5px solid #e11d48;
             margin-bottom: 25px;
         }
     </style>
@@ -32,20 +32,20 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (Jan 2025 Stabilized Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 Jan 2025 (Math Anchor Reset)<br>
-        <b>Excel Mode:</b> Calculations start clean from 1st Jan 2025. Running candle is skipped to freeze history values.</p>
+        <h1>🎯 Nifty 50 Strict Cascade (Deep 2024 Timeline Engine)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 Jan 2024 (Long-Term Anchor)<br>
+        <b>Excel Stability:</b> Calculations start clean from 1st Jan 2024. Running candle is skipped to freeze history.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE WITH EXPLICIT JAN 2025 TIMELINE
+# 2. DATA PIPELINE WITH EXPLICIT JAN 2024 TIMELINE
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
-def load_jan_2025_synchronized_data():
+def load_jan_2024_synchronized_data():
     try:
-        # [TIMELINE TIMING] Strict download anchor starting 01 Jan 2025
-        df_raw = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h", progress=False)
+        # [TIMELINE SHIFT] Absolute start set to 01 Jan 2024
+        df_raw = yf.download(tickers="^NSEI", start="2024-01-01", interval="1h", progress=False)
         if df_raw.empty:
             return pd.DataFrame()
             
@@ -55,10 +55,10 @@ def load_jan_2025_synchronized_data():
         df_raw.columns = [str(col).strip() for col in df_raw.columns]
         df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
         
-        # Chronological sorting for loop calculations (Excel Order)
+        # Chronological sorting for linear matrix execution (Excel Flow)
         df_raw = df_raw.sort_index(ascending=True)
         
-        # [EXCEL STABILITY FIX] Dropping the live running hourly row to keep back-data stable
+        # [EXCEL STABILITY FIX] Dropping the running live hour row to prevent recalculation shifts
         if len(df_raw) > 1:
             df_raw = df_raw.iloc[:-1].copy()
             
@@ -66,7 +66,7 @@ def load_jan_2025_synchronized_data():
     except Exception:
         return pd.DataFrame()
 
-df = load_jan_2025_synchronized_data()
+df = load_jan_2024_synchronized_data()
 
 if not df.empty:
     df = df.reset_index()
@@ -78,20 +78,20 @@ if not df.empty:
     mul = 0.0001
     
     # ==============================================================================
-    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE (ANCHORED AT 01 JAN 2025)
+    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE (ANCHORED AT 01 JAN 2024)
     # ==============================================================================
     # Column A = Mapped strictly to finalized close prices
     df['Column A'] = df['Close'].astype(float)
     
-    # Column B Loop - Seed hard-matched on 01 Jan 2025 row
+    # Column B Loop - Seed hard-matched on 01 Jan 2024 row to eliminate massive initial gap
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: 
-        col_b[0] = float(df['Column A'].values[0]) # Zero gap anchor
+        col_b[0] = float(df['Column A'].values[0]) # Zero-gap initialization anchor
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # Column C = Clean Difference Matrix (Will print 0.0000 on first row)
+    # Column C = Clean Difference Matrix (Will print 0.0000 on the very first row)
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     # Column D = Exponential of C (Seed initialized to C[0])
@@ -118,18 +118,18 @@ if not df.empty:
         col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
     df['Column F'] = col_f
     
-    # Column G = F(t) - F(t-1) (Excel Momentum Tracker)
+    # Column G = F(t) - F(t-1) (Excel Momentum Speed Tracker)
     col_g = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
         col_g[i] = col_f[i] - col_f[i-1]
     df['Column G'] = col_g
 
     # ==============================================================================
-    # 4. RENDER GRID INTERFACE (LATEST COMPLETED CANDLE ALWAYS ON TOP)
+    # 4. RENDER GRID INTERFACE (LATEST COMPLETED DATA ON TOP)
     # ==============================================================================
     final_cols = ['Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G']
     
-    # Flipping rows sequence so the latest entries sit neatly at the top row
+    # Flipping row sequence so the latest entries sit neatly at the top row
     show_df = df[final_cols].copy().iloc[::-1].reset_index(drop=True)
 
     st.dataframe(
@@ -140,4 +140,4 @@ if not df.empty:
         use_container_width=True
     )
 else:
-    st.error("No active trading data feed captured for the specified Jan 2025 range.")
+    st.error("No active trading data feed captured for the specified Jan 2024 range.")
