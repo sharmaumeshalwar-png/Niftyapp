@@ -11,7 +11,7 @@ os.environ['PYTHONWARNINGS'] = 'ignore'
 # ==============================================================================
 # 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column G Matrix (Perfect Excel Sync)", layout="wide")
+st.set_page_config(page_title="Nifty Column G Matrix (June 2025)", layout="wide")
 
 st.markdown("""
     <style>
@@ -24,7 +24,7 @@ st.markdown("""
             background: linear-gradient(90deg, #111827, #1f2937);
             padding: 20px;
             border-radius: 8px;
-            border-left: 5px solid #10b981;
+            border-left: 5px solid #06b6d4;
             margin-bottom: 25px;
         }
     </style>
@@ -32,20 +32,20 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (Perfect Excel Alignment)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 Jan 2026 (Math Seed Start Point)<br>
-        <b>Zero Drift Active:</b> First Row B is hard-locked to A. Initial difference gap in Column C is mathematically ZERO.</p>
+        <h1>🎯 Nifty 50 Strict Cascade (June 2025 Engine Block)</h1>
+        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 June 2025 (Math Anchor Start)<br>
+        <b>Perfect Sync:</b> Initial difference in Column C starts cleanly from ZERO on 1st June 2025.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE WITH STRICT TIMELINE TIMING
+# 2. DATA PIPELINE WITH EXPLICIT JUNE 2025 START LINE
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
-def load_excel_synchronized_data():
+def load_june_2025_synchronized_data():
     try:
-        # 1 Jan 2026 se fresh sequence start karne ke liye range settings
-        df_raw = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h", progress=False)
+        # [UPDATED TIMELINE] Mapped strictly to start from 01 June 2025 up to 2026 data stream
+        df_raw = yf.download(tickers="^NSEI", start="2025-06-01", interval="1h", progress=False)
         if df_raw.empty:
             return pd.DataFrame()
             
@@ -55,10 +55,10 @@ def load_excel_synchronized_data():
         df_raw.columns = [str(col).strip() for col in df_raw.columns]
         df_raw = df_raw.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
         
-        # Chronological layout sort (Excel format)
+        # Chronological ascending sort (Top row is June 2025)
         df_raw = df_raw.sort_index(ascending=True)
         
-        # [STABILITY BLOCK] Dropping the live running candle to prevent intermediate values shifts
+        # [STABILITY BLOCK] Drop the live running incomplete hour to lock data calculations
         if len(df_raw) > 1:
             df_raw = df_raw.iloc[:-1].copy()
             
@@ -66,7 +66,7 @@ def load_excel_synchronized_data():
     except Exception:
         return pd.DataFrame()
 
-df = load_excel_synchronized_data()
+df = load_june_2025_synchronized_data()
 
 if not df.empty:
     df = df.reset_index()
@@ -78,20 +78,20 @@ if not df.empty:
     mul = 0.0001
     
     # ==============================================================================
-    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE
+    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE (ANCHORED AT 01 JUNE 2025)
     # ==============================================================================
-    # Column A = Strictly Finalized Candle Close Price
+    # Column A = Mapped strictly to finalized close prices
     df['Column A'] = df['Close'].astype(float)
     
-    # [FIXED] Column B Loop - Seed is hard matched to A[0] to prevent giant initial gaps
+    # Column B Loop - First value hard-matched to A[0] on 01 June 2025
     col_b = np.zeros(total_rows, dtype=float)
     if total_rows > 0: 
-        col_b[0] = float(df['Column A'].values[0]) # Hard anchor setup
+        col_b[0] = float(df['Column A'].values[0]) # Start point lock
     for i in range(1, total_rows):
         col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
     df['Column B'] = col_b
     
-    # Column C = Absolute Excel Difference (Will start closely around 0.00)
+    # Column C = Difference Matrix (Will be 0.0000 on row 1)
     df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
     
     # Column D = Exponential of C (Seed initialized to C[0])
@@ -118,18 +118,18 @@ if not df.empty:
         col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
     df['Column F'] = col_f
     
-    # Column G = F(t) - F(t-1) (Excel Row Momentum Line)
+    # Column G = F(t) - F(t-1) (Excel Momentum Speed Tracker)
     col_g = np.zeros(total_rows, dtype=float)
     for i in range(1, total_rows):
         col_g[i] = col_f[i] - col_f[i-1]
     df['Column G'] = col_g
 
     # ==============================================================================
-    # 4. RENDER GRID INTERFACE (LATEST COMPLETED DATA SHOWS FIRST)
+    # 4. RENDER GRID INTERFACE (LATEST ON TOP FOR LIVESTREAM SENSE)
     # ==============================================================================
     final_cols = ['Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G']
     
-    # Inverting sequence mapping for UI (Bottom rows containing latest calculations come on top)
+    # Flip index order so latest completed data shows at the top of the grid
     show_df = df[final_cols].copy().iloc[::-1].reset_index(drop=True)
 
     st.dataframe(
@@ -140,4 +140,4 @@ if not df.empty:
         use_container_width=True
     )
 else:
-    st.error("No active trading data captured for Nifty 50 from 01 Jan 2026 onwards.")
+    st.error("No trading data returned from Yahoo Finance for the specified June 2025 range.")
