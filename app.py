@@ -1,17 +1,15 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
+import datetime
 import warnings
-import os
 
 warnings.filterwarnings('ignore')
-os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # ==============================================================================
-# 1. BASE MATRIX CONFIGURATION (1-HOUR TIME MATRIX)
+# 1. BASE MATRIX CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="Nifty Column G Matrix (Clean Fetch)", layout="wide")
+st.set_page_config(page_title="Nifty Column G Live Handshake", layout="wide")
 
 st.markdown("""
     <style>
@@ -21,7 +19,7 @@ st.markdown("""
         }
         h1, h3, p, span, label { color: #ffffff !important; }
         .title-block {
-            background: linear-gradient(90deg, #111827, #1f2937);
+            background: linear-gradient(90deg, #064e3b, #111827);
             padding: 20px;
             border-radius: 8px;
             border-left: 5px solid #10b981;
@@ -32,124 +30,114 @@ st.markdown("""
 
 st.markdown("""
     <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (Robust Fetch Engine)</h1>
-        <p><b>Interval:</b> 1 Hour (1H) Candles | <b>View Open From:</b> 01 July 2024<br>
-        <b>Fetching Fixed:</b> MultiIndex columns flattened and string spaces stripped to guarantee matrix safety.</p>
+        <h1>🎯 Nifty 50 Strict Cascade (Live Handshake & Freeze Engine)</h1>
+        <p><b>System Logic:</b> Ek haath se completed data feed hoga, use freeze kiya jayega, aur dusre haath se Column G ka absolute signal compute hoga.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. DATA PIPELINE (ROBUST CLEAN FETCH ENGINE)
+# 2. SESSION STATE MEMORY STORAGE (EXCEL MIRROR CORES)
 # ==============================================================================
-@st.cache_data(ttl=120, show_spinner=False)
-def load_clean_fetching_data():
-    try:
-        # Fetching directly from verified safe horizon
-        df_raw = yf.download(tickers="^NSEI", start="2024-07-01", interval="1h", progress=False)
-        
-        if df_raw.empty:
-            return pd.DataFrame()
-            
-        # [FETCH FIX 1] Flatten MultiIndex columns if yfinance returns them
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            df_raw.columns = [col[0] if isinstance(col, tuple) else col for col in df_raw.columns]
-        
-        # [FETCH FIX 2] Standardize column names to string, strip spaces and title case
-        df_raw.columns = [str(col).strip().title() for col in df_raw.columns]
-        
-        # Ensure required columns exist
-        if 'Close' not in df_raw.columns:
-            return pd.DataFrame()
-            
-        # Clean null values safely
-        df_raw = df_raw.dropna(subset=['Close']).copy()
-        
-        # Chronological sorting for loop integrity
-        df_raw = df_raw.sort_index(ascending=True)
-        
-        # Drop current running hour to lock values
-        if len(df_raw) > 1:
-            df_raw = df_raw.iloc[:-1].copy()
-            
-        return df_raw
-    except Exception as e:
-        st.error(f"Internal Data Connection Error: {str(e)}")
-        return pd.DataFrame()
+if 'matrix_storage' not in st.session_state:
+    # Starting memory matrix benchmark placeholder
+    st.session_state.matrix_storage = pd.DataFrame(columns=[
+        'Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G'
+    ])
 
-df = load_clean_fetching_data()
+# ==============================================================================
+# 3. LIVE HANDSHAKE DATA INJECTION CONTROLS
+# ==============================================================================
+st.subheader("📥 Handshake Layer: Feed Next Completed Candle")
 
-if not df.empty:
-    df = df.reset_index()
-    
-    # Identify the timestamp column dynamically
-    time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
-    df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Date_Time'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
-    
-    total_rows = len(df)
+col_input_1, col_input_2, col_input_3 = st.columns([2, 2, 2])
+
+with col_input_1:
+    current_time_str = datetime.datetime.now().strftime('%d %b %Y %H:%M')
+    input_time = st.text_input("⏰ Candle Close Timestamp", value=current_time_str)
+
+with col_input_2:
+    input_close = st.number_input("📈 Finalized Close Price (Column A)", min_value=0.0, value=23500.0, step=0.05, format="%.2f")
+
+with col_input_3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    submit_candle = st.button("⚡ Lock Entry & Generate Signal", use_container_width=True)
+
+# System Reset to clean historical memory logs
+if st.sidebar.button("🗑️ Reset Entire Local Storage Matrix"):
+    st.session_state.matrix_storage = pd.DataFrame(columns=[
+        'Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G'
+    ])
+    st.sidebar.success("Storage cleared successfully.")
+    st.rerun()
+
+# ==============================================================================
+# 4. RECURSIVE TAIL MATHEMATICS PIPELINE (STABLE FREEZE)
+# ==============================================================================
+if submit_candle:
+    history_df = st.session_state.matrix_storage.copy()
     mul = 0.0001
     
-    # ==============================================================================
-    # 3. ZERO-DRIFT EXCEL MATH VECTOR PIPELINE
-    # ==============================================================================
-    # Column A = Strictly Finalized Close Price
-    df['Column A'] = df['Close'].astype(float)
+    A_new = float(input_close)
     
-    # Column B Loop - Seed hard-matched on first index row
-    col_b = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: 
-        col_b[0] = float(df['Column A'].values[0])
-    for i in range(1, total_rows):
-        col_b[i] = col_b[i-1] + (mul * (float(df['Column A'].values[i]) - col_b[i-1]))
-    df['Column B'] = col_b
+    # If it is the first row ever in memory, apply the zero gap initialization rule
+    if len(history_df) == 0:
+        B_new = A_new
+        C_new = A_new - B_new
+        D_new = C_new
+        E_new = D_new
+        F_new = E_new
+        G_new = 0.0
+    else:
+        # Pull the exact last frozen index values directly from storage
+        last_row = history_df.iloc[-1]
+        
+        B_prev = float(last_row['Column B'])
+        C_prev = float(last_row['Column C'])
+        D_prev = float(last_row['Column D'])
+        E_prev = float(last_row['Column E'])
+        F_prev = float(last_row['Column F'])
+        
+        # Calculate new nodes using locked historical state values
+        B_new = B_prev + (mul * (A_new - B_prev))
+        C_new = A_new - B_new
+        D_new = D_prev + (mul * (C_new - D_prev))
+        E_new = E_prev + (mul * (D_new - E_prev))
+        F_new = F_prev + (mul * (E_new - F_prev))
+        G_new = F_new - F_prev  # Direct row delta speed tracker
+        
+    # Packaging the brand new finalized record array
+    new_record = {
+        'Date_Time': input_time,
+        'Column A': A_new,
+        'Column B': B_new,
+        'Column C': C_new,
+        'Column D': D_new,
+        'Column E': E_new,
+        'Column F': F_new,
+        'Column G': G_new
+    }
     
-    # Column C = Clean Difference Matrix
-    df['Column C'] = (df['Column A'] - df['Column B']).astype(float)
-    
-    # Column D = Exponential of C
-    col_d = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: 
-        col_d[0] = float(df['Column C'].values[0])
-    for i in range(1, total_rows):
-        col_d[i] = col_d[i-1] + (mul * (float(df['Column C'].values[i]) - col_d[i-1]))
-    df['Column D'] = col_d
-    
-    # Column E = Exponential of D
-    col_e = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: 
-        col_e[0] = float(col_d[0])
-    for i in range(1, total_rows):
-        col_e[i] = col_e[i-1] + (mul * (col_d[i] - col_e[i-1]))
-    df['Column E'] = col_e
-    
-    # Column F = Exponential of E
-    col_f = np.zeros(total_rows, dtype=float)
-    if total_rows > 0: 
-        col_f[0] = float(col_e[0])
-    for i in range(1, total_rows):
-        col_f[i] = col_f[i-1] + (mul * (col_e[i] - col_f[i-1]))
-    df['Column F'] = col_f
-    
-    # Column G = F(t) - F(t-1)
-    col_g = np.zeros(total_rows, dtype=float)
-    for i in range(1, total_rows):
-        col_g[i] = col_f[i] - col_f[i-1]
-    df['Column G'] = col_g
+    # Commit the row onto memory dataframes permanently
+    st.session_state.matrix_storage = pd.concat([history_df, pd.DataFrame([new_record])], ignore_index=True)
+    st.rerun()
 
-    # ==============================================================================
-    # 4. RENDER GRID INTERFACE (LATEST DATA NEATLY ON TOP)
-    # ==============================================================================
-    final_cols = ['Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G']
-    
-    # Invert rows so the latest entries are at the top
-    show_df = df[final_cols].copy().iloc[::-1].reset_index(drop=True)
+# ==============================================================================
+# 5. RENDER SYSTEM DISPLAY (LATEST COMMITTED HANDSHAKE ON TOP)
+# ==============================================================================
+display_df = st.session_state.matrix_storage.copy()
 
+if not display_df.empty:
+    st.subheader(f"📊 Active Frozen Database Matrix ({len(display_df)} Hard-Locked Rows)")
+    
+    # Reverse rows sequencing order for standard active grid view (Latest signal on top)
+    inverted_view = display_df.iloc[::-1].reset_index(drop=True)
+    
     st.dataframe(
-        show_df.style.format({
+        inverted_view.style.format({
             'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
             'Column D': '{:.4f}', 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.6f}'
         }),
         use_container_width=True
     )
 else:
-    st.warning("Data fetch output is currently empty. Re-trying active matrix pipeline...")
+    st.info("💡 Data storage matrix is empty. Nayi completed hour candle values upar enter karke system handshake load kijiye.")
