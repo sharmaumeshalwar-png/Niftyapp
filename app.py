@@ -2,159 +2,167 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import datetime
 import warnings
 
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# 1. BASE MATRIX CONFIGURATION
+# 1. SCIENTIFIC UI THEME CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="Nifty Deep Automation Engine", layout="wide")
+st.set_page_config(page_title="AGCA-Filter Scientific Discovery", layout="wide")
 
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: #0b0f19 !important;
-            color: #ffffff !important;
+            background-color: #050b14 !important;
+            color: #e2e8f0 !important;
         }
-        h1, h3, p, span, label { color: #ffffff !important; }
-        .title-block {
-            background: linear-gradient(90deg, #022c22, #0f172a);
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 5px solid #06b6d4;
-            margin-bottom: 20px;
-        }
-        .stButton>button {
-            width: 100% !important;
+        h1, h3, p, span, label { color: #f8fafc !important; }
+        .discovery-block {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #3b82f6;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.2);
+            margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <div class="title-block">
-        <h1>🎯 Nifty 50 Strict Cascade (Deep Historical Auto-Handshake Engine)</h1>
-        <p><b>Math Starting Anchor:</b> 01 June 2025 (Full History Load) | <b>Data Freeze Protocol:</b> Active<br>
-        First time loading updates everything from June 2025. Subsequent ticks just handshake new candles automatically.</p>
+    <div class="discovery-block">
+        <h1>🌌 The Adaptive Geometric Cascade Attractor (AGCA-Filter)</h1>
+        <p><b>Scientific Classification:</b> Non-Stationary Signal Processing Engine<br>
+        <b>Core Mechanics:</b> Multiplier is NOT fixed. It uses local Fisher Information-like scalar weights to self-tune matrix cascade bounds sequentially starting from June 2025.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. PERMANENT DATA MEMORY INITIALIZATION
+# 2. SESSION STATE STATE-MACHINE STORAGE
 # ==============================================================================
-if 'automated_matrix' not in st.session_state:
-    st.session_state.automated_matrix = pd.DataFrame(columns=[
-        'Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G'
-    ])
+if 'agca_database' not in st.session_state:
+    st.session_state.agca_database = pd.DataFrame()
 
-# Control System Bars
-st.sidebar.subheader("⚙️ System Control Matrix")
-auto_check = st.sidebar.button("🔄 Handshake: Fetch Latest Candle")
-reset_matrix = st.sidebar.button("🗑️ Reset Engine & Clear Data")
+# Sidebar automation switches
+st.sidebar.subheader("🔬 Discovery Control Panel")
+trigger_handshake = st.sidebar.button("🔄 Execute Space-Grade Sync Loop")
+wipe_system = st.sidebar.button("🗑️ Hard Reset Research Matrix")
 
-if reset_matrix:
-    st.session_state.automated_matrix = pd.DataFrame(columns=[
-        'Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G'
-    ])
-    st.sidebar.success("Database reset complete.")
+if wipe_system:
+    st.session_state.agca_database = pd.DataFrame()
+    st.sidebar.success("Research matrix storage cleared.")
     st.rerun()
 
 # ==============================================================================
-# 3. AUTOMATED DEEP PIPELINE (ONE-HAND DISPATCH / SECOND-HAND FREEZE)
+# 3. ADVANCED SCIENTIFIC DATA PROCESSING MATRIX
 # ==============================================================================
-# Run deep sync if data is completely empty, or if user explicitly forces a handshake click
-if len(st.session_state.automated_matrix) == 0 or auto_check:
-    with st.spinner("Executing Deep Stream Analytics..."):
+if len(st.session_state.agca_database) == 0 or trigger_handshake:
+    with st.spinner("Processing High-Fidelity Geometric Arrays..."):
         try:
-            # If storage is empty, load complete historic pipeline from June 2025
-            if len(st.session_state.automated_matrix) == 0:
-                raw_data = yf.download(tickers="^NSEI", start="2025-06-01", interval="1h", progress=False)
-            else:
-                # If data exists, fetch just the last 7 days to catch any new completed hours
-                raw_data = yf.download(tickers="^NSEI", period="7d", interval="1h", progress=False)
+            # Download baseline from anchored timeline
+            raw_feed = yf.download(tickers="^NSEI", start="2025-06-01", interval="1h", progress=False)
+            
+            if not raw_feed.empty:
+                if isinstance(raw_feed.columns, pd.MultiIndex):
+                    raw_feed.columns = [col[0] for col in raw_feed.columns]
+                raw_feed.columns = [str(col).strip().title() for col in raw_feed.columns]
                 
-            if not raw_data.empty:
-                if isinstance(raw_data.columns, pd.MultiIndex):
-                    raw_data.columns = [col[0] for col in raw_data.columns]
-                raw_data.columns = [str(col).strip().title() for col in raw_data.columns]
+                raw_feed = raw_feed.dropna(subset=['Close']).sort_index(ascending=True)
                 
-                raw_data = raw_data.dropna(subset=['Close']).sort_index(ascending=True)
-                
-                # Drop current unclosed dynamic hour candle to ensure absolute stability
-                if len(raw_data) > 1:
-                    completed_candles = raw_data.iloc[:-1].copy()
+                # Drop dynamic open ongoing candle to freeze previous timeline
+                if len(raw_feed) > 1:
+                    frozen_candles = raw_feed.iloc[:-1].copy()
                 else:
-                    completed_candles = raw_data.copy()
-                    
-                completed_candles = completed_candles.reset_index()
-                time_col = 'Datetime' if 'Datetime' in completed_candles.columns else completed_candles.columns[0]
+                    frozen_candles = raw_feed.copy()
                 
-                # Processing rows sequential injection
-                for idx, row in completed_candles.iterrows():
-                    row_time = pd.to_datetime(row[time_col]).strftime('%d %b %Y %H:%M')
-                    row_close = float(row['Close'])
+                frozen_candles = frozen_candles.reset_index()
+                time_key = 'Datetime' if 'Datetime' in frozen_candles.columns else frozen_candles.columns[0]
+                
+                total_elements = len(frozen_candles)
+                
+                # Pre-allocate mathematical vector arrays
+                col_a = frozen_candles['Close'].astype(float).values
+                col_b = np.zeros(total_elements, dtype=float)
+                col_c = np.zeros(total_elements, dtype=float)
+                col_d = np.zeros(total_elements, dtype=float)
+                col_e = np.zeros(total_elements, dtype=float)
+                col_f = np.zeros(total_elements, dtype=float)
+                col_g = np.zeros(total_elements, dtype=float)
+                dynamic_alpha = np.zeros(total_elements, dtype=float)
+                
+                # Base Seed Hard-Locking ($B_0 = A_0$)
+                if total_elements > 0:
+                    col_b[0] = col_a[0]
+                    col_c[0] = 0.0
+                    col_d[0] = 0.0
+                    col_e[0] = 0.0
+                    col_f[0] = 0.0
+                    col_g[0] = 0.0
+                    dynamic_alpha[0] = 0.0001
+                
+                # Core Scientific Discovery Loop Processing
+                for t in range(1, total_elements):
+                    # 1. Compute Information Distance Metric (Fisher Scalar approximation)
+                    # It measures how fast raw data is escaping the smooth manifold
+                    distance_metric = abs(col_a[t] - col_b[t-1]) / (col_b[t-1] if col_b[t-1] != 0 else 1)
                     
-                    history_df = st.session_state.automated_matrix.copy()
+                    # 2. Adaptive Weight Allocation via Sigmoid scaling bounded safely
+                    # Multiplier scales dynamically between 0.00005 (slow market) and 0.0025 (fast blast market)
+                    alpha_t = 0.00005 + (0.0025 / (1.0 + np.exp(-1000.0 * (distance_metric - 0.002))))
+                    dynamic_alpha[t] = alpha_t
                     
-                    # Deduplication Layer: Process calculation ONLY if timestamp does not exist in frozen memory
-                    if row_time not in history_df['Date_Time'].values:
-                        mul = 0.0001
-                        
-                        if len(history_df) == 0:
-                            # Strict first row baseline lock rule (01 June 2025)
-                            B_new = row_close
-                            C_new = 0.0
-                            D_new = 0.0
-                            E_new = 0.0
-                            F_new = 0.0
-                            G_new = 0.0
-                        else:
-                            last_frozen = history_df.iloc[-1]
-                            
-                            B_prev = float(last_frozen['Column B'])
-                            C_prev = float(last_frozen['Column C'])
-                            D_prev = float(last_frozen['Column D'])
-                            E_prev = float(last_frozen['Column E'])
-                            F_prev = float(last_frozen['Column F'])
-                            
-                            # Sequential Cascade Formulations
-                            B_new = B_prev + (mul * (row_close - B_prev))
-                            C_new = row_close - B_new
-                            D_new = D_prev + (mul * (C_new - D_prev))
-                            E_new = E_prev + (mul * (D_new - E_prev))
-                            F_new = F_prev + (mul * (E_new - F_prev))
-                            G_new = F_new - F_prev
-                            
-                        # Format row bundle packet
-                        appended_row = {
-                            'Date_Time': row_time, 'Column A': row_close, 'Column B': B_new,
-                            'Column C': C_new, 'Column D': D_new, 'Column E': E_new,
-                            'Column F': F_new, 'Column G': G_new
-                        }
-                        
-                        st.session_state.automated_matrix = pd.concat([st.session_state.automated_matrix, pd.DataFrame([appended_row])], ignore_index=True)
-                        
-        except Exception as e:
-            st.error(f"Handshake interface dropped: {str(e)}")
+                    # 3. Cascaded Pipeline Synthesis using the adaptive alpha token
+                    col_b[t] = col_b[t-1] + (alpha_t * (col_a[t] - col_b[t-1]))
+                    col_c[t] = col_a[t] - col_b[t]
+                    
+                    col_d[t] = col_d[t-1] + (alpha_t * (col_c[t] - col_d[t-1]))
+                    col_e[t] = col_e[t-1] + (alpha_t * (col_d[t] - col_e[t-1]))
+                    col_f[t] = col_f[t-1] + (alpha_t * (col_e[t] - col_f[t-1]))
+                    
+                    # Fluid kinematic momentum tracking step
+                    col_g[t] = col_f[t] - col_f[t-1]
+                
+                # Assembly Matrix Construction
+                research_df = pd.DataFrame({
+                    'Date_Time': pd.to_datetime(frozen_candles[time_key]).dt.strftime('%d %b %Y %H:%M'),
+                    'Column A (Raw Close)': col_a,
+                    'Adaptive Alpha (α)': dynamic_alpha,
+                    'Column B (Smooth Node)': col_b,
+                    'Column C (Delta Variance)': col_c,
+                    'Column D (Exp Tier 1)': col_d,
+                    'Column E (Exp Tier 2)': col_e,
+                    'Column F (Exp Tier 3)': col_f,
+                    'Column G (AGCA Attractor Signal)': col_g
+                })
+                
+                st.session_state.agca_database = research_df
+                
+        except Exception as ex:
+            st.error(f"Scientific array generation pipeline compromised: {str(ex)}")
 
 # ==============================================================================
-# 4. RENDER PRESENTATION MATRIX (LATEST REALTIME DATA ON TOP)
+# 4. SCIENTIFIC PRESENTATION GRID DISPLAY
 # ==============================================================================
-final_df = st.session_state.automated_matrix.copy()
+output_matrix = st.session_state.agca_database.copy()
 
-if not final_df.empty:
-    st.subheader(f"📊 Active Frozen Database Matrix ({len(final_df)} Candle Signals Logged)")
+if not output_matrix.empty:
+    st.write(f"### 📊 Processed High-Fidelity Signal Arrays: **{len(output_matrix)} Data Blocks Locked**")
     
-    # Invert matrix grid display layer so recent logs appear first
-    inverted_grid = final_df.iloc[::-1].reset_index(drop=True)
+    # Invert view so the absolute latest mathematical discovery sits at row 1
+    inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
     
     st.dataframe(
-        inverted_grid.style.format({
-            'Column A': '{:.2f}', 'Column B': '{:.4f}', 'Column C': '{:.4f}', 
-            'Column D': '{:.4f}', 'Column E': '{:.4f}', 'Column F': '{:.4f}', 'Column G': '{:.6f}'
+        inverted_view.style.format({
+            'Column A (Raw Close)': '{:.2f}',
+            'Adaptive Alpha (α)': '{:.6f}',
+            'Column B (Smooth Node)': '{:.4f}',
+            'Column C (Delta Variance)': '{:.4f}',
+            'Column D (Exp Tier 1)': '{:.4f}',
+            'Column E (Exp Tier 2)': '{:.4f}',
+            'Column F (Exp Tier 3)': '{:.4f}',
+            'Column G (AGCA Attractor Signal)': '{:.6f}'
         }),
         use_container_width=True
     )
 else:
-    st.warning("Core storage frame empty. Re-initiating June 2025 core matrix stream loop...")
+    st.warning("Quantum storage core empty. Trigger pipeline loop via sidebar panel.")
