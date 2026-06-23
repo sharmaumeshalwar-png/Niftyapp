@@ -34,7 +34,7 @@ st.markdown("""
     <div class="title-block">
         <h1>🎯 Nifty 50 Pure Cascade (Strict Forward Exponential Engine)</h1>
         <p><b>Interval:</b> 1 Hour (1H) Candles | <b>Data Depth:</b> Frozen 2 Years | <b>View Open From:</b> 01 Jan 2025<br>
-        <b>Current Logic Chain:</b> A = Close | B = Exp(A) | C = Exp(B) | D = Exp(C) | E = D(t) - D(t-1)</p>
+        <b>Fixed ValueError:</b> Dynamic columns are explicitly unique. Time is now mapped to <b>Date_Time</b>.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -63,7 +63,8 @@ if not df.empty:
     df = df.reset_index()
     time_col = 'Datetime' if 'Datetime' in df.columns else df.columns[0]
     df['Raw_Date'] = pd.to_datetime(df[time_col])
-    df['Column D_Time'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
+    # Time formatting saved explicitly inside an isolated name string
+    df['Date_Time'] = df['Raw_Date'].dt.strftime('%d %b %Y %H:%M')
     
     total_rows = len(df)
     mul = 0.0001
@@ -88,7 +89,7 @@ if not df.empty:
         col_c[i] = col_c[i-1] + (mul * (col_b[i] - col_c[i-1]))
     df['Column C'] = col_c
     
-    # Column D = Exponential of C
+    # Column D = UNIQUE PURE MATHEMATICAL FLOAT VECTOR (Exp of C)
     col_d = np.zeros(total_rows, dtype=float)
     if total_rows > 0: col_d[0] = float(col_c[0])
     for i in range(1, total_rows):
@@ -184,18 +185,10 @@ if not df.empty:
         df_f = df.copy() 
         
     if not df_f.empty:
-        # Structured column naming grid format
-        df_f['Column D'] = df_f['Column D_Time']
-        cols = ['Column D', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
+        # Strictly unique columns sequence list matrix layout map
+        final_cols = ['Date_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
         
-        # Eliminating duplicate column naming processing errors in pandas
-        show_df = df_f.copy().iloc[::-1].reset_index(drop=True)
-        show_df = show_df.loc[:, ~show_df.columns.duplicated()]
-        
-        # Explicit target list rendering sequence
-        final_cols = ['Column D_Time', 'Column A', 'Column B', 'Column C', 'Column D', 'Column E', 'Column F', 'Column G', 'Column H', 'Column I', 'Column J', 'Column K', 'Column L', 'Column M', 'Signal_Status']
-        show_df = show_df[final_cols]
-        
+        show_df = df_f[final_cols].copy().iloc[::-1].reset_index(drop=True)
         flags = df_f['L_Sign_Change'].iloc[::-1].reset_index(drop=True)
 
         def grid_style(row):
