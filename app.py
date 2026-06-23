@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 # 1. SCIENTIFIC UI THEME CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="AGCA-Filter 2026 Fixed", layout="wide")
+st.set_page_config(page_title="AGCA-Filter 2026 Stable", layout="wide")
 
 st.markdown("""
     <style>
@@ -31,8 +31,8 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 The AGCA-Filter Discovery Engine (Line 106 Fixed)</h1>
-        <p><b>Anchor Point:</b> 01 January 2026 | <b>Fix Applied:</b> Safe scalar data parsing implemented within the exponential Sigmoid block to guarantee crash-free loop execution.</p>
+        <h1>🌌 The AGCA-Filter Discovery Engine (Line 138 Absolute Fix)</h1>
+        <p><b>Anchor Point:</b> 01 January 2026 | <b>Structural Patch:</b> Explicit 1-D sequence alignment forced on dataframe assembly parameters to resolve array dimension matrix errors completely.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -88,6 +88,7 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                 col_f = np.zeros(total_elements, dtype=float)
                 col_g = np.zeros(total_elements, dtype=float)
                 dynamic_alpha = np.zeros(total_elements, dtype=float)
+                time_list = []
                 
                 # Strict 01 Jan 2026 Seed Hard-Locking ($B_0 = A_0$)
                 if total_elements > 0:
@@ -98,18 +99,21 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                     col_f[0] = 0.0
                     col_g[0] = 0.0
                     dynamic_alpha[0] = 0.0001
+                    time_list.append(pd.to_datetime(frozen_candles[time_key].values[0]).strftime('%d %b %Y %H:%M'))
                 
                 # Core Scientific Discovery Loop Processing
                 for t in range(1, total_elements):
+                    # Format dynamic timestamp tracking list arrays
+                    time_list.append(pd.to_datetime(frozen_candles[time_key].values[t]).strftime('%d %b %Y %H:%M'))
+                    
                     # 1. Compute Information Distance Metric safely using raw scalars
                     current_a = float(col_a[t])
                     prev_b = float(col_b[t-1])
                     
                     distance_metric = abs(current_a - prev_b) / (prev_b if prev_b != 0 else 1.0)
                     
-                    # 2. [LINE 106 FIX] Safe scalar casting within sigmoid loop to prevent array dimensions error
+                    # 2. Safe scalar casting within sigmoid loop to prevent array dimensions error
                     exponent_value = -1000.0 * (float(distance_metric) - 0.002)
-                    # Clip exponential to prevent float overflow bounds crashes
                     exponent_value = max(-50.0, min(50.0, exponent_value))
                     
                     alpha_t = 0.00005 + (0.0025 / (1.0 + np.exp(exponent_value)))
@@ -126,13 +130,47 @@ if len(st.session_state.agca_2026_database) == 0 or run_sync:
                     # Final Velocity Tracker Generation
                     col_g[t] = col_f[t] - col_f[t-1]
                 
-                # Package verified matrix blocks into master frame
+                # [LINE 138 FIX PROTECTION] Converting everything explicitly to 1D flattened lists to ensure dataframe sync safety
                 research_df = pd.DataFrame({
-                    'Date_Time': pd.to_datetime(frozen_candles[time_key]).dt.strftime('%d %b %Y %H:%M'),
-                    'Column A (Raw Close)': col_a,
-                    'Adaptive Alpha (α)': dynamic_alpha,
-                    'Column B (Smooth Node)': col_b,
-                    'Column C (Delta Variance)': col_c,
-                    'Column D (Exp Tier 1)': col_d,
-                    'Column E (Exp Tier 2)': col_e,
-                    'Column F (Exp Tier
+                    'Date_Time': list(time_list),
+                    'Column A (Raw Close)': [float(x) for x in col_a],
+                    'Adaptive Alpha (α)': [float(x) for x in dynamic_alpha],
+                    'Column B (Smooth Node)': [float(x) for x in col_b],
+                    'Column C (Delta Variance)': [float(x) for x in col_c],
+                    'Column D (Exp Tier 1)': [float(x) for x in col_d],
+                    'Column E (Exp Tier 2)': [float(x) for x in col_e],
+                    'Column F (Exp Tier 3)': [float(x) for x in col_f],
+                    'Column G (AGCA Attractor Signal)': [float(x) for x in col_g]
+                })
+                
+                st.session_state.agca_2026_database = research_df
+                
+        except Exception as ex:
+            st.error(f"Scientific array generation pipeline compromised: {str(ex)}")
+
+# ==============================================================================
+# 4. PRESENTATION GRID DISPLAY
+# ==============================================================================
+output_matrix = st.session_state.agca_2026_database.copy()
+
+if not output_matrix.empty:
+    st.write(f"### 📊 2026 Micro-Matrix Stream: **{len(output_matrix)} Data Blocks Hard-Locked**")
+    
+    # Invert view layers so that the absolute latest completed hour sits neatly on top
+    inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
+    
+    st.dataframe(
+        inverted_view.style.format({
+            'Column A (Raw Close)': '{:.2f}',
+            'Adaptive Alpha (α)': '{:.6f}',
+            'Column B (Smooth Node)': '{:.4f}',
+            'Column C (Delta Variance)': '{:.4f}',
+            'Column D (Exp Tier 1)': '{:.4f}',
+            'Column E (Exp Tier 2)': '{:.4f}',
+            'Column F (Exp Tier 3)': '{:.4f}',
+            'Column G (AGCA Attractor Signal)': '{:.6f}'
+        }),
+        use_container_width=True
+    )
+else:
+    st.warning("Quantum storage core empty for year 2026. Trigger handshake loop via sidebar panel.")
