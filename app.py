@@ -9,168 +9,163 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 # 1. SCIENTIFIC UI THEME CONFIGURATION
 # ==============================================================================
-st.set_page_config(page_title="AGCA-Filter 2026 Perfect", layout="wide")
+st.set_page_config(page_title="AGCA Decoder V2", layout="wide")
 
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: #050b14 !important;
-            color: #e2e8f0 !important;
+            background-color: #020617 !important;
+            color: #f1f5f9 !important;
         }
         h1, h3, p, span, label { color: #f8fafc !important; }
-        .discovery-block {
-            background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
-            padding: 25px;
+        .decoder-block {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            padding: 20px;
             border-radius: 12px;
-            border: 1px solid #10b981;
-            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);
+            border: 1px solid #f43f5e;
+            box-shadow: 0 4px 20px rgba(244, 63, 94, 0.15);
             margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <div class="discovery-block">
-        <h1>🌌 The AGCA-Filter Discovery Engine (Line 137 Strict Fix)</h1>
-        <p><b>Computational Start:</b> 01 January 2026 | <b>Fix Log:</b> Structural length arrays synchronized uniformly across all vector components to prevent length mismatch crashes.</p>
+    <div class="decoder-block">
+        <h1>🌌 AGCA Escape Engine (Nifty Bees Volume Framework)</h1>
+        <p><b>Computational Anchor:</b> 01 Jan 2025 into 2026 | <b>Volume Source:</b> NIFTYBEES.NS Live Transactional Stream<br>
+        Column D isolates the 10% structural escape breakouts from the 90% mean-reverting waves.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# 2. SESSION STATE MATRIX REGISTRY
-# ==============================================================================
-if 'agca_2026_perfect_db' not in st.session_state:
-    st.session_state.agca_2026_perfect_db = pd.DataFrame()
+if 'aet_v2_database' not in st.session_state:
+    st.session_state.aet_v2_database = pd.DataFrame()
 
-# Control Dashboard Layout
-st.sidebar.subheader("🔬 2026 Precision Controls")
-run_sync = st.sidebar.button("🔄 Execute 2026 Handshake Loop")
-reset_system = st.sidebar.button("🗑️ Reset 2026 Storage Core")
-
-if reset_system:
-    st.session_state.agca_2026_perfect_db = pd.DataFrame()
-    st.sidebar.success("2026 Dataset wiped successfully.")
-    st.rerun()
+st.sidebar.subheader("🔬 Controls")
+run_sync = st.sidebar.button("🔄 Execute Nifty & Bees Handshake")
 
 # ==============================================================================
-# 3. ADVANCED DATA PROCESSING MATRIX (STRICT LENGTH SYNC)
+# 2. DATA PROCESSING MATRIX (DUAL ASSET COUPLING)
 # ==============================================================================
-if len(st.session_state.agca_2026_perfect_db) == 0 or run_sync:
-    with st.spinner("Compiling High-Fidelity 2026 Target Matrix..."):
+if len(st.session_state.aet_v2_database) == 0 or run_sync:
+    with st.spinner("Syncing Nifty Price & Nifty Bees Volume Arrays..."):
         try:
-            # Download baseline datasets from year threshold 2026
-            raw_feed = yf.download(tickers="^NSEI", start="2026-01-01", interval="1h", progress=False)
+            # Pulling Nifty Index for accurate Close pricing
+            nifty_raw = yf.download(tickers="^NSEI", start="2025-01-01", interval="1h", progress=False)
+            # Pulling Nifty Bees for accurate transactional volume analysis
+            bees_raw = yf.download(tickers="NIFTYBEES.NS", start="2025-01-01", interval="1h", progress=False)
             
-            if not raw_feed.empty:
-                # Flat headers flattening protocol
-                if isinstance(raw_feed.columns, pd.MultiIndex):
-                    raw_feed.columns = [str(col[0]).strip().title() for col in raw_feed.columns]
-                else:
-                    raw_feed.columns = [str(col).strip().title() for col in raw_feed.columns]
+            if not nifty_raw.empty and not bees_raw.empty:
+                # Multi-index flattening if required
+                if isinstance(nifty_raw.columns, pd.MultiIndex):
+                    nifty_raw.columns = [col[0] for col in nifty_raw.columns]
+                if isinstance(bees_raw.columns, pd.MultiIndex):
+                    bees_raw.columns = [col[0] for col in bees_raw.columns]
                 
-                close_key = 'Close' if 'Close' in raw_feed.columns else raw_feed.columns[0]
-                raw_feed = raw_feed.dropna(subset=[close_key]).sort_index(ascending=True)
+                nifty_raw.columns = [str(col).strip().title() for col in nifty_raw.columns]
+                bees_raw.columns = [str(col).strip().title() for col in bees_raw.columns]
                 
-                # Dynamic ongoing candle check drop logic safely
-                if len(raw_feed) > 1:
-                    frozen_candles = raw_feed.iloc[:-1].copy()
-                else:
-                    frozen_candles = raw_feed.copy()
+                nifty_df = nifty_raw[['Close']].dropna()
+                bees_df = bees_raw[['Volume']].dropna()
                 
-                frozen_candles = frozen_candles.reset_index()
-                time_key = 'Datetime' if 'Datetime' in frozen_candles.columns else frozen_candles.columns[0]
+                # Combine datasets based on precise timestamp matching
+                combined = nifty_df.join(bees_df, how='inner').sort_index()
                 
-                total_elements = len(frozen_candles)
+                # Exclude active incomplete hour
+                frozen_data = combined.iloc[:-1].copy() if len(combined) > 1 else combined.copy()
+                frozen_data = frozen_data.reset_index()
+                
+                time_key = 'Datetime' if 'Datetime' in frozen_data.columns else frozen_data.columns[0]
+                total_elements = len(frozen_data)
+                
+                col_a = np.array(frozen_data['Close'].values, dtype=float).flatten()
+                col_v = np.array(frozen_data['Volume'].values, dtype=float).flatten()
+                col_b = np.zeros(total_elements, dtype=float)
+                col_c = np.zeros(total_elements, dtype=float)
+                
+                # Column D State Storage Array
+                col_d_state = []
                 
                 if total_elements > 0:
-                    # Allocate matching arrays with unified rigid bounds
-                    col_a = np.array(frozen_candles[close_key].values, dtype=float).flatten()
-                    col_b = np.zeros(total_elements, dtype=float)
-                    col_c = np.zeros(total_elements, dtype=float)
-                    col_d = np.zeros(total_elements, dtype=float)
-                    col_e = np.zeros(total_elements, dtype=float)
-                    col_f = np.zeros(total_elements, dtype=float)
-                    col_g = np.zeros(total_elements, dtype=float)
-                    dynamic_alpha = np.zeros(total_elements, dtype=float)
-                    time_list = ["" for _ in range(total_elements)]
-                    
-                    # Strict Initial Zero Gap Anchor ($B_0 = A_0$)
                     col_b[0] = float(col_a[0])
                     col_c[0] = 0.0
-                    col_d[0] = 0.0
-                    col_e[0] = 0.0
-                    col_f[0] = 0.0
-                    col_g[0] = 0.0
-                    dynamic_alpha[0] = 0.0001
-                    time_list[0] = pd.to_datetime(frozen_candles[time_key].values[0]).strftime('%d %b %Y %H:%M')
+                    col_d_state.append("Warmup")
+                
+                multiplier = 0.0001
+                lookback = 20
+                current_regime = "90% Mode"  # Initial base baseline
+                
+                # Core Engine Processing
+                for t in range(1, total_elements):
+                    current_a = float(col_a[t])
+                    prev_b = float(col_b[t-1])
                     
-                    # Sequential Pipeline Cascade Loops
-                    for t in range(1, total_elements):
-                        time_list[t] = pd.to_datetime(frozen_candles[time_key].values[t]).strftime('%d %b %Y %H:%M')
-                        
-                        current_a = float(col_a[t])
-                        prev_b = float(col_b[t-1])
-                        
-                        # Mathematical distance metrics
-                        distance_metric = abs(current_a - prev_b) / (prev_b if prev_b != 0 else 1.0)
-                        
-                        exponent_value = -1000.0 * (float(distance_metric) - 0.002)
-                        exponent_value = max(-50.0, min(50.0, exponent_value))
-                        
-                        alpha_t = 0.00005 + (0.0025 / (1.0 + np.exp(exponent_value)))
-                        dynamic_alpha[t] = alpha_t
-                        
-                        # Tier structures execution path
-                        col_b[t] = prev_b + (alpha_t * (current_a - prev_b))
-                        col_c[t] = current_a - col_b[t]
-                        
-                        col_d[t] = float(col_d[t-1]) + (alpha_t * (col_c[t] - float(col_d[t-1])))
-                        col_e[t] = float(col_e[t-1]) + (alpha_t * (col_d[t] - float(col_e[t-1])))
-                        col_f[t] = float(col_f[t-1]) + (alpha_t * (col_e[t] - float(col_f[t-1])))
-                        
-                        col_g[t] = col_f[t] - col_f[t-1]
+                    # Mathematical Formulas
+                    col_b[t] = prev_b + (multiplier * (current_a - prev_b))
+                    col_c[t] = current_a - col_b[t]
                     
-                    # [SAFE PACKING] Guaranteed uniform lengths array registration
-                    research_df = pd.DataFrame({
-                        'Date_Time': list(time_list),
-                        'Column A (Raw Close)': [float(x) for x in col_a],
-                        'Adaptive Alpha (α)': [float(x) for x in dynamic_alpha],
-                        'Column B (Smooth Node)': [float(x) for x in col_b],
-                        'Column C (Delta Variance)': [float(x) for x in col_c],
-                        'Column D (Exp Tier 1)': [float(x) for x in col_d],
-                        'Column E (Exp Tier 2)': [float(x) for x in col_e],
-                        'Column F (Exp Tier 3)': [float(x) for x in col_f],
-                        'Column G (AGCA Attractor Signal)': [float(x) for x in col_g]
-                    })
+                    price_delta = current_a - float(col_a[t-1])
+                    bees_volume = float(col_v[t]) if float(col_v[t]) > 0 else 1.0
                     
-                    st.session_state.agca_2026_perfect_db = research_df
+                    # Kinetic Tracking via Nifty Bees Volume Log
+                    kinetic_energy = (price_delta ** 2) * np.log1p(bees_volume)
+                    sign_flip = np.sign(col_c[t]) != np.sign(col_c[t-1])
                     
+                    if t >= lookback:
+                        # Extract rolling historical energy levels
+                        recent_energy = []
+                        for i in range(t-lookback, t):
+                            p_d = col_a[i] - col_a[i-1]
+                            v_m = col_v[i] if col_v[i] > 0 else 1.0
+                            recent_energy.append((p_d ** 2) * np.log1p(v_m))
+                        
+                        energy_threshold = np.mean(recent_energy) * 1.5
+                        
+                        # Evaluating Mystery Breakpoints on Sign Changes
+                        if sign_flip:
+                            if kinetic_energy > energy_threshold:
+                                current_regime = "10% Mode"  # Escape Track
+                            else:
+                                current_regime = "90% Mode"  # Reversion Track
+                        
+                        col_d_state.append(current_regime)
+                    else:
+                        col_d_state.append("Warmup")
+                
+                st.session_state.aet_v2_database = pd.DataFrame({
+                    'Date_Time': [pd.to_datetime(x).strftime('%d %b %Y %H:%M') for x in frozen_data[time_key].values],
+                    'Column A (Nifty Close)': [float(x) for x in col_a],
+                    'Column B (Anchor)': [float(x) for x in col_b],
+                    'Column C (Delta Variance)': [float(x) for x in col_c],
+                    'Column D (Regime State)': col_d_state,
+                    'NiftyBees Real Vol': [float(x) for x in col_v]
+                })
+                
         except Exception as ex:
-            st.error(f"Scientific array generation pipeline compromised: {str(ex)}")
+            st.error(f"Matrix Synchronization Refused: {str(ex)}")
 
 # ==============================================================================
-# 4. PRESENTATION GRID DISPLAY
+# 3. STREAM PRESENTATION LAYER
 # ==============================================================================
-output_matrix = st.session_state.agca_2026_perfect_db.copy()
+output_matrix = st.session_state.aet_v2_database.copy()
 
 if not output_matrix.empty:
-    st.write(f"### 📊 2026 Rigid Stream: **{len(output_matrix)} Data Blocks Hard-Locked**")
-    
-    # Invert matrix array stack for live visualization layer
+    st.write(f"### 📊 Processed Core Stream: **{len(output_matrix)} Data Intervals Verified**")
     inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
     
-    st.dataframe(
-        inverted_view.style.format({
-            'Column A (Raw Close)': '{:.2f}',
-            'Adaptive Alpha (α)': '{:.6f}',
-            'Column B (Smooth Node)': '{:.4f}',
-            'Column C (Delta Variance)': '{:.4f}',
-            'Column D (Exp Tier 1)': '{:.4f}',
-            'Column E (Exp Tier 2)': '{:.4f}',
-            'Column F (Exp Tier 3)': '{:.4f}',
-            'Column G (AGCA Attractor Signal)': '{:.6f}'
-        }),
-        use_container_width=True
-    )
+    def style_column_d(val):
+        if "10%" in str(val):
+            return 'background-color: #7f1d1d; color: #fca5a5; font-weight: bold; border: 1px solid #ef4444;'
+        elif "90%" in str(val):
+            return 'background-color: #14532d; color: #a7f3d0;'
+        return ''
+
+    styled_df = inverted_view.style.format({
+        'Column A (Nifty Close)': '{:.2f}',
+        'Column B (Anchor)': '{:.4f}',
+        'Column C (Delta Variance)': '{:.4f}',
+        'NiftyBees Real Vol': '{:,.0f}'
+    }).map(style_column_d, subset=['Column D (Regime State)'])
+    
+    st.dataframe(styled_df, use_container_width=True)
 else:
-    st.warning("Quantum storage core empty for year 2026. Trigger handshake loop via sidebar panel.")
+    st.info("System storage offline. Click 'Execute Nifty & Bees Handshake' control switch.")
