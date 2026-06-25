@@ -6,11 +6,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# SYSTEM CALCULATION ENGINE: 8-STEP VERIFICATION MATRIX (STRICT 2026 START)
+# SYSTEM CALCULATION ENGINE: 8-STEP VERIFICATION MATRIX WITH STRICT ROLLING LOOKBACK
 # ==============================================================================
 
 # STEP 1: SCIENTIFIC UI THEME CONFIGURATION
-st.set_page_config(page_title="Nifty Strict Jan 2026 Engine", layout="wide")
+st.set_page_config(page_title="Nifty 20-Bar Rolling Core", layout="wide")
 
 st.markdown("""
     <style>
@@ -32,29 +32,29 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 Nifty 50 Pure 2026 Engine: Calculation Starts Strictly From Candle 20</h1>
-        <p><b>Data Discipline:</b> Rows 1-19 Are Absolute Blank ➔ Processing Starts Exactly On 20th Hour Of Jan 2026</p>
+        <h1>🌌 Nifty 50 Strict Engine: Rolling 20-Candle Window Matrix</h1>
+        <p><b>Data Discipline:</b> 1-19 Bars Flat Zero ➔ Bar 20+ strictly uses rolling 20-candle math slice only</p>
     </div>
 """, unsafe_allow_html=True)
 
 # STEP 2: SIDEBAR CONTROLS REGISTRY
-st.sidebar.subheader("🔬 Strict Lookback Parameters")
+st.sidebar.subheader("🔬 Strict Rolling Parameters")
 ticker = st.sidebar.text_input("Target Ticker (Yahoo Finance)", value="^NSEI")
-fast_len = st.sidebar.number_input("Fast EMA Length (on C)", min_value=1, value=1)
-slow_len = st.sidebar.number_input("Slow EMA Length (on C)", min_value=2, value=5)
-signal_len = st.sidebar.number_input("Signal Line Strict Lookback", min_value=2, value=20)
+lookback_window = st.sidebar.number_input("Strict Moving Lookback Window", min_value=5, value=20)
+fast_len = st.sidebar.number_input("Fast EMA Weight Length", min_value=1, value=1)
+slow_len = st.sidebar.number_input("Slow EMA Weight Length", min_value=2, value=5)
 
-run_sync = st.sidebar.button("🔄 Execute 2026 Pure Handshake Loop")
+run_sync = st.sidebar.button("🔄 Execute Strict Rolling Loop")
 
-if 'nifty_pure_2026_strict' not in st.session_state:
-    st.session_state.nifty_pure_2026_strict = pd.DataFrame()
+if 'nifty_rolling_2026_db' not in st.session_state:
+    st.session_state.nifty_rolling_2026_db = pd.DataFrame()
 
-# STEP 3: DATA INGESTION PIPELINE (Strict 1st Jan 2026 Boundary Lock)
-if len(st.session_state.nifty_pure_2026_strict) == 0 or run_sync:
-    with st.spinner("Processing Strict 2026 Lookback Blocks..."):
+# STEP 3: DATA INGESTION PIPELINE (Strict 1st Jan 2026 Ingestion Lock)
+if len(st.session_state.nifty_rolling_2026_db) == 0 or run_sync:
+    with st.spinner("Processing Strict 20-Bar Rolling Blocks..."):
         try:
             import yfinance as yf
-            # Strictly downloading data from Jan 1, 2026. No historical data allowed before this date.
+            # Raw data pull direct from 1 Jan 2026
             raw_feed = yf.download(tickers=str(ticker), interval="1h", start="2026-01-01", progress=False)
         except Exception:
             raw_feed = pd.DataFrame()
@@ -99,49 +99,52 @@ if len(st.session_state.nifty_pure_2026_strict) == 0 or run_sync:
                 p_est = (1.0 - k_gain) * p_prior
                 col_b[t] = x_est
 
-            # 2. Extract Column C (The core vector)
+            # 2. Extract Column C
             col_c = col_a - col_b
 
-            # Multiplier configuration constants
+            # 3. ROLLING WINDOW CALCULATOR ENGINE (Strict lookback logic)
+            W = int(lookback_window)  # Strictly locked to 20 bars lookback
             k_fast = 2.0 / (float(fast_len) + 1.0)
             k_slow = 2.0 / (float(slow_len) + 1.0)
-            k_sig = 2.0 / (float(signal_len) + 1.0)
-
-            # 3. STRICT BAR 20 ACTIVATION ENGINE LOOP (Protected Scalar Assignment)
-            fast_ema = 0.0
-            slow_ema = 0.0
-            signal_ema = 0.0
-            has_initialized = False
             
             for t in range(total_elements):
-                if t < 19:
-                    # Rows 1 to 19 of Jan 2026 will be forced to absolute zero values
+                # Pehli 19 candles (index 0 se 18) tak lookback criteria incomplete hai -> Absolute Blank
+                if t < (W - 1):
                     col_d_macd[t] = 0.0
                     col_e_signal[t] = 0.0
                     col_f_hist[t] = 0.0
-                elif t == 19 or (not has_initialized and t >= 19):
-                    # EXACT 20TH HOUR OF JAN 2026 (Index 19): Seeding math variables
-                    fast_ema = col_c[t]
-                    slow_ema = col_c[t]
-                    col_d_macd[t] = fast_ema - slow_ema
-                    signal_ema = col_d_macd[t]
-                    col_e_signal[t] = signal_ema
-                    col_f_hist[t] = 0.0
-                    has_initialized = True
                 else:
-                    # Active linear processing from candle 21 onwards
-                    fast_ema = (col_c[t] * k_fast) + (fast_ema * (1.0 - k_fast))
-                    slow_ema = (col_c[t] * k_slow) + (slow_ema * (1.0 - k_slow))
-                    col_d_macd[t] = fast_ema - slow_ema
+                    # STRICT SQUEEZE: Slicing only pichli exact 20 rows from Column C vector array
+                    rolling_c_slice = col_c[t - W + 1 : t + 1]
                     
-                    signal_ema = (col_d_macd[t] * k_sig) + (signal_ema * (1.0 - k_sig))
-                    col_e_signal[t] = signal_ema
-                    col_f_hist[t] = col_d_macd[t] - signal_ema
+                    # Compute fast & slow targets inside the active rolling slice only
+                    f_ema = rolling_c_slice[0]
+                    s_ema = rolling_c_slice[0]
+                    
+                    # Historical local tracking array to compute signal line across lookback slice boundaries
+                    local_macd_arr = np.zeros(W, dtype=float)
+                    
+                    for idx in range(W):
+                        f_ema = (rolling_c_slice[idx] * k_fast) + (f_ema * (1.0 - k_fast))
+                        s_ema = (rolling_c_slice[idx] * k_slow) + (s_ema * (1.0 - k_slow))
+                        local_macd_arr[idx] = f_ema - s_ema
+                    
+                    # Current index MACD output lock
+                    col_d_macd[t] = local_macd_arr[-1]
+                    
+                    # Compute signal smoothing line strictly over the local lookback MACD array
+                    k_sig = 2.0 / (float(W) + 1.0)  # Signal lookback set strictly to 20
+                    sig_ema = local_macd_arr[0]
+                    for idx in range(W):
+                        sig_ema = (local_macd_arr[idx] * k_sig) + (sig_ema * (1.0 - k_sig))
+                    
+                    col_e_signal[t] = sig_ema
+                    col_f_hist[t] = col_d_macd[t] - col_e_signal[t]
 
             # STEP 6: LAPTOP EXCEL ZONE CLASSIFICATION INTEGRATION
             excel_zones = []
             for t in range(total_elements):
-                if t < 19:
+                if t < (W - 1):
                     excel_zones.append("🔒 Lookback Squeeze (Calculation Blocked)")
                 else:
                     if col_f_hist[t] > 0.0:
@@ -151,8 +154,8 @@ if len(st.session_state.nifty_pure_2026_strict) == 0 or run_sync:
                     else:
                         excel_zones.append("Balanced Baseline")
 
-            # STEP 7: SECURE TRANSITION PACKING WITH ZERO DATA LOSS
-            st.session_state.nifty_pure_2026_strict = pd.DataFrame({
+            # STEP 7: SECURE TRANSITION PACKING
+            st.session_state.nifty_rolling_2026_db = pd.DataFrame({
                 'Date_Time': time_list,
                 'Column A (Nifty Close)': [float(x) for x in col_a],
                 'Column B (Kalman Filter)': [float(x) for x in col_b],
@@ -166,23 +169,15 @@ if len(st.session_state.nifty_pure_2026_strict) == 0 or run_sync:
 # ==============================================================================
 # STEP 8: PRESENTATION GRID & ALL POSSIBLE OUTCOME DATES MATRIX
 # ==============================================================================
-output_matrix = st.session_state.nifty_pure_2026_strict.copy()
+output_matrix = st.session_state.nifty_rolling_2026_db.copy()
 
 if not output_matrix.empty:
-    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} 2026 Pure Data Blocks Locked**")
-    st.write("#### 📋 All Possible Outcome Dates Matrix Logs (Chronological View - Oldest First to verify Lookback Squeeze)")
+    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Data Blocks Hard-Locked (Strict Rolling Lookback)**")
+    st.write("#### 📋 All Possible Outcome Dates Matrix Logs (Chronological View - Oldest 2026 Feeds First)")
     
-    # Keeping chronological order (Oldest First) so you can directly see rows 1-19 blank on top of your screen!
     st.dataframe(
-        output_matrix[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Filter)', 'Column C (Pure Delta)', 'Column D (MACD Line)', 'Column E (Signal Line)', 'Column F (Histogram)', 'Excel Market Zone']].style.format({
-            'Column A (Nifty Close)': '{:.2f}',
-            'Column B (Kalman Filter)': '{:.2f}',
-            'Column C (Pure Delta)': '{:.4f}',
-            'Column D (MACD Line)': '{:.4f}',
-            'Column E (Signal Line)': '{:.4f}',
-            'Column F (Histogram)': '{:.4f}'
-        }),
+        output_matrix[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Filter)', 'Column C (Pure Delta)', 'Column D (MACD Line)', 'Column E (Signal Line)', 'Column F (Histogram)', 'Excel Market Zone']],
         use_container_width=True
     )
 else:
-    st.error("Matrix synchronization failed. Click 'Execute 2026 Pure Handshake Loop' to load.")
+    st.error("Matrix synchronization failed. Click 'Execute Strict Rolling Loop' via sidebar to force load records.")
