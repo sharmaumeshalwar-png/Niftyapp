@@ -10,21 +10,21 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 
 # STEP 1: SCIENTIFIC UI THEME CONFIGURATION
-st.set_page_config(page_title="Nifty Mean Reversion Core", layout="wide")
+st.set_page_config(page_title="Nifty ATR Trailing Stop Loss Core", layout="wide")
 
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: #040914 !important;
-            color: #e2e8f0 !important;
+            background-color: #040815 !important;
+            color: #f1f5f9 !important;
         }
-        h1, h3, p, span, label { color: #f8fafc !important; }
+        h1, h3, p, span, label { color: #ffffff !important; }
         .discovery-block {
-            background: linear-gradient(135deg, #020617 0%, #0d1527 100%);
+            background: linear-gradient(135deg, #070a1e 0%, #0c122c 100%);
             padding: 25px;
             border-radius: 12px;
-            border: 1px solid #3b82f6;
-            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.2);
+            border: 1px solid #10b981;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2);
             margin-bottom: 25px;
         }
     </style>
@@ -32,25 +32,25 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 Nifty 50 Statistical Arbitrage Engine</h1>
-        <p><b>Core Framework:</b> Kalman Variance ➔ Rolling Standard Deviation Band Integration (No-Indicator Model)</p>
+        <h1>🌌 Nifty 50 Core: Column C ATR Trailing Stop Loss Engine</h1>
+        <p><b>Volatility Shield Core:</b> Discrete Kalman Output ➔ ATR Trailing Stop Multiplier Loop (Jan 2025 - Dec 2026)</p>
     </div>
 """, unsafe_allow_html=True)
 
 # STEP 2: SIDEBAR CONTROLS REGISTRY
-st.sidebar.subheader("🔬 Stat-Engine Parameters")
+st.sidebar.subheader("🔬 Volatility Parameters")
 ticker = st.sidebar.text_input("Target Ticker (Yahoo Finance)", value="^NSEI")
-bb_period = st.sidebar.number_input("Statistical Band Lookback", min_value=5, value=20)
-bb_std = st.sidebar.number_input("Band Deviation Threshold (Sigma)", min_value=0.5, value=2.0, step=0.1)
+atr_period = st.sidebar.number_input("ATR Lookback Period (on C)", min_value=1, value=14)
+atr_multiplier = st.sidebar.number_input("ATR Stop Loss Multiplier", min_value=0.5, value=2.5, step=0.1)
 
-run_sync = st.sidebar.button("🔄 Execute Quantum Handshake Loop")
+run_sync = st.sidebar.button("🔄 Execute ATR Trailing Handshake Loop")
 
-if 'nifty_stat_db' not in st.session_state:
-    st.session_state.nifty_stat_db = pd.DataFrame()
+if 'nifty_atr_trail_db' not in st.session_state:
+    st.session_state.nifty_atr_trail_db = pd.DataFrame()
 
 # STEP 3: RE-CONFIGURED SAFE INGESTION PIPELINE
-if len(st.session_state.nifty_stat_db) == 0 or run_sync:
-    with st.spinner("Processing High-Fidelity Statistical Data Grid..."):
+if len(st.session_state.nifty_atr_trail_db) == 0 or run_sync:
+    with st.spinner("Processing High-Fidelity ATR Dynamic Bands..."):
         try:
             import yfinance as yf
             raw_feed = yf.download(tickers=str(ticker), interval="1h", period="2y", progress=False)
@@ -76,10 +76,11 @@ if len(st.session_state.nifty_stat_db) == 0 or run_sync:
 
         if total_elements > 0:
             # STEP 5: MATHEMATICAL ARRAY CORE PROCESSING (Anti-Leak Math)
-            col_b = np.zeros(total_elements, dtype=float)       # Kalman Array
-            col_c = np.zeros(total_elements, dtype=float)       # Delta Variance (A-B)
-            col_d_upper = np.zeros(total_elements, dtype=float) # Upper Deviation Boundary
-            col_d_lower = np.zeros(total_elements, dtype=float) # Lower Deviation Boundary
+            col_b = np.zeros(total_elements, dtype=float)         # Kalman Array
+            col_c = np.zeros(total_elements, dtype=float)         # Delta (A-B)
+            col_d_atr = np.zeros(total_elements, dtype=float)     # ATR of Column C
+            col_e_trail = np.zeros(total_elements, dtype=float)   # Dynamic Trailing Stop Loss
+            trend_state = np.zeros(total_elements, dtype=int)     # 1 for Bullish, -1 for Bearish
             time_list = ["" for _ in range(total_elements)]
 
             # 1. Pure Kalman Filter Execution on Column A
@@ -96,36 +97,61 @@ if len(st.session_state.nifty_stat_db) == 0 or run_sync:
                 p_est = (1.0 - k_gain) * p_prior
                 col_b[t] = x_est
 
-            # 2. Compute Column C = (A - B)
+            # 2. Compute Column C Vector = (A - B)
             col_c = col_a - col_b
 
-            # 3. Compute Dynamic Bollinger Bands directly on Column C Vector
-            p_len = int(bb_period)
-            sigma_mult = float(bb_std)
+            # 3. Compute True Range & ATR directly on Column C Values
+            tr = np.zeros(total_elements, dtype=float)
+            tr[0] = 0.0
+            for t in range(1, total_elements):
+                tr[t] = abs(col_c[t] - col_c[t - 1]) # Volatility variance shift of C
+
+            p_len = int(atr_period)
+            if total_elements >= p_len:
+                col_d_atr[p_len - 1] = np.mean(tr[:p_len])
+                for t in range(p_len, total_elements):
+                    col_d_atr[t] = (col_d_atr[t - 1] * (p_len - 1) + tr[t]) / p_len
+
+            # 4. ATR Trailing Stop Loss State Machine Engine
+            mult = float(atr_multiplier)
             
-            for t in range(total_elements):
-                if t >= p_len:
-                    sub_window = col_c[t - p_len + 1 : t + 1]
-                    mean_c = np.mean(sub_window)
-                    std_c = np.std(sub_window)
-                    col_d_upper[t] = mean_c + (sigma_mult * std_c)
-                    col_d_lower[t] = mean_c - (sigma_mult * std_c)
+            # Initial state setup
+            trend_state[0] = 1
+            col_e_trail[0] = col_c[0] - (mult * col_d_atr[0])
+
+            for t in range(1, total_elements):
+                # If previous state was bullish
+                if trend_state[t - 1] == 1:
+                    stop_candidate = col_c[t] - (mult * col_d_atr[t])
+                    # Floor check to prevent trail from falling down during up-trend
+                    col_e_trail[t] = max(col_e_trail[t - 1], stop_candidate)
+                    
+                    # Check for Bearish Flip / Breakout Down
+                    if col_c[t] < col_e_trail[t]:
+                        trend_state[t] = -1
+                        col_e_trail[t] = col_c[t] + (mult * col_d_atr[t])
+                    else:
+                        trend_state[t] = 1
+                # If previous state was bearish
                 else:
-                    col_d_upper[t] = 0.0
-                    col_d_lower[t] = 0.0
+                    stop_candidate = col_c[t] + (mult * col_d_atr[t])
+                    # Ceiling check to prevent trail from rising up during down-trend
+                    col_e_trail[t] = min(col_e_trail[t - 1], stop_candidate)
+                    
+                    # Check for Bullish Flip / Breakout Up
+                    if col_c[t] > col_e_trail[t]:
+                        trend_state[t] = 1
+                        col_e_trail[t] = col_c[t] - (mult * col_d_atr[t])
+                    else:
+                        trend_state[t] = -1
 
             # STEP 6: LAPTOP EXCEL ZONE CLASSIFICATION INTEGRATION
             excel_zones = []
             for t in range(total_elements):
-                if col_d_upper[t] != 0.0:
-                    if col_c[t] >= col_d_upper[t]:
-                        excel_zones.append("⚠️ Overstretched High (Sell Call Zone)")
-                    elif col_c[t] <= col_d_lower[t]:
-                        excel_zones.append("🟢 Overstretched Low (Sell Put Zone)")
-                    else:
-                        excel_zones.append("Mean Reverting Zone (No Trade)")
+                if trend_state[t] == 1:
+                    excel_zones.append("🟢 C Bullish (Safe Zone - SELL PUT)")
                 else:
-                    excel_zones.append("Warming Up Engine...")
+                    excel_zones.append("🔴 C Bearish (Volatility Break - SELL CALL)")
 
             # STEP 7: SECURE TRANSITION PACKING & 2-YEAR FREEZE LOCK
             research_df = pd.DataFrame({
@@ -133,38 +159,38 @@ if len(st.session_state.nifty_stat_db) == 0 or run_sync:
                 'Column A (Nifty Close)': [float(x) for x in col_a],
                 'Column B (Kalman Nifty)': [float(x) for x in col_b],
                 'Column C (Delta Variance)': [float(x) for x in col_c],
-                'Upper Strike Trigger': [float(x) for x in col_d_upper],
-                'Lower Strike Trigger': [float(x) for x in col_d_lower],
+                'Column D (ATR of C)': [float(x) for x in col_d_atr],
+                'Column E (Trailing Stop)': [float(x) for x in col_e_trail],
                 'Excel Market Zone': excel_zones
             })
 
             research_df['Datetime_Parsed'] = pd.to_datetime(research_df['Date_Time'], format='%d %b %Y %H:%M')
             
-            # Hard-Lock Target Window Boundaries
+            # Hard-Lock Target Window Boundaries (Jan 2025 - Dec 2026)
             start_date = pd.Timestamp("2025-01-01 00:00:00")
             end_date = pd.Timestamp("2026-12-31 23:59:59")
 
             final_mask = (research_df['Datetime_Parsed'] >= start_date) & (research_df['Datetime_Parsed'] <= end_date)
-            st.session_state.nifty_stat_db = research_df[final_mask].drop(columns=['Datetime_Parsed']).reset_index(drop=True)
+            st.session_state.nifty_atr_trail_db = research_df[final_mask].drop(columns=['Datetime_Parsed']).reset_index(drop=True)
 
 # ==============================================================================
 # STEP 8: PRESENTATION GRID & ALL POSSIBLE OUTCOME DATES MATRIX
 # ==============================================================================
-output_matrix = st.session_state.nifty_stat_db.copy()
+output_matrix = st.session_state.nifty_atr_trail_db.copy()
 
 if not output_matrix.empty:
-    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Quant Data Blocks Hard-Locked**")
+    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Data Blocks Hard-Locked via ATR Trailing SL**")
     
     st.write("#### 📋 All Possible Outcome Dates Matrix Logs (Latest First)")
     inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
 
     st.dataframe(
-        inverted_view[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Nifty)', 'Column C (Delta Variance)', 'Upper Strike Trigger', 'Lower Strike Trigger', 'Excel Market Zone']].style.format({
+        inverted_view[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Nifty)', 'Column C (Delta Variance)', 'Column D (ATR of C)', 'Column E (Trailing Stop)', 'Excel Market Zone']].style.format({
             'Column A (Nifty Close)': '{:.2f}',
             'Column B (Kalman Nifty)': '{:.2f}',
             'Column C (Delta Variance)': '{:.4f}',
-            'Upper Strike Trigger': '{:.4f}',
-            'Lower Strike Trigger': '{:.4f}'
+            'Column D (ATR of C)': '{:.4f}',
+            'Column E (Trailing Stop)': '{:.4f}'
         }),
         use_container_width=True
     )
