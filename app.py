@@ -33,7 +33,7 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 The Coppock & Column C Discovery Engine (Syntax Error Fixed)</h1>
+        <h1>🌌 The Coppock & Column C Discovery Engine</h1>
         <p><b>Computational Core:</b> Dual-Vector Convergence | <b>Window Lock:</b> Jan 2025 - Dec 2026 (1-Hour Grid Sync)</p>
     </div>
 """, unsafe_allow_html=True)
@@ -61,13 +61,11 @@ if reset_system:
 if len(st.session_state.coppock_2026_perfect_db) == 0 or run_sync:
     with st.spinner("Compiling High-Fidelity Coppock Target Matrix..."):
         try:
-            # Safe Local Execution Injection to completely isolate multi-thread errors
             import yfinance as yf
             
             raw_feed = yf.download(tickers=str(ticker), interval="1h", period="2y", progress=False)
             using_fallback = False
             
-            # Automated Fallback Execution Block if API fails or blocks
             if raw_feed is None or raw_feed.empty:
                 using_fallback = True
                 date_range = pd.date_range(start="2024-06-01", end="2026-12-31", freq="1h")
