@@ -33,7 +33,7 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 The Coppock & Column C Discovery Engine (Final Stable Fix)</h1>
+        <h1>🌌 The Coppock & Column C Discovery Engine (Syntax Error Fixed)</h1>
         <p><b>Computational Core:</b> Dual-Vector Convergence | <b>Window Lock:</b> Jan 2025 - Dec 2026 (1-Hour Grid Sync)</p>
     </div>
 """, unsafe_allow_html=True)
@@ -80,7 +80,6 @@ if len(st.session_state.coppock_2026_perfect_db) == 0 or run_sync:
                 raw_feed.index.name = 'Datetime'
 
             # STEP 4: VECTOR BASELINE & ARRAY ANCHOR SETUP
-            # Extractions directly from values to prevent MultiIndex or single column name mismatches
             if isinstance(raw_feed.columns, pd.MultiIndex):
                 raw_close_array = raw_feed['Close'].values.flatten()
                 raw_open_array = raw_feed['Open'].values.flatten()
@@ -153,4 +152,65 @@ if len(st.session_state.coppock_2026_perfect_db) == 0 or run_sync:
 
                 research_df['Datetime_Parsed'] = pd.to_datetime(research_df['Date_Time'], format='%d %b %Y %H:%M')
                 start_date = pd.Timestamp("2025-01-01 00:00:00")
-                end_date = pd.
+                end_date = pd.Timestamp("2026-12-31 23:59:59")
+
+                final_mask = (research_df['Datetime_Parsed'] >= start_date) & (research_df['Datetime_Parsed'] <= end_date)
+                df_isolated = research_df[final_mask].copy()
+
+                # Signal Management Loops
+                df_isolated['Coppock_Prev'] = df_isolated['Coppock Curve'].shift(1)
+                df_isolated['Bullish_Hint'] = (df_isolated['Column C (Delta Variance)'] > 0) & (df_isolated['Coppock Curve'] > 0) & (df_isolated['Coppock_Prev'] <= 0)
+                df_isolated['Bearish_Hint'] = (df_isolated['Column C (Delta Variance)'] < 0) & (df_isolated['Coppock Curve'] < 0) & (df_isolated['Coppock_Prev'] >= 0)
+
+                st.session_state.coppock_2026_perfect_db = df_isolated.drop(columns=['Datetime_Parsed']).reset_index(drop=True)
+
+                if using_fallback:
+                    st.sidebar.info("💡 Protected Mode: Output parsed via Adaptive Synthetic Engine Flow.")
+
+        except Exception as ex:
+            st.error(f"Scientific array generation pipeline compromised: {str(ex)}")
+
+# ==============================================================================
+# STEP 8: PRESENTATION GRID & ALL POSSIBLE OUTCOME DATES MATRIX
+# ==============================================================================
+output_matrix = st.session_state.coppock_2026_perfect_db.copy()
+
+if not output_matrix.empty:
+    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Data Blocks Hard-Locked**")
+
+    # Render Candlestick Graphic
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=output_matrix['Date_Time'], open=output_matrix['Open_Raw'], 
+        high=output_matrix['High_Raw'], low=output_matrix['Low_Raw'], 
+        close=output_matrix['Column A (Raw Close)'], name="Price Engine"
+    ))
+
+    # Plot Long Entries
+    longs = output_matrix[output_matrix['Bullish_Hint']]
+    if not longs.empty:
+        fig.add_trace(go.Scatter(x=longs['Date_Time'], y=longs['Low_Raw'] * 0.995, mode='markers', 
+                                 marker=dict(symbol='triangle-up', size=14, color='#00FF00'), name='LONG ENTRY'))
+
+    # Plot Short Entries
+    shorts = output_matrix[output_matrix['Bearish_Hint']]
+    if not shorts.empty:
+        fig.add_trace(go.Scatter(x=shorts['Date_Time'], y=shorts['High_Raw'] * 1.005, mode='markers', 
+                                 marker=dict(symbol='triangle-down', size=14, color='#FF0000'), name='SHORT ENTRY'))
+
+    fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=20, r=20, t=20, b=20))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.write("#### 📋 All Possible Outcome Dates Matrix Logs")
+    inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
+
+    st.dataframe(
+        inverted_view[['Date_Time', 'Column A (Raw Close)', 'Column C (Delta Variance)', 'Coppock Curve', 'Excel Market Zone']].style.format({
+            'Column A (Raw Close)': '{:.2f}',
+            'Column C (Delta Variance)': '{:.4f}',
+            'Coppock Curve': '{:.4f}'
+        }),
+        use_container_width=True
+    )
+else:
+    st.warning("Quantum storage core empty for the specified window. Trigger handshake loop via sidebar panel.")
