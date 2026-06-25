@@ -10,21 +10,21 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 
 # STEP 1: SCIENTIFIC UI THEME CONFIGURATION
-st.set_page_config(page_title="Nifty Kalman-EMA-ATR Engine", layout="wide")
+st.set_page_config(page_title="Nifty Mean Reversion Core", layout="wide")
 
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: #050b14 !important;
+            background-color: #040914 !important;
             color: #e2e8f0 !important;
         }
         h1, h3, p, span, label { color: #f8fafc !important; }
         .discovery-block {
-            background: linear-gradient(135deg, #020617 0%, #0c152b 100%);
+            background: linear-gradient(135deg, #020617 0%, #0d1527 100%);
             padding: 25px;
             border-radius: 12px;
-            border: 1px solid #10b981;
-            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2);
+            border: 1px solid #3b82f6;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.2);
             margin-bottom: 25px;
         }
     </style>
@@ -32,51 +32,44 @@ st.markdown("""
 
 st.markdown("""
     <div class="discovery-block">
-        <h1>🌌 Nifty 50 Core: Kalman Delta, EMA 9 & ATR Dynamic System</h1>
-        <p><b>Computational Framework:</b> Column C (A-B) ➔ EMA 9 Smooth Sync ➔ ATR Volatility Shield (2025 - 2026)</p>
+        <h1>🌌 Nifty 50 Statistical Arbitrage Engine</h1>
+        <p><b>Core Framework:</b> Kalman Variance ➔ Rolling Standard Deviation Band Integration (No-Indicator Model)</p>
     </div>
 """, unsafe_allow_html=True)
 
 # STEP 2: SIDEBAR CONTROLS REGISTRY
-st.sidebar.subheader("🔬 Precision Grid Controls")
+st.sidebar.subheader("🔬 Stat-Engine Parameters")
 ticker = st.sidebar.text_input("Target Ticker (Yahoo Finance)", value="^NSEI")
-ema_period = st.sidebar.number_input("EMA Smoothing Period (on Col C)", min_value=1, value=9)
-atr_period = st.sidebar.number_input("ATR Volatility Period (on Col C)", min_value=1, value=14)
+bb_period = st.sidebar.number_input("Statistical Band Lookback", min_value=5, value=20)
+bb_std = st.sidebar.number_input("Band Deviation Threshold (Sigma)", min_value=0.5, value=2.0, step=0.1)
 
-run_sync = st.sidebar.button("🔄 Execute Nifty Hybrid Handshake")
+run_sync = st.sidebar.button("🔄 Execute Quantum Handshake Loop")
 
-if 'nifty_hybrid_db' not in st.session_state:
-    st.session_state.nifty_hybrid_db = pd.DataFrame()
+if 'nifty_stat_db' not in st.session_state:
+    st.session_state.nifty_stat_db = pd.DataFrame()
 
 # STEP 3: RE-CONFIGURED SAFE INGESTION PIPELINE
-if len(st.session_state.nifty_hybrid_db) == 0 or run_sync:
-    with st.spinner("Processing High-Fidelity Hybrid Vector Matrix..."):
+if len(st.session_state.nifty_stat_db) == 0 or run_sync:
+    with st.spinner("Processing High-Fidelity Statistical Data Grid..."):
         try:
             import yfinance as yf
             raw_feed = yf.download(tickers=str(ticker), interval="1h", period="2y", progress=False)
         except ModuleNotFoundError:
             raw_feed = pd.DataFrame()
 
-        # Automated Synthetic Fallback Strategy if API fails
+        # Fallback Engine
         if raw_feed.empty:
             date_range = pd.date_range(start="2024-06-01", end="2026-12-31", freq="1h")
             np.random.seed(42)
             simulated_close = 23500 + np.cumsum(np.random.normal(0, 50, len(date_range)))
-            raw_feed = pd.DataFrame({
-                'Open': simulated_close - 20, 'High': simulated_close + 40,
-                'Low': simulated_close - 40, 'Close': simulated_close
-            }, index=date_range)
+            raw_feed = pd.DataFrame({'Close': simulated_close}, index=date_range)
             raw_feed.index.name = 'Datetime'
 
         # STEP 4: VECTOR BASELINE EXTRACTION
         if isinstance(raw_feed.columns, pd.MultiIndex):
             col_a = raw_feed['Close'].values.flatten()
-            raw_high = raw_feed['High'].values.flatten()
-            raw_low = raw_feed['Low'].values.flatten()
         else:
             col_a = raw_feed.iloc[:, raw_feed.columns.get_loc('Close') if 'Close' in raw_feed.columns else 0].values.flatten()
-            raw_high = raw_feed.iloc[:, raw_feed.columns.get_loc('High') if 'High' in raw_feed.columns else 1].values.flatten()
-            raw_low = raw_feed.iloc[:, raw_feed.columns.get_loc('Low') if 'Low' in raw_feed.columns else 2].values.flatten()
 
         raw_dates = raw_feed.index.to_numpy()
         total_elements = len(col_a)
@@ -84,9 +77,9 @@ if len(st.session_state.nifty_hybrid_db) == 0 or run_sync:
         if total_elements > 0:
             # STEP 5: MATHEMATICAL ARRAY CORE PROCESSING (Anti-Leak Math)
             col_b = np.zeros(total_elements, dtype=float)       # Kalman Array
-            col_c = np.zeros(total_elements, dtype=float)       # Delta A-B Vector
-            col_d = np.zeros(total_elements, dtype=float)       # EMA 9 of C
-            col_e = np.zeros(total_elements, dtype=float)       # ATR 14 of C
+            col_c = np.zeros(total_elements, dtype=float)       # Delta Variance (A-B)
+            col_d_upper = np.zeros(total_elements, dtype=float) # Upper Deviation Boundary
+            col_d_lower = np.zeros(total_elements, dtype=float) # Lower Deviation Boundary
             time_list = ["" for _ in range(total_elements)]
 
             # 1. Pure Kalman Filter Execution on Column A
@@ -106,47 +99,42 @@ if len(st.session_state.nifty_hybrid_db) == 0 or run_sync:
             # 2. Compute Column C = (A - B)
             col_c = col_a - col_b
 
-            # 3. Compute Column D (Pure Multi-Step EMA 9 Array Core on Column C)
-            k_ema = 2.0 / (float(ema_period) + 1.0)
-            col_d[0] = col_c[0]
-            for t in range(1, total_elements):
-                col_d[t] = (col_c[t] * k_ema) + (col_d[t - 1] * (1.0 - k_ema))
-
-            # 4. Compute Column E (True Range & ATR 14 Array Core on Column C)
-            # Standard asset pricing ATR uses high/low/close, but applying it here to track Column C volatility expansion
-            tr = np.zeros(total_elements, dtype=float)
-            tr[0] = raw_high[0] - raw_low[0]
-            for t in range(1, total_elements):
-                h_l = raw_high[t] - raw_low[t]
-                h_pc = abs(raw_high[t] - col_a[t - 1])
-                l_pc = abs(raw_low[t] - col_a[t - 1])
-                tr[t] = max(h_l, h_pc, l_pc)
-
-            p_atr = int(atr_period)
-            if total_elements >= p_atr:
-                col_e[p_atr - 1] = np.mean(tr[:p_atr])
-                for t in range(p_atr, total_elements):
-                    col_e[t] = (col_e[t - 1] * (p_atr - 1) + tr[t]) / p_atr
+            # 3. Compute Dynamic Bollinger Bands directly on Column C Vector
+            p_len = int(bb_period)
+            sigma_mult = float(bb_std)
+            
+            for t in range(total_elements):
+                if t >= p_len:
+                    sub_window = col_c[t - p_len + 1 : t + 1]
+                    mean_c = np.mean(sub_window)
+                    std_c = np.std(sub_window)
+                    col_d_upper[t] = mean_c + (sigma_mult * std_c)
+                    col_d_lower[t] = mean_c - (sigma_mult * std_c)
+                else:
+                    col_d_upper[t] = 0.0
+                    col_d_lower[t] = 0.0
 
             # STEP 6: LAPTOP EXCEL ZONE CLASSIFICATION INTEGRATION
-            # If Delta (C) crosses above its EMA (D) and absolute delta is larger than half ATR -> Active Expansion
             excel_zones = []
             for t in range(total_elements):
-                if col_c[t] > col_d[t] and abs(col_c[t]) > (col_e[t] * 0.5):
-                    excel_zones.append("🟢 Bullish Extension Expansion")
-                elif col_c[t] < col_d[t] and abs(col_c[t]) > (col_e[t] * 0.5):
-                    excel_zones.append("🔴 Bearish Compression Break")
+                if col_d_upper[t] != 0.0:
+                    if col_c[t] >= col_d_upper[t]:
+                        excel_zones.append("⚠️ Overstretched High (Sell Call Zone)")
+                    elif col_c[t] <= col_d_lower[t]:
+                        excel_zones.append("🟢 Overstretched Low (Sell Put Zone)")
+                    else:
+                        excel_zones.append("Mean Reverting Zone (No Trade)")
                 else:
-                    excel_zones.append("Normal Range (Volatility Squeeze)")
+                    excel_zones.append("Warming Up Engine...")
 
             # STEP 7: SECURE TRANSITION PACKING & 2-YEAR FREEZE LOCK
             research_df = pd.DataFrame({
                 'Date_Time': time_list,
                 'Column A (Nifty Close)': [float(x) for x in col_a],
                 'Column B (Kalman Nifty)': [float(x) for x in col_b],
-                'Column C (Delta A-B)': [float(x) for x in col_c],
-                'Column D (EMA 9 on C)': [float(x) for x in col_d],
-                'Column E (ATR 14 Asset)': [float(x) for x in col_e],
+                'Column C (Delta Variance)': [float(x) for x in col_c],
+                'Upper Strike Trigger': [float(x) for x in col_d_upper],
+                'Lower Strike Trigger': [float(x) for x in col_d_lower],
                 'Excel Market Zone': excel_zones
             })
 
@@ -157,27 +145,26 @@ if len(st.session_state.nifty_hybrid_db) == 0 or run_sync:
             end_date = pd.Timestamp("2026-12-31 23:59:59")
 
             final_mask = (research_df['Datetime_Parsed'] >= start_date) & (research_df['Datetime_Parsed'] <= end_date)
-            st.session_state.nifty_hybrid_db = research_df[final_mask].drop(columns=['Datetime_Parsed']).reset_index(drop=True)
+            st.session_state.nifty_stat_db = research_df[final_mask].drop(columns=['Datetime_Parsed']).reset_index(drop=True)
 
 # ==============================================================================
 # STEP 8: PRESENTATION GRID & ALL POSSIBLE OUTCOME DATES MATRIX
 # ==============================================================================
-output_matrix = st.session_state.nifty_hybrid_db.copy()
+output_matrix = st.session_state.nifty_stat_db.copy()
 
 if not output_matrix.empty:
-    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Data Blocks Hard-Locked**")
+    st.write(f"### 📊 Step 8 Matrix: **{len(output_matrix)} Quant Data Blocks Hard-Locked**")
     
     st.write("#### 📋 All Possible Outcome Dates Matrix Logs (Latest First)")
     inverted_view = output_matrix.iloc[::-1].reset_index(drop=True)
 
-    # Clean rendering matrix presentation layout format matching instructions
     st.dataframe(
-        inverted_view[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Nifty)', 'Column C (Delta A-B)', 'Column D (EMA 9 on C)', 'Column E (ATR 14 Asset)', 'Excel Market Zone']].style.format({
+        inverted_view[['Date_Time', 'Column A (Nifty Close)', 'Column B (Kalman Nifty)', 'Column C (Delta Variance)', 'Upper Strike Trigger', 'Lower Strike Trigger', 'Excel Market Zone']].style.format({
             'Column A (Nifty Close)': '{:.2f}',
             'Column B (Kalman Nifty)': '{:.2f}',
-            'Column C (Delta A-B)': '{:.4f}',
-            'Column D (EMA 9 on C)': '{:.4f}',
-            'Column E (ATR 14 Asset)': '{:.2f}'
+            'Column C (Delta Variance)': '{:.4f}',
+            'Upper Strike Trigger': '{:.4f}',
+            'Lower Strike Trigger': '{:.4f}'
         }),
         use_container_width=True
     )
