@@ -1,66 +1,80 @@
 import datetime
+import json
 import numpy as np
 import pandas as pd
-import yfinance as yf
-
-# ==========================================
-# 1. PARAMETERS & ROBUST DATA FETCHING
-# ==========================================
-ticker = "^NSEI"  # Nifty 50 Index
-end_date = datetime.date.today()
-
-# SAFETY FIX: Exactly 730 ke bajay 715 days rakhna cloud fetching ko strict rules se bachata hai
-start_date = end_date - datetime.timedelta(days=715)
-
-print(f"Fetching 1-Hour Nifty data from {start_date} to {end_date}...")
-
-# CLOUD FIX: Custom headers setup taaki Yahoo Finance blocks ko bypass kiya ja sake
 import requests
+import streamlit as st
 
-session = requests.Session()
-session.headers.update(
-    {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+# ==========================================
+# 1. PARAMETERS & BYPASS DATA FETCHING
+# ==========================================
+ticker = "^NSEI"
+end_date = int(datetime.datetime.now().timestamp())
+start_date = int(
+    (
+        datetime.datetime.now() - datetime.timedelta(days=715)
+    ).timestamp()
+)  # 2 Years Timestamp
+
+st.write("🔄 Nifty 1-Hour Data Load Ho Raha Hai (Bypass Mode)...")
+
+
+# Direct Yahoo Query API Fetch Method (Yfinance library ke bina)
+def fetch_data_direct(symbol, start, end):
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?period1={start}&period2={end}&interval=1h"
+
+    # Browser ki tarah act karne ke liye strong headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
-)
 
-# Download with specific session
-df = yf.download(
-    ticker,
-    start=start_date,
-    end=end_date,
-    interval="1h",
-    auto_adjust=True,
-    session=session,  # Adding the session here
-)
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        data = response.json()
 
-# Fallback mechanism: Agar data fir bhi empty aaye toh error dene ke bajay retry with close date
+        # JSON parsing into DataFrame
+        result = data["chart"]["result"][0]
+        timestamps = result["timestamp"]
+        indicators = result["indicators"]["quote"][0]
+
+        ohlc_df = pd.DataFrame(
+            {
+                "Open": indicators["open"],
+                "High": indicators["high"],
+                "Low": indicators["low"],
+                "Close": indicators["close"],
+                "Volume": indicators["volume"],
+            },
+            index=pd.to_datetime(timestamps, unit="s"),
+        )
+
+        # Indian Timezone (IST) me convert karna
+        ohlc_df.index = ohlc_df.index.tz_localize("UTC").tz_convert(
+            "Asia/Kolkata"
+        )
+        return ohlc_df.dropna()
+    except Exception as e:
+        return pd.DataFrame()  # Khali DF return karega agar fail hua toh
+
+
+# Data Fetch Execute karna
+df = fetch_data_direct(ticker, start_date, end_date)
+
+# Fallback: Agar Nifty Index block ho toh temporary testing ke liye Nifty ETF (INDY) fetch karega
 if df.empty:
-    print("Primary fetch failed, attempting alternative layout...")
-    # Thoda data period chota karke re-try karte hain
-    start_date_alt = end_date - datetime.timedelta(days=360)
-    df = yf.download(
-        ticker,
-        start=start_date_alt,
-        end=end_date,
-        interval="1h",
-        auto_adjust=True,
-        session=session,
+    st.warning(
+        "⚠️ Direct Index block hai, Backup Ticker (Nifty ETF) se data try kar rahe hain..."
     )
+    df = fetch_data_direct("INDY", start_date, end_date)
 
 if df.empty:
-    # Agar ab bhi empty hai toh crash hone ke bajay streamlit window pe warning dikhaye
-    import streamlit as st
-
     st.error(
-        "Yahoo Finance API block ho gayi hai Streamlit server par. Kripya app ko refresh karein ya thodi der baad try karein."
+        "❌ Streamlit Servers ko Yahoo ne poori tarah block kiya hai. Kripya app ko 'Reboot' karein Streamlit settings se."
     )
     st.stop()
+else:
+    st.success(f"✅ Data Successfully Fetched! Total Rows: {len(df)}")
 
-# Multi-index headers ko target karke drop karna
-if isinstance(df.columns, pd.MultiIndex):
-    df.columns = df.columns.get_level_values(0)
-
-df = df.dropna()
-
-# Baki ka Kalman filter code iske niche as-is chalega...
+# Ab iske neeche aapka Kalman Filter ka function aur Strategy logic as-is chalega.
