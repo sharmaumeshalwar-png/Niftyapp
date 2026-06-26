@@ -11,32 +11,35 @@ end_date = datetime.date.today()
 start_date = end_date - datetime.timedelta(days=730)  # 2 Years lookback
 
 print(f"Fetching 1-Hour Nifty data from {start_date} to {end_date}...")
-df = yf.download(ticker, start=start_date, end=end_date, interval="1h")
+
+# ERROR FIX: group_by='ticker' हटाकर auto_adjust=True का उपयोग किया
+df = yf.download(
+    ticker, start=start_date, end=end_date, interval="1h", auto_adjust=True
+)
 
 if df.empty:
-    raise ValueError(
-        "Data nahi mil paya. Internet connection ya ticker check karein."
-    )
+    raise ValueError("Data nahi mil paya. Ticker check karein.")
 
-# Multi-index columns ko flatten karna (agar yfinance ka naya version ho)
+# ERROR FIX: Multi-index columns ko completely flatten/drop karne ka foolproof tareeka
 if isinstance(df.columns, pd.MultiIndex):
     df.columns = df.columns.get_level_values(0)
 
+# Data index properly clear karna
 df = df.dropna()
-
 
 # ==========================================
 # 2. ADAPTIVE KALMAN FILTER IMPLEMENTATION
 # ==========================================
-def calculate_adaptive_kalman(df, q_base=0.01, r_base=1.0, velocity_period=3):
-    closes = df["Close"].values
-    highs = df["High"].values
-    lows = df["Low"].values
+def calculate_adaptive_kalman(data_df, q_base=0.01, r_base=1.0, velocity_period=3):
+    # Arrays ko 1D/Flat matrix me convert karna explicit safely
+    closes = data_df["Close"].to_numpy().flatten()
+    highs = data_df["High"].to_numpy().flatten()
+    lows = data_df["Low"].to_numpy().flatten()
 
     n = len(closes)
     kalman_output = np.zeros(n)
 
-    # ATR Calculation for Normalization & Volatility
+    # ATR Calculation
     tr = np.maximum(
         highs[1:] - lows[1:],
         np.maximum(
@@ -46,12 +49,11 @@ def calculate_adaptive_kalman(df, q_base=0.01, r_base=1.0, velocity_period=3):
     atr = np.zeros(n)
     atr[1:] = pd.Series(tr).rolling(window=14, min_periods=1).mean().values
     atr[0] = atr[1] if atr[1] != 0 else 1.0
-    atr = np.where(atr == 0, 1.0, atr)  # Zero division avoid karne ke liye
+    atr = np.where(atr == 0, 1.0, atr)
 
     # Initial State
-    x = closes[0]  # Initial price estimate
-    p = 1.0  # Initial error covariance
-
+    x = closes[0]
+    p = 1.0
     kalman_output[0] = x
 
     for i in range(1, n):
@@ -61,23 +63,24 @@ def calculate_adaptive_kalman(df, q_base=0.01, r_base=1.0, velocity_period=3):
         else:
             velocity = abs(closes[i] - closes[0])
 
-        # ADAPTIVE LOGIC: Velocity badhegi toh Q badhega
-        # Isse filter fast ho jayega aur breakout me price ke sath chalega
+        # ADAPTIVE LOGIC
         velocity_factor = velocity / atr[i]
-        Q = q_base * (1.0 + velocity_factor * 5.0)  # 5.0 is a multiplier
+        Q = q_base * (1.0 + velocity_factor * 5.0)
         R = r_base
 
-        # Kalman Filter Equations
-        p = p + Q  # Predict error covariance
-        k_gain = p / (p + R)  # Kalman Gain
-        x = x + k_gain * (closes[i] - x)  # Update state estimate
-        p = (1 - k_gain) * p  # Update error covariance
+        # Kalman Filter Formulas
+        p = p + Q
+        k_gain = p / (p + R)
+        x = x + k_gain * (closes[i] - x)
+        p = (1 - k_gain) * p
 
         kalman_output[i] = x
 
-    df["Kalman"] = kalman_output
-    df["ATR"] = atr
-    return df
+    # Assigning back to dataframe securely
+    data_df = data_df.copy()
+    data_df["Kalman"] = kalman_output
+    data_df["ATR"] = atr
+    return data_df
 
 
 # Execute Adaptive Kalman
@@ -86,40 +89,33 @@ df = calculate_adaptive_kalman(df)
 # ==========================================
 # 3. STRATEGY LOGIC: c = a - b & SIGNALS
 # ==========================================
-df["a"] = df["Close"]  # Close Price
-df["b"] = df["Kalman"]  # Kalman Filter
-df["c"] = df["a"] - df["b"]  # Distance
-
-# Normalized C score (Z-Score alternative using ATR)
+df["a"] = df["Close"]
+df["b"] = df["Kalman"]
+df["c"] = df["a"] - df["b"]
 df["c_scaled"] = df["c"] / df["ATR"]
 
-# Signal Generation
-# Entry tabhi hogi jab c_scaled strong bands ko cross karke hook back karega
-df["Signal"] = 0  # 0 = No Trade, 1 = Buy (Reversion), -1 = Sell (Reversion)
+df["Signal"] = 0
+threshold = 1.5
 
-threshold = 1.5  # Entry trigger threshold
+# Signal Loop
+c_vals = df["c"].to_numpy()
+c_scaled_vals = df["c_scaled"].to_numpy()
+signals = np.zeros(len(df))
 
 for i in range(1, len(df)):
-    # Short Trade (Mean Reversion): Price overextended upside but velocity cooling down
-    if df["c_scaled"].iloc[i - 1] > threshold and df["c"].iloc[i] < df[
-        "c"
-    ].iloc[i - 1]:
-        df.loc[df.index[i], "Signal"] = -1
+    if c_scaled_vals[i - 1] > threshold and c_vals[i] < c_vals[i - 1]:
+        signals[i] = -1  # Sell Reversion
+    elif c_scaled_vals[i - 1] < -threshold and c_vals[i] > c_vals[i - 1]:
+        signals[i] = 1  # Buy Reversion
 
-    # Long Trade (Mean Reversion): Price overextended downside but hooking up
-    elif df["c_scaled"].iloc[i - 1] < -threshold and df["c"].iloc[i] > df[
-        "c"
-    ].iloc[i - 1]:
-        df.loc[df.index[i], "Signal"] = 1
+df["Signal"] = signals
 
 # ==========================================
-# 4. PRINT SUMMARY & SAMPLE SIGNALS
+# 4. PRINT SUMMARY
 # ==========================================
 print("\n--- Strategy Analysis Complete ---")
 print(f"Total Candles Analyzed: {len(df)}")
-print(f"Total Short Signals Generated: {len(df[df['Signal'] == -1])}")
-print(f"Total Long Signals Generated: {len(df[df['Signal'] == 1])}")
-
-# Display last 10 rows with signals
-print("\nLast 10 Rows Data:")
-print(df[["Close", "Kalman", "c", "c_scaled", "Signal"]].tail(10))
+print(f"Total Short Signals: {len(df[df['Signal'] == -1])}")
+print(f"Total Long Signals: {len(df[df['Signal'] == 1])}")
+print("\nLast 5 Rows Data:")
+print(df[["Close", "Kalman", "c", "c_scaled", "Signal"]].tail(5))
