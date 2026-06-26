@@ -109,6 +109,29 @@ st.success("📊 Matrix Generation Complete with Correct Timeline!")
 # ==========================================
 # 5. STREAMLIT UI DISPLAY (PURE TABLE GRID)
 # ==========================================
-# Index Formatting for clean display on Streamlit UI table
+# ERROR FIXED HERE
 df.index = df.index.strftime("%Y-%m-%d %H:%M")
-final_display_df =
+final_display_df = df[["a", "b", "c", "d"]]
+
+col1, col2, col3 = st.columns(3)
+col1.metric(label="Data Locked From", value="01-Jan-2025 09:00")
+col2.metric(label="Total Valid NSE Rows", value=f"{len(final_display_df)} Rows")
+
+# CSV download hook with accurate formatting
+csv_data = final_display_df.to_csv().encode("utf-8")
+col3.download_button(
+    label="📥 Download Corrected Data CSV",
+    data=csv_data,
+    file_name="nifty_perfect_time_kalman.csv",
+    mime="text/csv",
+)
+
+st.markdown("---")
+st.subheader("📋 Core Mathematical Matrix Sequence (Scroll to see All Rows)")
+
+# Render whole data sheet with proper precision
+st.dataframe(
+    final_display_df.style.format("{:.2f}"),
+    use_container_width=True,
+    height=600,
+)
