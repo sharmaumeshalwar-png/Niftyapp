@@ -4,40 +4,51 @@ import pandas as pd
 import streamlit as st
 
 # Page layout configuration
-st.set_page_config(page_title="Complete Kalman Matrix", layout="wide")
+st.set_page_config(page_title="Correct Kalman Matrix", layout="wide")
 
-st.title("📋 Complete Kalman Filter Matrix (Full 2-Year Frozen Data)")
+st.title("📋 Corrected Kalman Filter Matrix (Exact NSE Dates & Hours)")
 st.write(
-    "Yeh table **01-Jan-2025** se lekar poora data show kar rahi hai. Aap isse niche scroll karke poora dekh sakte hain aur download bhi kar sakte hain."
+    "Yeh table **01-Jan-2025** se strictly shuru ho rahi hai, jisme sirf Indian Market hours aur weekdays locked hain."
 )
 
 # ==========================================
-# 1. FIXED 2-YEAR DATA PIPELINE (FULL DATA DETECT)
+# 1. FIXED DATE DATA LOCK PIPELINE (NSE TIME HOURS LOCK)
 # ==========================================
 
 
 @st.cache_data(ttl=86400)
-def generate_frozen_nifty_data():
+def generate_exact_nse_data():
     start_date = pd.Timestamp("2025-01-01")
-    # Exact 2 years timeline lock (Approx 17,520 hours/rows)
-    end_date = start_date + datetime.timedelta(days=730)
-    dates = pd.date_range(start=start_date, end=end_date, freq="1h")
-    total_candles = len(dates)
+    end_date = pd.Timestamp("2026-06-26")  # Current Date Till Now
+
+    # Pure Calendar Days Generator
+    raw_dates = pd.date_range(start=start_date, end=end_date, freq="1h")
+
+    # STRICT FILTERING: Sirf Weekdays (Mon-Fri) aur Market Hours (09:00 se 15:00) lock karna
+    nse_dates = [
+        dt
+        for dt in raw_dates
+        if dt.weekday() < 5 and 9 <= dt.hour <= 15  # Mon-Fri Only  # Market Time Hours
+    ]
+
+    total_candles = len(nse_dates)
 
     base_close = 24000
-    np.random.seed(12345)  # Seed frozen for exact historical consistency
+    np.random.seed(12345)  # Seed locked for absolute consistency
 
-    # Vectorized fast generation
+    # Vectorized fast sequence generation
     mock_history = base_close + np.cumsum(
         np.random.normal(0, 15, total_candles)
     )
 
-    df_out = pd.DataFrame({"a": mock_history}, index=dates)
+    # Creating Dataframe with string formatted exact timestamps
+    df_out = pd.DataFrame({"a": mock_history}, index=nse_dates)
+    df_out.index.name = "Date & Time"
     return df_out
 
 
-with st.spinner("⏳ Calculations running for full dataset... Please wait"):
-    df = generate_frozen_nifty_data()
+with st.spinner("⏳ Calculations running for exact NSE timestamps..."):
+    df = generate_exact_nse_data()
 
     # Arrays for processing
     a_vals = df["a"].to_numpy().flatten()
@@ -93,32 +104,11 @@ with st.spinner("⏳ Calculations running for full dataset... Please wait"):
 
     df["d"] = d_vals
 
-st.success("📊 Poora Data (All Rows) Successfully Calculate Ho Gaya Hai!")
+st.success("📊 Matrix Generation Complete with Correct Timeline!")
 
 # ==========================================
-# 5. STREAMLIT UI DISPLAY (POORA DATA GRID)
+# 5. STREAMLIT UI DISPLAY (PURE TABLE GRID)
 # ==========================================
-final_display_df = df[["a", "b", "c", "d"]]
-
-col1, col2, col3 = st.columns(3)
-col1.metric(label="Data Start Date", value="01-Jan-2025")
-col2.metric(label="Total Rows in Table", value=f"{len(final_display_df)} Rows")
-
-# Feature: Download Button taaki aap Excel me poora data nikal sako
-csv_data = final_display_df.to_csv().encode("utf-8")
-col3.download_button(
-    label="📥 Download Full Data as CSV",
-    data=csv_data,
-    file_name="nifty_kalman_full_2025_2027.csv",
-    mime="text/csv",
-)
-
-st.markdown("---")
-st.subheader("📋 Core Mathematical Matrix Sequence (Scroll Down to see All Rows)")
-
-# FIX: `.tail()` ya `.head()` hata diya hai, ab poora data frame display hoga grid me height setting ke sath
-st.dataframe(
-    final_display_df.style.format("{:.2f}"),
-    use_container_width=True,
-    height=600,  # Isse table me scrollbar aa jayega aur crash nahi hoga
-)
+# Index Formatting for clean display on Streamlit UI table
+df.index = df.index.strftime("%Y-%m-%d %H:%M")
+final_display_df =
