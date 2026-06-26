@@ -1,157 +1,122 @@
 import datetime
 import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
 
-# Page configuration
-st.set_page_config(page_title="Adaptive Kalman Table", layout="wide")
+# Page layout configuration
+st.set_page_config(page_title="Kalman Matrix", layout="wide")
 
-st.title("📋 Adaptive Kalman Filter — Nifty 1-Hour Signal Table")
+st.title("📋 Kalman Filter Core Matrix (Locked from Jan 2025)")
 st.write(
-    "Data locked from **01-Jan-2025** till date. Showing pure mathematical calculations and trade signals in matrix format."
+    "Showing strictly columns: **a (Close)**, **b (Kalman)**, **c (a-b)**, and **d (Adaptive Kalman on c)**."
 )
 
 # ==========================================
-# 1. FIXED DATE DATA LOCK PIPELINE (FAST RENDERING)
+# 1. FIXED 2-YEAR DATA PIPELINE (LOCKED SEED)
 # ==========================================
 
 
 @st.cache_data(ttl=86400)
-def fetch_nifty_locked_2025():
+def generate_frozen_nifty_data():
     start_date = pd.Timestamp("2025-01-01")
-    dates = pd.date_range(start=start_date, end="2026-06-26", freq="1h")
+    # Exact 2 years timeline lock (Approx 17,520 hours)
+    end_date = start_date + datetime.timedelta(days=730)
+    dates = pd.date_range(start=start_date, end=end_date, freq="1h")
     total_candles = len(dates)
 
     base_close = 24000
-    np.random.seed(12345)  # Seed locked for consistency
+    np.random.seed(12345)  # Seed frozen for exact historical consistency
 
-    # Fast generation using vectorization
+    # Vectorized fast generation
     mock_history = base_close + np.cumsum(
         np.random.normal(0, 15, total_candles)
     )
 
-    df_out = pd.DataFrame(
-        {
-            "Open": mock_history - 5,
-            "High": mock_history + 10,
-            "Low": mock_history - 10,
-            "Close": mock_history,
-        },
-        index=dates,
-    )
+    df_out = pd.DataFrame({"a": mock_history}, index=dates)
     return df_out
 
 
-with st.spinner("⏳ Calculations processing... Please wait"):
-    df = fetch_nifty_locked_2025()
+with st.spinner("⏳ Calculations running... Please wait"):
+    df = generate_frozen_nifty_data()
+
+    # Arrays for processing
+    a_vals = df["a"].to_numpy().flatten()
+    n = len(a_vals)
 
     # ==========================================
-    # 2. ADAPTIVE KALMAN FILTER LOGIC
+    # 2. CALCULATION: b (Standard Kalman on a)
     # ==========================================
-    closes = df["Close"].to_numpy().flatten()
-    highs = df["High"].to_numpy().flatten()
-    lows = df["Low"].to_numpy().flatten()
-    n = len(closes)
-
-    q_base = 0.01
-    r_base = 1.0
-    velocity_period = 3
-
-    # Fast Vectorized ATR
-    tr1 = highs[1:] - lows[1:]
-    tr2 = abs(highs[1:] - closes[:-1])
-    tr3 = abs(lows[1:] - closes[:-1])
-    tr = np.maximum(tr1, np.maximum(tr2, tr3))
-
-    atr = np.zeros(n)
-    atr[1:] = pd.Series(tr).rolling(window=14, min_periods=1).mean().values
-    atr[0] = atr[1] if atr[1] != 0 else 1.0
-
-    kalman_output = np.zeros(n)
-    x = closes[0]
-    p = 1.0
-    kalman_output[0] = x
-
-    # Core Kalman loop
-    for i in range(1, n):
-        velocity = (
-            abs(closes[i] - closes[i - velocity_period])
-            if i >= velocity_period
-            else abs(closes[i] - closes[0])
-        )
-        velocity_factor = velocity / atr[i]
-
-        Q = q_base * (1.0 + velocity_factor * 5.0)
-        R = r_base
-
-        p = p + Q
-        k_gain = p / (p + R)
-        x = x + k_gain * (closes[i] - x)
-        p = (1 - k_gain) * p
-        kalman_output[i] = x
-
-    df["Kalman (b)"] = kalman_output
-    df["ATR"] = atr
-    df["c (a-b)"] = df["Close"] - df["Kalman (b)"]
-    df["c_scaled"] = df["c (a-b)"] / df["ATR"]
-
-    # Signal Generation Logic
-    signals = np.zeros(n)
-    threshold = 1.2
-    c_scaled_vals = df["c_scaled"].to_numpy()
-    c_vals = df["c (a-b)"].to_numpy()
+    b_vals = np.zeros(n)
+    x_b = a_vals[0]
+    p_b = 1.0
+    q_b = 0.01  # Fixed process noise
+    r_b = 1.0  # Fixed measurement noise
+    b_vals[0] = x_b
 
     for i in range(1, n):
-        if c_scaled_vals[i - 1] > threshold and c_vals[i] < c_vals[i - 1]:
-            signals[i] = -1  # Sell Reversion
-        elif c_scaled_vals[i - 1] < -threshold and c_vals[i] > c_vals[i - 1]:
-            signals[i] = 1  # Buy Reversion
+        p_b = p_b + q_b
+        k_gain = p_b / (p_b + r_b)
+        x_b = x_b + k_gain * (a_vals[i] - x_b)
+        p_b = (1 - k_gain) * p_b
+        b_vals[i] = x_b
 
-    df["Signal"] = signals
+    df["b"] = b_vals
 
-st.success("📊 Data Table Ready!")
+    # ==========================================
+    # 3. CALCULATION: c (a - b)
+    # ==========================================
+    df["c"] = df["a"] - df["b"]
+    c_vals = df["c"].to_numpy().flatten()
+
+    # ==========================================
+    # 4. CALCULATION: d (Adaptive Kalman on c)
+    # ==========================================
+    # Velocity/Volatility logic based on 'c' to make it adaptive
+    d_vals = np.zeros(n)
+    x_d = c_vals[0]
+    p_d = 1.0
+    q_d_base = 0.05
+    r_d = 1.0
+    d_vals[0] = x_d
+
+    # Simple Rolling Deviation of 'c' for adaptive noise scaling
+    c_series = pd.Series(c_vals)
+    c_volatility = (
+        c_series.rolling(window=14, min_periods=1).std().fillna(1.0).to_numpy()
+    )
+
+    for i in range(1, n):
+        # Adaptive calculation: Volatility badhne par processing speed (Q) badhegi
+        adaptive_q = q_d_base * (1.0 + abs(c_vals[i] / c_volatility[i]))
+
+        p_d = p_d + adaptive_q
+        k_gain_d = p_d / (p_d + r_d)
+        x_d = x_d + k_gain_d * (c_vals[i] - x_d)
+        p_d = (1 - k_gain_d) * p_d
+        d_vals[i] = x_d
+
+    df["d"] = d_vals
+
+st.success("📊 Matrix Generation Complete!")
 
 # ==========================================
-# 3. STREAMLIT UI DISPLAY (PURE TABLES)
+# 5. STREAMLIT UI DISPLAY (PURE TABLE GRID)
 # ==========================================
-col1, col2, col3 = st.columns(3)
-col1.metric(label="Data Lock Date", value="01-Jan-2025")
-col2.metric(label="Total Generated Candles", value=f"{len(df)} Hours")
-col3.metric(label="Format Mode", value="Only Table Grid")
+col1, col2 = st.columns(2)
+col1.metric(label="Data Locked From", value="01-Jan-2025")
+col2.metric(label="Total Frozen Rows", value=f"{len(df)} Candles (2 Years)")
 
 st.markdown("---")
-
-# Section 1: Active Signals Filtered Table
-st.subheader("🎯 Active Trade Signals Triggered (Filter View)")
+st.subheader("📋 Core Mathematical Matrix Sequence")
 st.write(
-    "Niche diyi gayi table sirf wahi rows dikhayegi jahan *Buy (1)* ya *Sell (-1)* signal generate hua hai."
+    "Niche table mein columns ka matlab hai: **a** = Close Price, **b** = Kalman Line, **c** = Difference ($a-b$), **d** = Adaptive Kalman of $c$."
 )
 
-signal_df = df[df["Signal"] != 0][
-    ["Open", "High", "Low", "Close", "Kalman (b)", "c (a-b)", "Signal"]
-]
-st.dataframe(signal_df, use_container_width=True)
+# Showing the clean table format with specific precision
+final_display_df = df[["a", "b", "c", "d"]]
 
-st.markdown("---")
-
-# Section 2: Full Historical Matrix Sequence
-st.subheader("📋 Complete Historical Matrix Sequence (Latest 50 Candles)")
-st.write(
-    "Nifty data pipeline ka core structure latest current execution rows ke sath."
+# Multi-index or extra headers are dropped, pure a, b, c, d is displayed
+st.dataframe(
+    final_display_df.tail(100).style.format("{:.2f}"),
+    use_container_width=True,
 )
-
-# Formatting floating points for clean look
-final_table = df[
-    [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Kalman (b)",
-        "c (a-b)",
-        "c_scaled",
-        "Signal",
-    ]
-].tail(50)
-st.dataframe(final_table.style.format("{:.2f}"), use_container_width=True)
