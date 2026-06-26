@@ -4,53 +4,49 @@ import pandas as pd
 import streamlit as st
 
 # Page layout configuration
-st.set_page_config(page_title="Correct Kalman Matrix", layout="wide")
+st.set_page_config(page_title="Solid Kalman Strategy", layout="wide")
 
-st.title("📋 Corrected Kalman Filter Matrix (Exact NSE Dates & Hours)")
+st.title("🚀 Pure Mathematical Trading Matrix — 1 Jan 2025 Locked")
 st.write(
-    "Yeh table **01-Jan-2025** se strictly shuru ho rahi hai, jisme sirf Indian Market hours aur weekdays locked hain."
+    "Aapki exact requirement ke hisab se: **a** (Close), **b** (Kalman of a), **c** (a-b), aur **d** (Adaptive Kalman of c). "
+    "Sath hi $c$ ko boundary me lock karne ke liye **Upper/Lower Bands** aur accurate **Signals** jod diye hain."
 )
 
 # ==========================================
-# 1. FIXED DATE DATA LOCK PIPELINE (NSE TIME HOURS LOCK)
+# 1. FIXED DATE DATA LOCK PIPELINE (NSE HOURS)
 # ==========================================
 
 
 @st.cache_data(ttl=86400)
 def generate_exact_nse_data():
     start_date = pd.Timestamp("2025-01-01")
-    end_date = pd.Timestamp("2026-06-26")  # Current Date Till Now
+    end_date = pd.Timestamp("2026-06-26")  # Frozen till today
 
-    # Pure Calendar Days Generator
     raw_dates = pd.date_range(start=start_date, end=end_date, freq="1h")
 
-    # STRICT FILTERING: Sirf Weekdays (Mon-Fri) aur Market Hours (09:00 se 15:00) lock karna
+    # STRICT FILTERING: Only Weekdays (Mon-Fri) & Market Hours (09:00 to 15:00)
     nse_dates = [
         dt
         for dt in raw_dates
-        if dt.weekday() < 5 and 9 <= dt.hour <= 15  # Mon-Fri Only  # Market Time Hours
+        if dt.weekday() < 5 and 9 <= dt.hour <= 15
     ]
 
     total_candles = len(nse_dates)
-
     base_close = 24000
-    np.random.seed(12345)  # Seed locked for absolute consistency
+    np.random.seed(12345)  # Seed frozen for consistency
 
-    # Vectorized fast sequence generation
     mock_history = base_close + np.cumsum(
         np.random.normal(0, 15, total_candles)
     )
 
-    # Creating Dataframe with string formatted exact timestamps
     df_out = pd.DataFrame({"a": mock_history}, index=nse_dates)
     df_out.index.name = "Date & Time"
     return df_out
 
 
-with st.spinner("⏳ Calculations running for exact NSE timestamps..."):
+with st.spinner("⏳ Running advanced mathematical matrix... Please wait"):
     df = generate_exact_nse_data()
 
-    # Arrays for processing
     a_vals = df["a"].to_numpy().flatten()
     n = len(a_vals)
 
@@ -104,34 +100,65 @@ with st.spinner("⏳ Calculations running for exact NSE timestamps..."):
 
     df["d"] = d_vals
 
-st.success("📊 Matrix Generation Complete with Correct Timeline!")
+    # ==========================================
+    # 🔥 SOLID LOGIC: EXTRACTION BANDS ON 'c'
+    # ==========================================
+    # c_volatility hume standard deviation de raha hai, iska 2x bands banayega
+    df["Upper_Band"] = df["d"] + (2.0 * c_volatility)
+    df["Lower_Band"] = df["d"] - (2.0 * c_volatility)
+
+    # ==========================================
+    # 🔥 SIGNAL GENERATION: HOOK BACK LOGIC
+    # ==========================================
+    signals = np.zeros(n)
+    u_band = df["Upper_Band"].to_numpy()
+    l_band = df["Lower_Band"].to_numpy()
+
+    for i in range(2, n):
+        # SELL: Pichli candle Upper Band ke upar thi (Extreme), aur current candle wapas niche aayi (Hook Back)
+        if c_vals[i - 1] > u_band[i - 1] and c_vals[i] < c_vals[i - 1]:
+            signals[i] = -1
+        # BUY: Pichli candle Lower Band ke niche thi, aur current candle upar ghum gayi
+        elif c_vals[i - 1] < l_band[i - 1] and c_vals[i] > c_vals[i - 1]:
+            signals[i] = 1
+
+    df["Signal"] = signals
+
+st.success("📊 Solid Strategy Matrix Generated Successfully!")
 
 # ==========================================
-# 5. STREAMLIT UI DISPLAY (PURE TABLE GRID)
+# 5. STREAMLIT UI DISPLAY (TABLE ONLY)
 # ==========================================
-# ERROR FIXED HERE
-df.index = df.index.strftime("%Y-%m-%d %H:%M")
-final_display_df = df[["a", "b", "c", "d"]]
-
 col1, col2, col3 = st.columns(3)
-col1.metric(label="Data Locked From", value="01-Jan-2025 09:00")
-col2.metric(label="Total Valid NSE Rows", value=f"{len(final_display_df)} Rows")
+col1.metric(label="Start Lock Date", value="01-Jan-2025")
+col2.metric(label="Total NSE Trading Hours", value=f"{len(df)} Rows")
+col3.metric(label="Strategy Mode", value="Extreme Mean Reversion")
 
-# CSV download hook with accurate formatting
-csv_data = final_display_df.to_csv().encode("utf-8")
+# Download Button for backtesting
+csv_data = df[["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]].to_csv().encode("utf-8")
 col3.download_button(
-    label="📥 Download Corrected Data CSV",
+    label="📥 Download Full Signal Sheet CSV",
     data=csv_data,
-    file_name="nifty_perfect_time_kalman.csv",
+    file_name="nifty_solid_kalman_signals.csv",
     mime="text/csv",
 )
 
 st.markdown("---")
-st.subheader("📋 Core Mathematical Matrix Sequence (Scroll to see All Rows)")
 
-# Render whole data sheet with proper precision
+# Section A: Only Active Signals Filter
+st.subheader("🎯 Active Trading Signals (Filter View)")
+st.write("Yeh table sirf wahi hours dikha rahi hai jahan solid execution confirmation mila hai.")
+signal_only_df = df[df["Signal"] != 0][["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]]
+st.dataframe(signal_only_df.style.format("{:.2f}"), use_container_width=True)
+
+st.markdown("---")
+
+# Section B: Full Matrix
+st.subheader("📋 Complete Continuous Timeline Matrix (All Rows)")
+df_display = df.copy()
+df_display.index = df_display.index.strftime("%Y-%m-%d %H:%M")
 st.dataframe(
-    final_display_df.style.format("{:.2f}"),
+    df_display[["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]].style.format("{:.2f}"),
     use_container_width=True,
-    height=600,
+    height=500,
 )
