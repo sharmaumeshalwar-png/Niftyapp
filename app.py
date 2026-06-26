@@ -3,12 +3,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="OU Process Matrix", layout="wide")
+st.set_page_config(page_title="OU Process Matrix Tight", layout="wide")
 
 st.title("🏛️ Institutional Mean Reversion — Ornstein-Uhlenbeck (OU) Matrix")
 st.write(
-    "Yeh system **Kalman Filter ($b$)** ka use karke pehle spread ($c$) nikalta hai, "
-    "aur fir us par **Ornstein-Uhlenbeck SDE** mathematical model laga kar palatne ki speed ($\theta$) aur Half-Life nikalta hai."
+    "Process Noise Multiplier for **b (Kalman)** is locked at **0.0001** for an ultra-smooth, stable long-term target benchmark."
 )
 
 # ==========================================
@@ -39,20 +38,20 @@ def generate_exact_nse_data():
     return df_out
 
 
-with st.spinner("⏳ Running Ornstein-Uhlenbeck SDE Solvers..."):
+with st.spinner("⏳ Running OU Solvers with Tight Kalman Multiplier..."):
     df = generate_exact_nse_data()
 
     a_vals = df["a"].to_numpy().flatten()
     n = len(a_vals)
 
     # ==========================================
-    # 2. CALCULATION: b (Standard Kalman on a)
+    # 2. CALCULATION: b (Standard Kalman on a with 0.0001 Multiplier)
     # ==========================================
     b_vals = np.zeros(n)
     x_b = a_vals[0]
     p_b = 1.0
-    q_b = 0.01
-    r_b = 1.0
+    q_b = 0.0001  # 🔥 FIXED: Tight process noise multiplier as requested
+    r_b = 1.0  # Measurement noise
     b_vals[0] = x_b
 
     for i in range(1, n):
@@ -66,9 +65,8 @@ with st.spinner("⏳ Running Ornstein-Uhlenbeck SDE Solvers..."):
     df["c"] = df["a"] - df["b"]
 
     # ==========================================
-    # 🔥 CORE UPGRADE: ORNSTEIN-UHLENBECK PARAMS
+    # 3. CALCULATION: ORNSTEIN-UHLENBECK PARAMS
     # ==========================================
-    # Rolling autoregressive fitting to find Theta (Speed of Reversion)
     lookback = 30
     theta_arr = np.zeros(n)
     half_life_arr = np.zeros(n)
@@ -80,55 +78,48 @@ with st.spinner("⏳ Running Ornstein-Uhlenbeck SDE Solvers..."):
         y = c_vals[i - lookback + 1 : i + 1]
         x = c_vals[i - lookback : i]
 
-        # Fast native linear regression (y = alpha + beta * x)
         poly = np.polyfit(x, y, 1)
         beta = poly[0]
 
-        # Calculate Theta from Mean Reversion Math
-        # beta = exp(-theta * dt), assuming dt = 1 hour
         if 0 < beta < 1:
             theta = -np.log(beta)
             half_life = np.log(2) / theta
         else:
             theta = 0.01
-            half_life = 99.0  # Dead state
+            half_life = 99.0
 
         theta_arr[i] = theta
         half_life_arr[i] = half_life
 
-        # Signal Generation based on OU Equilibrium variance boundaries
         rolling_std = np.std(c_vals[i - lookback : i])
         ou_equilibrium_barrier = rolling_std * 1.8
 
         if c_vals[i] > ou_equilibrium_barrier and c_vals[i] < c_vals[i - 1]:
-            ou_signal[i] = -1  # Sell Reversion
+            ou_signal[i] = -1
         elif (
             c_vals[i] < -ou_equilibrium_barrier and c_vals[i] > c_vals[i - 1]
         ):
-            ou_signal[i] = 1  # Buy Reversion
+            ou_signal[i] = 1
 
     df["Theta"] = theta_arr
     df["Half_Life_Hours"] = half_life_arr
     df["Signal"] = ou_signal
 
-st.success("📊 Ornstein-Uhlenbeck Institutional Model Integrated!")
+st.success("📊 OU Model with Locked 0.0001 Multiplier Integrated!")
 
 # ==========================================
-# 3. STREAMLIT UI DISPLAY (PURE TABLES)
+# 4. STREAMLIT UI DISPLAY
 # ==========================================
 df_display = df.copy()
 df_display.index = df_display.index.strftime("%Y-%m-%d %H:%M")
 
 col1, col2, col3 = st.columns(3)
-col1.metric(label="Data Locked From", value="01-Jan-2025")
-col2.metric(label="Model Type", value="OU Stochastic Process")
+col1.metric(label="Kalman Q-Multiplier", value="0.0001")
+col2.metric(label="Model Type", value="Stable OU Process")
 col3.metric(label="Total Continuous Rows", value=f"{len(df_display)} Hours")
 
 st.markdown("---")
 st.subheader("🎯 Active OU Reversion Triggers (Strict High-Speed Only)")
-st.write(
-    "Yeh table sirf un points ko filter karti hai jahan model ne momentum exhaustion confirm kiya hai."
-)
 sig_df = df_display[df_display["Signal"] != 0][
     ["a", "b", "c", "Theta", "Half_Life_Hours", "Signal"]
 ]
