@@ -4,22 +4,22 @@ import pandas as pd
 import streamlit as st
 
 # Page layout configuration
-st.set_page_config(page_title="Kalman Matrix", layout="wide")
+st.set_page_config(page_title="Complete Kalman Matrix", layout="wide")
 
-st.title("📋 Kalman Filter Core Matrix (Locked from Jan 2025)")
+st.title("📋 Complete Kalman Filter Matrix (Full 2-Year Frozen Data)")
 st.write(
-    "Showing strictly columns: **a (Close)**, **b (Kalman)**, **c (a-b)**, and **d (Adaptive Kalman on c)**."
+    "Yeh table **01-Jan-2025** se lekar poora data show kar rahi hai. Aap isse niche scroll karke poora dekh sakte hain aur download bhi kar sakte hain."
 )
 
 # ==========================================
-# 1. FIXED 2-YEAR DATA PIPELINE (LOCKED SEED)
+# 1. FIXED 2-YEAR DATA PIPELINE (FULL DATA DETECT)
 # ==========================================
 
 
 @st.cache_data(ttl=86400)
 def generate_frozen_nifty_data():
     start_date = pd.Timestamp("2025-01-01")
-    # Exact 2 years timeline lock (Approx 17,520 hours)
+    # Exact 2 years timeline lock (Approx 17,520 hours/rows)
     end_date = start_date + datetime.timedelta(days=730)
     dates = pd.date_range(start=start_date, end=end_date, freq="1h")
     total_candles = len(dates)
@@ -36,7 +36,7 @@ def generate_frozen_nifty_data():
     return df_out
 
 
-with st.spinner("⏳ Calculations running... Please wait"):
+with st.spinner("⏳ Calculations running for full dataset... Please wait"):
     df = generate_frozen_nifty_data()
 
     # Arrays for processing
@@ -49,8 +49,8 @@ with st.spinner("⏳ Calculations running... Please wait"):
     b_vals = np.zeros(n)
     x_b = a_vals[0]
     p_b = 1.0
-    q_b = 0.01  # Fixed process noise
-    r_b = 1.0  # Fixed measurement noise
+    q_b = 0.01
+    r_b = 1.0
     b_vals[0] = x_b
 
     for i in range(1, n):
@@ -71,7 +71,6 @@ with st.spinner("⏳ Calculations running... Please wait"):
     # ==========================================
     # 4. CALCULATION: d (Adaptive Kalman on c)
     # ==========================================
-    # Velocity/Volatility logic based on 'c' to make it adaptive
     d_vals = np.zeros(n)
     x_d = c_vals[0]
     p_d = 1.0
@@ -79,16 +78,13 @@ with st.spinner("⏳ Calculations running... Please wait"):
     r_d = 1.0
     d_vals[0] = x_d
 
-    # Simple Rolling Deviation of 'c' for adaptive noise scaling
     c_series = pd.Series(c_vals)
     c_volatility = (
         c_series.rolling(window=14, min_periods=1).std().fillna(1.0).to_numpy()
     )
 
     for i in range(1, n):
-        # Adaptive calculation: Volatility badhne par processing speed (Q) badhegi
         adaptive_q = q_d_base * (1.0 + abs(c_vals[i] / c_volatility[i]))
-
         p_d = p_d + adaptive_q
         k_gain_d = p_d / (p_d + r_d)
         x_d = x_d + k_gain_d * (c_vals[i] - x_d)
@@ -97,26 +93,32 @@ with st.spinner("⏳ Calculations running... Please wait"):
 
     df["d"] = d_vals
 
-st.success("📊 Matrix Generation Complete!")
+st.success("📊 Poora Data (All Rows) Successfully Calculate Ho Gaya Hai!")
 
 # ==========================================
-# 5. STREAMLIT UI DISPLAY (PURE TABLE GRID)
+# 5. STREAMLIT UI DISPLAY (POORA DATA GRID)
 # ==========================================
-col1, col2 = st.columns(2)
-col1.metric(label="Data Locked From", value="01-Jan-2025")
-col2.metric(label="Total Frozen Rows", value=f"{len(df)} Candles (2 Years)")
-
-st.markdown("---")
-st.subheader("📋 Core Mathematical Matrix Sequence")
-st.write(
-    "Niche table mein columns ka matlab hai: **a** = Close Price, **b** = Kalman Line, **c** = Difference ($a-b$), **d** = Adaptive Kalman of $c$."
-)
-
-# Showing the clean table format with specific precision
 final_display_df = df[["a", "b", "c", "d"]]
 
-# Multi-index or extra headers are dropped, pure a, b, c, d is displayed
+col1, col2, col3 = st.columns(3)
+col1.metric(label="Data Start Date", value="01-Jan-2025")
+col2.metric(label="Total Rows in Table", value=f"{len(final_display_df)} Rows")
+
+# Feature: Download Button taaki aap Excel me poora data nikal sako
+csv_data = final_display_df.to_csv().encode("utf-8")
+col3.download_button(
+    label="📥 Download Full Data as CSV",
+    data=csv_data,
+    file_name="nifty_kalman_full_2025_2027.csv",
+    mime="text/csv",
+)
+
+st.markdown("---")
+st.subheader("📋 Core Mathematical Matrix Sequence (Scroll Down to see All Rows)")
+
+# FIX: `.tail()` ya `.head()` hata diya hai, ab poora data frame display hoga grid me height setting ke sath
 st.dataframe(
-    final_display_df.tail(100).style.format("{:.2f}"),
+    final_display_df.style.format("{:.2f}"),
     use_container_width=True,
+    height=600,  # Isse table me scrollbar aa jayega aur crash nahi hoga
 )
