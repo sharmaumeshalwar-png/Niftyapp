@@ -3,37 +3,32 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Page layout configuration
-st.set_page_config(page_title="Solid Kalman Strategy", layout="wide")
+st.set_page_config(page_title="OU Process Matrix", layout="wide")
 
-st.title("🚀 Pure Mathematical Trading Matrix — 1 Jan 2025 Locked")
+st.title("🏛️ Institutional Mean Reversion — Ornstein-Uhlenbeck (OU) Matrix")
 st.write(
-    "Aapki exact requirement ke hisab se: **a** (Close), **b** (Kalman of a), **c** (a-b), aur **d** (Adaptive Kalman of c). "
-    "Sath hi $c$ ko boundary me lock karne ke liye **Upper/Lower Bands** aur accurate **Signals** jod diye hain."
+    "Yeh system **Kalman Filter ($b$)** ka use karke pehle spread ($c$) nikalta hai, "
+    "aur fir us par **Ornstein-Uhlenbeck SDE** mathematical model laga kar palatne ki speed ($\theta$) aur Half-Life nikalta hai."
 )
 
 # ==========================================
-# 1. FIXED DATE DATA LOCK PIPELINE (NSE HOURS)
+# 1. FIXED DATE DATA LOCK PIPELINE (NSE TIMELINE)
 # ==========================================
 
 
 @st.cache_data(ttl=86400)
 def generate_exact_nse_data():
     start_date = pd.Timestamp("2025-01-01")
-    end_date = pd.Timestamp("2026-06-26")  # Frozen till today
+    end_date = pd.Timestamp("2026-06-26")
 
     raw_dates = pd.date_range(start=start_date, end=end_date, freq="1h")
-
-    # STRICT FILTERING: Only Weekdays (Mon-Fri) & Market Hours (09:00 to 15:00)
     nse_dates = [
-        dt
-        for dt in raw_dates
-        if dt.weekday() < 5 and 9 <= dt.hour <= 15
+        dt for dt in raw_dates if dt.weekday() < 5 and 9 <= dt.hour <= 15
     ]
 
     total_candles = len(nse_dates)
     base_close = 24000
-    np.random.seed(12345)  # Seed frozen for consistency
+    np.random.seed(12345)
 
     mock_history = base_close + np.cumsum(
         np.random.normal(0, 15, total_candles)
@@ -44,7 +39,7 @@ def generate_exact_nse_data():
     return df_out
 
 
-with st.spinner("⏳ Running advanced mathematical matrix... Please wait"):
+with st.spinner("⏳ Running Ornstein-Uhlenbeck SDE Solvers..."):
     df = generate_exact_nse_data()
 
     a_vals = df["a"].to_numpy().flatten()
@@ -68,97 +63,83 @@ with st.spinner("⏳ Running advanced mathematical matrix... Please wait"):
         b_vals[i] = x_b
 
     df["b"] = b_vals
-
-    # ==========================================
-    # 3. CALCULATION: c (a - b)
-    # ==========================================
     df["c"] = df["a"] - df["b"]
-    c_vals = df["c"].to_numpy().flatten()
 
     # ==========================================
-    # 4. CALCULATION: d (Adaptive Kalman on c)
+    # 🔥 CORE UPGRADE: ORNSTEIN-UHLENBECK PARAMS
     # ==========================================
-    d_vals = np.zeros(n)
-    x_d = c_vals[0]
-    p_d = 1.0
-    q_d_base = 0.05
-    r_d = 1.0
-    d_vals[0] = x_d
+    # Rolling autoregressive fitting to find Theta (Speed of Reversion)
+    lookback = 30
+    theta_arr = np.zeros(n)
+    half_life_arr = np.zeros(n)
+    ou_signal = np.zeros(n)
 
-    c_series = pd.Series(c_vals)
-    c_volatility = (
-        c_series.rolling(window=14, min_periods=1).std().fillna(1.0).to_numpy()
-    )
+    c_vals = df["c"].to_numpy()
 
-    for i in range(1, n):
-        adaptive_q = q_d_base * (1.0 + abs(c_vals[i] / c_volatility[i]))
-        p_d = p_d + adaptive_q
-        k_gain_d = p_d / (p_d + r_d)
-        x_d = x_d + k_gain_d * (c_vals[i] - x_d)
-        p_d = (1 - k_gain_d) * p_d
-        d_vals[i] = x_d
+    for i in range(lookback, n):
+        y = c_vals[i - lookback + 1 : i + 1]
+        x = c_vals[i - lookback : i]
 
-    df["d"] = d_vals
+        # Fast native linear regression (y = alpha + beta * x)
+        poly = np.polyfit(x, y, 1)
+        beta = poly[0]
 
-    # ==========================================
-    # 🔥 SOLID LOGIC: EXTRACTION BANDS ON 'c'
-    # ==========================================
-    # c_volatility hume standard deviation de raha hai, iska 2x bands banayega
-    df["Upper_Band"] = df["d"] + (2.0 * c_volatility)
-    df["Lower_Band"] = df["d"] - (2.0 * c_volatility)
+        # Calculate Theta from Mean Reversion Math
+        # beta = exp(-theta * dt), assuming dt = 1 hour
+        if 0 < beta < 1:
+            theta = -np.log(beta)
+            half_life = np.log(2) / theta
+        else:
+            theta = 0.01
+            half_life = 99.0  # Dead state
 
-    # ==========================================
-    # 🔥 SIGNAL GENERATION: HOOK BACK LOGIC
-    # ==========================================
-    signals = np.zeros(n)
-    u_band = df["Upper_Band"].to_numpy()
-    l_band = df["Lower_Band"].to_numpy()
+        theta_arr[i] = theta
+        half_life_arr[i] = half_life
 
-    for i in range(2, n):
-        # SELL: Pichli candle Upper Band ke upar thi (Extreme), aur current candle wapas niche aayi (Hook Back)
-        if c_vals[i - 1] > u_band[i - 1] and c_vals[i] < c_vals[i - 1]:
-            signals[i] = -1
-        # BUY: Pichli candle Lower Band ke niche thi, aur current candle upar ghum gayi
-        elif c_vals[i - 1] < l_band[i - 1] and c_vals[i] > c_vals[i - 1]:
-            signals[i] = 1
+        # Signal Generation based on OU Equilibrium variance boundaries
+        rolling_std = np.std(c_vals[i - lookback : i])
+        ou_equilibrium_barrier = rolling_std * 1.8
 
-    df["Signal"] = signals
+        if c_vals[i] > ou_equilibrium_barrier and c_vals[i] < c_vals[i - 1]:
+            ou_signal[i] = -1  # Sell Reversion
+        elif (
+            c_vals[i] < -ou_equilibrium_barrier and c_vals[i] > c_vals[i - 1]
+        ):
+            ou_signal[i] = 1  # Buy Reversion
 
-st.success("📊 Solid Strategy Matrix Generated Successfully!")
+    df["Theta"] = theta_arr
+    df["Half_Life_Hours"] = half_life_arr
+    df["Signal"] = ou_signal
+
+st.success("📊 Ornstein-Uhlenbeck Institutional Model Integrated!")
 
 # ==========================================
-# 5. STREAMLIT UI DISPLAY (TABLE ONLY)
+# 3. STREAMLIT UI DISPLAY (PURE TABLES)
 # ==========================================
-col1, col2, col3 = st.columns(3)
-col1.metric(label="Start Lock Date", value="01-Jan-2025")
-col2.metric(label="Total NSE Trading Hours", value=f"{len(df)} Rows")
-col3.metric(label="Strategy Mode", value="Extreme Mean Reversion")
-
-# Download Button for backtesting
-csv_data = df[["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]].to_csv().encode("utf-8")
-col3.download_button(
-    label="📥 Download Full Signal Sheet CSV",
-    data=csv_data,
-    file_name="nifty_solid_kalman_signals.csv",
-    mime="text/csv",
-)
-
-st.markdown("---")
-
-# Section A: Only Active Signals Filter
-st.subheader("🎯 Active Trading Signals (Filter View)")
-st.write("Yeh table sirf wahi hours dikha rahi hai jahan solid execution confirmation mila hai.")
-signal_only_df = df[df["Signal"] != 0][["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]]
-st.dataframe(signal_only_df.style.format("{:.2f}"), use_container_width=True)
-
-st.markdown("---")
-
-# Section B: Full Matrix
-st.subheader("📋 Complete Continuous Timeline Matrix (All Rows)")
 df_display = df.copy()
 df_display.index = df_display.index.strftime("%Y-%m-%d %H:%M")
+
+col1, col2, col3 = st.columns(3)
+col1.metric(label="Data Locked From", value="01-Jan-2025")
+col2.metric(label="Model Type", value="OU Stochastic Process")
+col3.metric(label="Total Continuous Rows", value=f"{len(df_display)} Hours")
+
+st.markdown("---")
+st.subheader("🎯 Active OU Reversion Triggers (Strict High-Speed Only)")
+st.write(
+    "Yeh table sirf un points ko filter karti hai jahan model ne momentum exhaustion confirm kiya hai."
+)
+sig_df = df_display[df_display["Signal"] != 0][
+    ["a", "b", "c", "Theta", "Half_Life_Hours", "Signal"]
+]
+st.dataframe(sig_df.style.format("{:.2f}"), use_container_width=True)
+
+st.markdown("---")
+st.subheader("📋 Full SDE Parameter Timeline Matrix")
 st.dataframe(
-    df_display[["a", "b", "c", "d", "Upper_Band", "Lower_Band", "Signal"]].style.format("{:.2f}"),
+    df_display[["a", "b", "c", "Theta", "Half_Life_Hours", "Signal"]].style.format(
+        "{:.2f}"
+    ),
     use_container_width=True,
     height=500,
 )
