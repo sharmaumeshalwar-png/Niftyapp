@@ -1,6 +1,6 @@
 streamlit
 yfinance
-hmmlearn
-matplotlib
 pandas
+matplotlib
 scikit-learn
+hmmlearn==0.3.2 --no-binary hmmlearn
