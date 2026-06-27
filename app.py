@@ -3,11 +3,11 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-st.title("Nifty 50: Pure Kalman-RAVI Matrix Engine")
-st.write("Layout: A = Close, B = Kalman Filter, C = Residue (A-B), D = RAVI on C (1-Hour Candles)")
+st.title("Nifty 50: TRIX-RAVI Points Matrix")
+st.write("Layout: A = Close, B = TRIX, C = Residue (A-B), D = RAVI Points on C (1-Hour Candles)")
 
 # ==========================================
-# STEP 1: SAFE DATA INGESTION (1-Hour Candles)
+# STEP 1: SAFE DATA INGESTION
 # ==========================================
 @st.cache_data
 def load_nifty_data():
@@ -24,82 +24,57 @@ def load_nifty_data():
 raw_data = load_nifty_data()
 
 if raw_data.empty:
-    st.error("Data load nahi ho paaye. Please refresh the page.")
+    st.error("Data load nahi ho paaye. Please refresh karein.")
 else:
     # ==========================================
-    # MATRIX A: Raw Close Price
+    # STEP 2 & 3: COLUMN A & B (TRIX)
     # ==========================================
     raw_data['A'] = raw_data['Close']
     
-    # ==========================================
-    # MATRIX B: Pure Kalman Filter Algorithm on A
-    # ==========================================
-    def compute_pure_kalman(series):
-        n_iter = len(series)
-        xhat = np.zeros(n_iter)      # a posteri estimate
-        P = np.zeros(n_iter)         # a posteri error estimate
-        xhatminus = np.zeros(n_iter) # a priori estimate
-        Pminus = np.zeros(n_iter)    # a priori error estimate
-        K = np.zeros(n_iter)         # kalman gain
-        
-        Q = 1e-4                     # Process variance
-        R = 0.1**2                   # Measurement variance
-        
-        xhat[0] = series.iloc[0]
-        P[0] = 1.0
-        
-        for k in range(1, n_iter):
-            # Time update
-            xhatminus[k] = xhat[k-1]
-            Pminus[k] = P[k-1] + Q
-            
-            # Measurement update
-            K[k] = Pminus[k] / (Pminus[k] + R)
-            xhat[k] = xhatminus[k] + K[k] * (series.iloc[k] - xhatminus[k])
-            P[k] = (1 - K[k]) * Pminus[k]
-            
-        return xhat
-
-    raw_data['B'] = compute_pure_kalman(raw_data['A'])
+    # TRIX Calculation (Triple Smoothing)
+    trix_period = 15
+    log_a = np.log(raw_data['A'])
+    ema1 = log_a.ewm(span=trix_period, adjust=False).mean()
+    ema2 = ema1.ewm(span=trix_period, adjust=False).mean()
+    ema3 = ema2.ewm(span=trix_period, adjust=False).mean()
+    
+    # B = Price Scale Transformation
+    raw_data['B'] = np.exp(ema3)
     
     # ==========================================
-    # MATRIX C: Residue Wave (A - B)
+    # STEP 4 & 5: COLUMN C & D (RAVI in Absolute Points)
     # ==========================================
+    # C = Residue Wave
     raw_data['C'] = raw_data['A'] - raw_data['B']
     
-    # ==========================================
-    # MATRIX D: RAVI Indicator Calculated Directly on C
-    # ==========================================
+    # D = RAVI Calculated as Absolute Point Difference (No Percentage Formula)
     short_span = 7
     long_span = 65
     
     ema_short_c = raw_data['C'].ewm(span=short_span, adjust=False).mean()
     ema_long_c = raw_data['C'].ewm(span=long_span, adjust=False).mean()
     
-    # RAVI Formula applied on Residue C array
-    raw_data['D'] = (np.abs(ema_short_c - ema_long_c) / (np.abs(ema_long_c) + 1e-8)) * 100
+    # Percentage hatakar sirf absolute trend gap (Points) nikal rahe hain
+    raw_data['D'] = np.abs(ema_short_c - ema_long_c)
 
     raw_data.dropna(subset=['B', 'C', 'D'], inplace=True)
 
     # ==========================================
-    # STEP 6 & 7: FORMATTING & REVERSE CHRONOLOGICAL SORT
+    # STEP 6 & 7: MATRIX FORMATTING & REVERSE SORTING
     # ==========================================
     output_matrix = raw_data[['A', 'B', 'C', 'D']].copy()
     
-    # String rounding matrix to make data tables pixel perfect
+    # Row-by-row layout formatting (4 decimal places for precision)
     output_matrix['A'] = output_matrix['A'].map(lambda x: f"{x:.2f}")
     output_matrix['B'] = output_matrix['B'].map(lambda x: f"{x:.2f}")
     output_matrix['C'] = output_matrix['C'].map(lambda x: f"{x:.4f}")
-    output_matrix['D'] = output_matrix['D'].map(lambda x: f"{x:.4f}%" if not np.isnan(x) else "0.0000%")
+    output_matrix['D'] = output_matrix['D'].map(lambda x: f"{x:.4f}") # Pure points format
     
-    # Latest candle stays on top row
+    # Latest candle on top
     output_matrix = output_matrix.sort_index(ascending=False)
 
-    # Rendering Core Dataframe
-    st.subheader("📋 Kalman-RAVI Processing Log Matrix")
+    # Main Grid output display
+    st.subheader("📋 Core Mathematical Matrix (Points Format)")
     st.dataframe(output_matrix, use_container_width=True)
 
-    # ==========================================
-    # STEP 8: PIPELINE RECAP
-    # ==========================================
-    st.success("Mathematical Pipeline Complete: B is verified as Pure Kalman Filter. D is strictly evaluating RAVI over C.")
+    st.info("Formula Update: Column D se percentage hata kar use raw absolute points (Short EMA - Long EMA) mein convert kar diya gaya hai.")
