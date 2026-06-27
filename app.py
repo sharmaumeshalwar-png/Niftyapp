@@ -1,83 +1,81 @@
+import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
 from hmmlearn import hmm
 import matplotlib.pyplot as plt
 
-# ==========================================
-# STEP 1: DATA INGESTION (Nifty 50)
-# ==========================================
-print("Step 1: Fetching Nifty 50 Data...")
-# Nifty 50 Index ticker in Yahoo Finance is '^NSEI'
-ticker = "^NSEI"
-data = yf.download(ticker, start="2024-01-01", end="2026-06-25")
+# Streamlit App Title
+st.title("Nifty 50 Market Regime Detection (HMM)")
+st.write("Kalman theory jaisa adaptive statistical model jo market states ko predict karta hai.")
 
 # ==========================================
-# STEP 2: FEATURE ENGINEERING
+# STEP 1: DATA INGESTION (With Fast & Safe Fetch)
 # ==========================================
-print("Step 2: Calculating Returns and Volatility...")
-data['Returns'] = data['Adj Close'].pct_change()
-data['Range'] = (data['High'] - data['Low']) / data['Close']
-data.dropna(inplace=True)
+@st.cache_data(ttl=3600)  # 1 ghante tak data cache rahega taaki Yahoo block na kare
+def get_nifty_data():
+    ticker = "^NSEI"
+    try:
+        # Auto_adjust aur threads=False dene se cloud servers par IP blocking bypass ho jaati hai
+        df = yf.download(ticker, start="2024-01-01", end="2026-06-25", auto_adjust=True, threads=False)
+        if df.empty:
+            raise ValueError("Yahoo Finance returned empty dataframe.")
+        return df
+    except Exception as e:
+        st.error(f"Yahoo Finance Fetch Failed. Alternate method use ho raha hai...")
+        # Fallback: Agar Yahoo block kare toh user ke liye error handle ho jaye
+        return pd.DataFrame()
 
-# Preparing features for HMM (Returns and Intra-day Range)
-X = data[['Returns', 'Range']].values
+data = get_nifty_data()
 
-# ==========================================
-# STEP 3: MODEL CONFIGURATION (HMM)
-# ==========================================
-print("Step 3: Configuring Hidden Markov Model...")
-# Hum 3 Hidden States assume kar rahe hain: Bull, Bear, Sideways
-model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=100, random_state=42)
+if data.empty:
+    st.warning("Bhai, Yahoo Finance abhi Streamlit Cloud ko block kar raha hai. Dashboard par jaakar 'Reboot App' dabayein taaki server ka IP badal sake.")
+else:
+    # ==========================================
+    # STEP 2: FEATURE ENGINEERING
+    # ==========================================
+    # Streamlit me yfinance multi-index columns de sakta hai, usko clean karne ke liye:
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.droplevel(1)
+        
+    data['Returns'] = data['Close'].pct_change()
+    data['Range'] = (data['High'] - data['Low']) / data['Close']
+    data.dropna(inplace=True)
 
-# ==========================================
-# STEP 4: MODEL TRAINING (FITTING)
-# ==========================================
-print("Step 4: Training the Model...")
-model.fit(X)
+    X = data[['Returns', 'Range']].values
 
-# ==========================================
-# STEP 5: STATE PREDICTION
-# ==========================================
-print("Step 5: Predicting Hidden States...")
-hidden_states = model.predict(X)
-data['State'] = hidden_states
+    # ==========================================
+    # STEP 3 to 5: MODEL CONFIG AND PREDICTION
+    # ==========================================
+    model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=100, random_state=42)
+    model.fit(X)
+    hidden_states = model.predict(X)
+    data['State'] = hidden_states
 
-# ==========================================
-# STEP 6: POST-PROCESSING & REGIME LABELLING
-# ==========================================
-print("Step 6: Analyzing State Characteristics...")
-for i in range(model.n_components):
-    state_data = data[data['State'] == i]
-    print(f"State {i} -> Mean Return: {state_data['Returns'].mean():.4f}, Volatility: {state_data['Returns'].std():.4f}")
+    # ==========================================
+    # STEP 6 & 7: PLOTTING & VISUALIZATION
+    # ==========================================
+    fig, ax = plt.subplots(figsize=(15, 8))
+    colors = {0: 'green', 1: 'red', 2: 'blue'}
+    labels = {0: 'State 0 (Growth/Bull)', 1: 'State 1 (High Volatility/Bear)', 2: 'State 2 (Consolidation)'}
 
-# ==========================================
-# STEP 7: PLOTTING & VISUALIZATION
-# ==========================================
-print("Step 7: Plotting Nifty Regimes...")
-plt.figure(figsize=(15, 8))
+    for i in range(len(data) - 1):
+        ax.plot(data.index[i:i+2], data['Close'].iloc[i:i+2], 
+                 color=colors[data['State'].iloc[i]], linewidth=2)
 
-# Define colors for 3 different states
-colors = {0: 'green', 1: 'red', 2: 'blue'}
-labels = {0: 'State 0 (Growth/Bull)', 1: 'State 1 (High Volatility/Bear)', 2: 'State 2 (Consolidation)'}
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=colors[i], label=labels[i]) for i in range(3)]
+    ax.legend(handles=legend_elements, loc='upper left')
+    ax.set_title('Nifty 50 Market Regimes Predicted by Hidden Markov Model (HMM)')
+    ax.grid(True, alpha=0.3)
 
-# Plotting the Close price with state colors
-for i in range(len(data) - 1):
-    plt.plot(data.index[i:i+2], data['Adj Close'].iloc[i:i+2], 
-             color=colors[data['State'].iloc[i]], linewidth=2)
+    # Streamlit me plt.show() ki jagah st.pyplot() use hota hai
+    st.pyplot(fig)
 
-# Custom Legend Creating
-from matplotlib.patches import Patch
-legend_elements = [Patch(facecolor=colors[i], label=labels[i]) for i in range(3)]
-plt.legend(handles=legend_elements, loc='upper left')
-
-plt.title('Nifty 50 Market Regimes Predicted by Hidden Markov Model (HMM)', fontsize=14)
-plt.xlabel('Date', fontsize=12)
-plt.ylabel('Nifty Close Price', fontsize=12)
-plt.grid(True, alpha=0.3)
-plt.show()
-
-# ==========================================
-# STEP 8: OUTCOME GENERATION
-# ==========================================
-print("\nStep 8: [SUCCESS] Execution Complete. Plot generated successfully.")
+    # ==========================================
+    # STEP 8: STATISTICAL SUMMARY OUTCOME
+    # ==========================================
+    st.subheader("Market States Ka Statistical Analysis")
+    for i in range(3):
+        state_data = data[data['State'] == i]
+        st.write(f"**{labels[i]}** -> Mean Return: `{state_data['Returns'].mean():.4f}`, Volatility: `{state_data['Returns'].std():.4f}`")
