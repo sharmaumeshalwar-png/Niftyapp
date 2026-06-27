@@ -14,7 +14,7 @@ def load_nifty_data():
     try:
         ticker = "^NSEI"
         # Pure historical query window structured exactly for 1-Hour candles
-        df = yf.download(ticker, start="2025-01-01", end="2026-06-27", interval="1h", auto_adjust=True, threads=False)
+        df = yf.download(ticker, start="2025-01-01", interval="1h", auto_adjust=True, threads=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [col[0] for col in df.columns]
         return df
@@ -91,4 +91,34 @@ else:
             supertrend[i] = final_lb[i]
         else:
             direction[i] = direction[i-1]
-            supertrend[i] = final_lb[i] if direction[i] == 1 else
+            # FIX: Yahan final_ub[i] ko proper assign kar diya hai statement block handle karne ke liye
+            supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+            
+    raw_data['D'] = supertrend
+    raw_data['ST_Dir'] = direction
+
+    # ==========================================
+    # STEP 6: ENGINE MODULE E (Execution Vector Signals)
+    # ==========================================
+    raw_data['E'] = "HOLD"
+    raw_data.loc[raw_data['ST_Dir'] == 1, 'E'] = "🟢 BUY (Trend Locked)"
+    raw_data.loc[raw_data['ST_Dir'] == -1, 'E'] = "🔴 SELL (Trend Locked)"
+
+    raw_data.dropna(subset=['B', 'C', 'D'], inplace=True)
+
+    # ==========================================
+    # STEP 7: MATRIX GRID SORTING (Latest First)
+    # ==========================================
+    output_matrix = raw_data[['A', 'B', 'C', 'D', 'E']].copy()
+    
+    output_matrix['A'] = output_matrix['A'].map(lambda x: f"{x:.2f}")
+    output_matrix['B'] = output_matrix['B'].map(lambda x: f"{x:.2f}")
+    output_matrix['C'] = output_matrix['C'].map(lambda x: f"{x:.4f}") 
+    output_matrix['D'] = output_matrix['D'].map(lambda x: f"{x:.4f}")
+    
+    # Chronological inversion sequence
+    output_matrix = output_matrix.sort_index(ascending=False)
+
+    # UI Rendering
+    st.subheader("📋 1-Hour Interval Core Data Matrix")
+    st.dataframe(output_matrix, use_container_width=True)
