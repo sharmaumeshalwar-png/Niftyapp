@@ -4,13 +4,12 @@ import pandas as pd
 
 st.set_page_config(layout="wide")
 
-st.title("🚀 Nifty 50: Absolute True Timeline Terminal")
-st.write("Data Scope: 1-Hour Candles Strictly From 1st Jan 2025 to Present Day")
+st.title("🚀 Nifty 50: Strict 1-Hour Matrix Terminal")
+st.write("Data Scope: Continuous 1-Hour Candles Since 1st Jan 2025 to Present Day")
 
 # ==========================================
-# STEP 1: DYNAMIC TIMELINE LOCK (NO FUTURE DATES)
+# STEP 1: CORRECT HORIZON TIMELINE LOCK
 # ==========================================
-# Automatically locks from Jan 2025 up to the exact current live date in 2026
 start_date = "2025-01-01"
 current_date = pd.Timestamp.now()
 
@@ -31,7 +30,7 @@ final_closes = trend_axis + cyclical_waves + random_walk
 # Master DataFrame with exact historical timestamps up to today
 raw_data = pd.DataFrame({"Close": final_closes}, index=market_hours)
 
-# Top UI Metadata cards to confirm total data loaded
+# UI Metadata cards to confirm total data loaded
 col1, col2 = st.columns(2)
 with col1:
     st.metric(label="📊 Total Accurate 1-Hour Rows", value=f"{total_rows} Candles")
@@ -60,7 +59,7 @@ else:
     raw_data['C'] = raw_data['A'] - raw_data['B']
     
     # ==========================================
-    # STEP 5: ENGINE MODULE D (Vectorized Strict Supertrend)
+    # STEP 5: ENGINE MODULE D (Optimized Loop Supertrend)
     # ==========================================
     atr_period = 20
     multiplier = 4.0
@@ -69,14 +68,47 @@ else:
     atr_c = c_diff.rolling(window=atr_period).mean()
     
     hl2_c = raw_data['C'] 
-    raw_data['basic_ub'] = hl2_c + (multiplier * atr_c)
-    raw_data['basic_lb'] = hl2_c - (multiplier * atr_c)
+    basic_ub = hl2_c + (multiplier * atr_c)
+    basic_lb = hl2_c - (multiplier * atr_c)
     
-    ub_filled = raw_data['basic_ub'].ffill()
-    lb_filled = raw_data['basic_lb'].ffill()
+    final_ub = np.zeros(total_rows)
+    final_lb = np.zeros(total_rows)
+    supertrend = np.zeros(total_rows)
+    direction = np.zeros(total_rows) 
     
-    raw_data['D'] = np.where(raw_data['C'] >= ub_filled, lb_filled, ub_filled)
-    raw_data['ST_Dir'] = np.where(raw_data['C'] >= raw_data['D'], 1, -1)
+    start_idx = atr_period
+    for i in range(total_rows):
+        if i < start_idx:
+            supertrend[i] = raw_data['C'].iloc[i]
+            direction[i] = 1
+            final_ub[i] = basic_ub.iloc[i]
+            final_lb[i] = basic_lb.iloc[i]
+            continue
+            
+        # STRICT IMMUTABLE BAND LOCK
+        if basic_ub.iloc[i] < final_ub[i-1] or raw_data['C'].iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = basic_ub.iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+            
+        if basic_lb.iloc[i] > final_lb[i-1] or raw_data['C'].iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = basic_lb.iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+            
+        # Hard Crossover Trigger
+        if direction[i-1] == 1 and raw_data['C'].iloc[i] < final_lb[i]:
+            direction[i] = -1
+            supertrend[i] = final_ub[i]
+        elif direction[i-1] == -1 and raw_data['C'].iloc[i] > final_ub[i]:
+            direction[i] = 1
+            supertrend[i] = final_lb[i]
+        else:
+            direction[i] = direction[i-1]
+            supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+            
+    raw_data['D'] = supertrend
+    raw_data['ST_Dir'] = direction
 
     # ==========================================
     # STEP 6: ENGINE MODULE E (Execution Signals)
