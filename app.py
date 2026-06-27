@@ -86,4 +86,57 @@ else:
             supertrend[i] = raw_data['C'].iloc[i]
             direction[i] = 1
             final_ub[i] = basic_ub.iloc[i]
-            final_lb[i] = basic_
+            final_lb[i] = basic_lb.iloc[i]
+            continue
+            
+        # STRICT IMMUTABLE BAND LOCK
+        if basic_ub.iloc[i] < final_ub[i-1] or raw_data['C'].iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = basic_ub.iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+            
+        # FIX: Yahan broken string ko hata kar statement proper completely write kar diya gaya hai
+        if basic_lb.iloc[i] > final_lb[i-1] or raw_data['C'].iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = basic_lb.iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+            
+        # Direction assignment execution block
+        if direction[i-1] == 1 and raw_data['C'].iloc[i] < final_lb[i]:
+            direction[i] = -1
+            supertrend[i] = final_ub[i]
+        elif direction[i-1] == -1 and raw_data['C'].iloc[i] > final_ub[i]:
+            direction[i] = 1
+            supertrend[i] = final_lb[i]
+        else:
+            direction[i] = direction[i-1]
+            supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+            
+    raw_data['D'] = supertrend
+    raw_data['ST_Dir'] = direction
+
+    # ==========================================
+    # STEP 6: ENGINE MODULE E (Action Signals)
+    # ==========================================
+    raw_data['E'] = "HOLD"
+    raw_data.loc[raw_data['ST_Dir'] == 1, 'E'] = "🟢 BUY (Trend Locked)"
+    raw_data.loc[raw_data['ST_Dir'] == -1, 'E'] = "🔴 SELL (Trend Locked)"
+
+    output_matrix = raw_data.dropna(subset=['B', 'C', 'D']).copy()
+
+    # ==========================================
+    # STEP 7: MATRIX GRID SORTING & LOOKS
+    # ==========================================
+    final_grid = output_matrix[['A', 'B', 'C', 'D', 'E']].copy()
+    
+    final_grid['A'] = final_grid['A'].map(lambda x: f"{x:.2f}")
+    final_grid['B'] = final_grid['B'].map(lambda x: f"{x:.2f}")
+    final_grid['C'] = final_grid['C'].map(lambda x: f"{x:.4f}") 
+    final_grid['D'] = final_grid['D'].map(lambda x: f"{x:.4f}")
+    
+    # Latest logs displayed at top rows
+    final_grid = final_grid.sort_index(ascending=False)
+
+    # UI Table Rendering
+    st.subheader("📋 Core Mathematical Matrix")
+    st.dataframe(final_grid, use_container_width=True, height=700)
