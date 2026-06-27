@@ -1,152 +1,90 @@
-import streamlit as st
 import numpy as np
-import pandas as pd
+import matplotlib.pyplot as plt
 
-st.set_page_config(layout="wide")
+# Step 1: Seed for reproducibility
+np.random.seed(42)
+num_steps = 200
 
-st.title("🚀 Nifty 50: Kalman-Supertrend Hybrid Engine")
-st.write("Data Scope: 1-Hour Candles Since 1st Jan 2025 | Matrix Layout: A=Close, B=Kalman, C=Residue, D=Supertrend, E=Signal")
+# Step 2: Generate Dummy Nifty Close Price (a)
+a = 22000 + np.cumsum(np.random.normal(0, 15, num_steps))
 
-# ==========================================
-# STEP 1: CORRECT TIMELINE STREAM (FROZEN 1-HOUR)
-# ==========================================
-@st.cache_data
-def generate_hybrid_data():
-    start_date = "2025-01-01"
-    current_date = pd.Timestamp.now()
+# Step 3: Kalman Filter on 'a' to get 'b'
+b = np.zeros(num_steps)
+x_est = a[0]  # Initial state estimate
+P = 1.0       # Initial estimation error covariance
+Q = 0.5       # Process noise covariance
+R = 5.0       # Measurement noise covariance
+
+for t in range(num_steps):
+    # Prediction Update
+    x_pred = x_est
+    P_pred = P + Q
     
-    base_dates = pd.date_range(start=start_date, end=current_date, freq="h")
-    # Matching NSE market structure (9:00 AM to 3:00 PM, Monday to Friday)
-    market_hours = base_dates[(base_dates.hour >= 9) & (base_dates.hour <= 15) & (base_dates.dayofweek < 5)]
-    total_candles = len(market_hours)
+    # Measurement Update
+    K = P_pred / (P_pred + R)  # Kalman Gain
+    x_est = x_pred + K * (a[t] - x_pred)
+    P = (1 - K) * P_pred
+    b[t] = x_est
+
+# Step 4: Calculate c = a - b
+c = a - b
+
+# Step 5 & 6: Particle Filter on 'c' to get 'd'
+num_particles = 500
+particles = np.random.normal(c[0], 2, num_particles)
+weights = np.ones(num_particles) / num_particles
+
+d = np.zeros(num_steps)
+process_noise = 0.5
+measurement_noise = 1.5
+
+for t in range(num_steps):
+    # Predict step for particles
+    particles = particles + np.random.normal(0, process_noise, num_particles)
     
-    np.random.seed(42)
-    trend_axis = np.linspace(21500, 24500, total_candles)
-    cyclical_waves = np.sin(np.linspace(0, 20 * np.pi, total_candles)) * 600
-    random_walk = np.random.normal(0, 40, total_candles).cumsum()
+    # Update weights based on distance to actual 'c' value (Likelihood)
+    distance = particles - c[t]
+    weights = np.exp(- (distance ** 2) / (2 * measurement_noise ** 2))
+    weights += 1e-300  # Avoid division by zero
+    weights /= np.sum(weights)  # Normalize
     
-    final_closes = trend_axis + cyclical_waves + random_walk
-    df = pd.DataFrame({"Close": final_closes}, index=market_hours)
-    return df, total_candles
-
-data, total_rows_count = generate_hybrid_data()
-
-# Metric tracker to ensure zero rows drop
-st.metric(label="📊 Total Accurate 1-Hour Rows Loaded", value=f"{total_rows_count} Candles")
-
-if data.empty:
-    st.error("Engine failed to synchronize the active data stream.")
-else:
-    # ==========================================
-    # STEP 2 & 3: FORMULA B (Kalman Filter Approximation)
-    # ==========================================
-    def compute_kalman_filter(series):
-        n_iter = len(series)
-        sz = (n_iter,)
-        
-        xhat = np.zeros(sz)      # a posteri estimate of x
-        P = np.zeros(sz)         # a posteri error estimate
-        xhatminus = np.zeros(sz) # a priori estimate of x
-        Pminus = np.zeros(sz)    # a priori error estimate
-        K = np.zeros(sz)         # gain or blending factor
-        
-        Q = 1e-5   # Process variance
-        R = 0.1**2 # Measurement variance
-        
-        xhat[0] = series.iloc[0]
-        P[0] = 1.0
-        
-        for k in range(1, n_iter):
-            xhatminus[k] = xhat[k-1]
-            Pminus[k] = P[k-1] + Q
-            
-            K[k] = Pminus[k] / (Pminus[k] + R)
-            xhat[k] = xhatminus[k] + K[k] * (series.iloc[k] - xhatminus[k])
-            P[k] = (1 - K[k]) * Pminus[k]
-            
-        return xhat
-
-    # Assigning Matrix Columns
-    data['A'] = data['Close']                            # A = Close Price
-    data['B'] = compute_kalman_filter(data['A'])         # B = Kalman on A
-    data['C'] = data['A'] - data['B']                    # C = A - B (Residue)
-
-    # ==========================================
-    # STEP 4 & 5: FORMULA D (Strict Locked Supertrend on Residue C)
-    # ==========================================
-    # Strict Noise Filter Settings
-    atr_period = 20
-    multiplier = 4.0
+    # Estimate State (d) - Weighted average of particles
+    d[t] = np.sum(particles * weights)
     
-    c_diff = data['C'].diff().abs()
-    atr_c = c_diff.rolling(window=atr_period).mean()
-    
-    hl2_c = data['C'] 
-    basic_ub = hl2_c + (multiplier * atr_c)
-    basic_lb = hl2_c - (multiplier * atr_c)
-    
-    final_ub = np.zeros(total_rows_count)
-    final_lb = np.zeros(total_rows_count)
-    supertrend = np.zeros(total_rows_count)
-    direction = np.zeros(total_rows_count) 
-    
-    start_idx = atr_period
-    for i in range(total_rows_count):
-        if i < start_idx:
-            supertrend[i] = data['C'].iloc[i]
-            direction[i] = 1
-            final_ub[i] = basic_ub.iloc[i]
-            final_lb[i] = basic_lb.iloc[i]
-            continue
-            
-        # STRICT IMMUTABLE BAND LOCK
-        if basic_ub.iloc[i] < final_ub[i-1] or data['C'].iloc[i-1] > final_ub[i-1]:
-            final_ub[i] = basic_ub.iloc[i]
-        else:
-            final_ub[i] = final_ub[i-1]
-            
-        if basic_lb.iloc[i] > final_lb[i-1] or data['C'].iloc[i-1] < final_lb[i-1]:
-            final_lb[i] = basic_lb.iloc[i]
-        else:
-            final_lb[i] = final_lb[i-1]
-            
-        # Hard Crossover Trigger
-        if direction[i-1] == 1 and data['C'].iloc[i] < final_lb[i]:
-            direction[i] = -1
-            supertrend[i] = final_ub[i]
-        elif direction[i-1] == -1 and data['C'].iloc[i] > final_ub[i]:
-            direction[i] = 1
-            supertrend[i] = final_lb[i]
-        else:
-            direction[i] = direction[i-1]
-            supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
-            
-    data['D'] = supertrend
-    data['ST_Dir'] = direction
+    # Step 7: Resampling (Systematic Resampling)
+    eff_particles = 1.0 / np.sum(weights ** 2)
+    if eff_particles < num_particles / 2:
+        cumulative_sum = np.cumsum(weights)
+        positions = (np.random.random() + np.arange(num_particles)) / num_particles
+        idx = np.zeros(num_particles, dtype=int)
+        i, j = 0, 0
+        while i < num_particles:
+            if positions[i] < cumulative_sum[j]:
+                idx[i] = j
+                i += 1
+            else:
+                j += 1
+        particles = particles[idx]
+        weights = np.ones(num_particles) / num_particles
 
-    # ==========================================
-    # STEP 6: ENGINE MODULE E (Action Signals)
-    # ==========================================
-    data['E'] = "HOLD"
-    data.loc[data['ST_Dir'] == 1, 'E'] = "🟢 BUY (Trend Locked)"
-    data.loc[data['ST_Dir'] == -1, 'E'] = "🔴 SELL (Trend Locked)"
+# Step 8: Plotting the Results
+plt.figure(figsize=(14, 8))
 
-    # Fast cleanup
-    output_matrix = data.dropna(subset=['B', 'C', 'D']).copy()
+# Subplot 1: Nifty Price & Kalman Filter
+plt.subplot(2, 1, 1)
+plt.plot(a, label="a: Nifty Close Price", color='blue', alpha=0.6)
+plt.plot(b, label="b: Kalman Filter on 'a'", color='red', linestyle='--')
+plt.title("Nifty Price Tracking using Kalman Filter")
+plt.legend()
+plt.grid(True)
 
-    # ==========================================
-    # STEP 7: MATRIX GRID SORTING (Latest First)
-    # ==========================================
-    final_grid = output_matrix[['A', 'B', 'C', 'D', 'E']].copy()
-    
-    final_grid['A'] = final_grid['A'].map(lambda x: f"{x:.2f}")
-    final_grid['B'] = final_grid['B'].map(lambda x: f"{x:.2f}")
-    final_grid['C'] = final_grid['C'].map(lambda x: f"{x:.4f}") 
-    final_grid['D'] = final_grid['D'].map(lambda x: f"{x:.4f}")
-    
-    # Chronological inversion sequence
-    final_grid = final_grid.sort_index(ascending=False)
+# Subplot 2: Residual 'c' & Particle Filter 'd'
+plt.subplot(2, 1, 2)
+plt.plot(c, label="c: Residual (a - b)", color='purple', alpha=0.6)
+plt.plot(d, label="d: Particle Filter on 'c'", color='green', linestyle='-.')
+plt.title("Residual Tracking using Particle Filter")
+plt.legend()
+plt.grid(True)
 
-    # UI Table Rendering
-    st.subheader("📋 Core Hybrid Mathematical Matrix")
-    st.dataframe(final_grid, use_container_width=True, height=650)
+plt.tight_layout()
+plt.show()
