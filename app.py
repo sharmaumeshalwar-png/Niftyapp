@@ -3,15 +3,15 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty Kalman High-Low Channel (Q=0.50)")
+st.title("Nifty Kalman High-Low Channel (From 1 Jan 2026)")
 
-st.write("Fixed Architecture: Same 0.50 Multiplier Par High aur Low Filters Active Hain...")
+st.write("Fixed Architecture: Same 0.50 Multiplier Par High aur Low Filters (2026 Data Locked)...")
 
-# 1. Data Download (High, Low, Open, Close Sab Kuch)
-data = yf.download('^NSEI', start='2025-01-01', end='2027-01-01', interval='1h')
+# 1. Data Download (Starting from 1 Jan 2026)
+data = yf.download('^NSEI', start='2026-01-01', end='2027-01-01', interval='1h')
 
 if data.empty:
-    st.error("Yahoo Finance se data nahi mil pa raha hai.")
+    st.error("Yahoo Finance se 2026 ka data nahi mil pa raha hai.")
 else:
     data['Date'] = data.index.date
     timestamps = data.index.strftime('%Y-%m-%d %H:%M')
@@ -33,7 +33,6 @@ else:
         prev_date = data['Date'].iloc[t-1]
         
         if current_date != prev_date:
-            # Gap calculated using Open and previous Close
             gap = o[t] - c_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
@@ -41,7 +40,7 @@ else:
         high_adjusted[t] = price_high[t] - cumulative_gap
         low_adjusted[t] = price_low[t] - cumulative_gap
 
-    # 3. HIGH KALMAN FILTER (a) - Q=0.50
+    # 3. HIGH KALMAN FILTER (a) - Fixed Q = 0.50
     b_high = np.zeros(num_steps)
     x_high = high_adjusted[0]
     P_h, Q_h, R_h = 1.0, 0.50, 1.0
@@ -51,7 +50,7 @@ else:
         P_h = (1 - K) * (P_h + Q_h)
         b_high[t] = x_high
 
-    # 4. LOW KALMAN FILTER (b) - Q=0.50
+    # 4. LOW KALMAN FILTER (b) - Fixed Q = 0.50
     b_low = np.zeros(num_steps)
     x_low = low_adjusted[0]
     P_l, Q_l, R_l = 1.0, 0.50, 1.0
@@ -69,7 +68,6 @@ else:
     c_diff = a_high_real - b_low_real
 
     # 7. HIGH-LOW BREAKOUT SIGNAL LOGIC
-    # Agar close price High line ke upar nikle toh BUY, Low line ke niche jaye toh SELL
     signals = []
     current_state = "⚪ SIDEWAYS"
     
@@ -89,6 +87,6 @@ else:
         'Channel Signal': signals
     }, index=timestamps)
 
-    # Render Table (Latest on Top)
+    # Render Table (Latest 2026 rows on Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("High-Low Kalman Channel successfully deployed!")
+    st.success("2026 Data Locked Successfully!")
