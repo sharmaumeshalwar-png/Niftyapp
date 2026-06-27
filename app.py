@@ -3,22 +3,26 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 import streamlit as st
 
-st.title("Nifty Price Tracking (Kalman & Particle Filter)")
+st.title("Nifty 1-Hour Price Tracking (Frozen Data)")
 
-# 1. Nifty ka data download karo
-st.write("Data download ho raha hai...")
-data = yf.download('^NSEI', period='6mo', interval='1d')
+st.write("1 Jan 2025 se 2 Saal ka 1-Hour data download ho raha hai...")
 
-# ---- SAFETY CHECK (ISSE ERROR NAHI AAYEGA) ----
+# ---- DATA FREEZE CORRECTION HERE ----
+# interval='1h' se 1-hour candle aayegi
+# start aur end date se data 2 saal par freeze ho jayega
+data = yf.download('^NSEI', start='2025-01-01', end='2027-01-01', interval='1h')
+
+# ---- SAFETY CHECK ----
 if data.empty:
-    st.error("Yahoo Finance se data nahi mil pa raha hai. Kripya thodi der baad try karein ya Ticker change karein.")
+    st.error("Yahoo Finance ne is date range ka 1-Hour data nahi diya. (Note: Yahoo intraday/1h data sirf pichle 2-3 mahino ka hi save rakhta hai). Aap test karne ke liye interval='1d' (Daily) try kar sakte hain.")
 else:
+    # Baki ka poora code same rahega
     a = data['Close'].values.flatten()
     num_steps = len(a)
 
     # 2. Kalman Filter on 'a' (b)
     b = np.zeros(num_steps)
-    x_est = a[0]  # Ab yeh safe hai kyunki data empty nahi hai
+    x_est = a[0]
     P = 1.0       
     Q = 0.1       
     R = 2.0       
@@ -52,10 +56,10 @@ else:
             particles = particles[idx]
             weights = np.ones(num_particles) / num_particles
 
-    # 5. Streamlit par Graph dikhana
+    # 5. Streamlit Graph
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
     
-    ax1.plot(a, label="a: Nifty Close", color='blue')
+    ax1.plot(a, label="a: Nifty Close (1h)", color='blue')
     ax1.plot(b, label="b: Kalman Filter", color='red', linestyle='--')
     ax1.legend()
     ax1.grid(True)
