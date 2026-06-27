@@ -1,22 +1,22 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import yfinance as yf
 import streamlit as st
+import pandas as pd
 
-st.title("Nifty 1-Hour Price Tracking (Frozen Data)")
+st.title("Nifty 1-Hour Price Data Table (Frozen)")
 
-st.write("1 Jan 2025 se 2 Saal ka 1-Hour data download ho raha hai...")
+st.write("1 Jan 2025 se 2 Saal ka 1-Hour data table mein load ho raha hai...")
 
-# ---- DATA FREEZE CORRECTION HERE ----
-# interval='1h' se 1-hour candle aayegi
-# start aur end date se data 2 saal par freeze ho jayega
+# 1. Data Download (Interval 1-Hour, Frozen Dates)
 data = yf.download('^NSEI', start='2025-01-01', end='2027-01-01', interval='1h')
 
 # ---- SAFETY CHECK ----
 if data.empty:
-    st.error("Yahoo Finance ne is date range ka 1-Hour data nahi diya. (Note: Yahoo intraday/1h data sirf pichle 2-3 mahino ka hi save rakhta hai). Aap test karne ke liye interval='1d' (Daily) try kar sakte hain.")
+    st.error("Yahoo Finance ne is date range ka 1-Hour data nahi diya. Aap test karne ke liye interval='1d' (Daily) karke check kar sakte hain.")
 else:
-    # Baki ka poora code same rahega
+    # Timestamps (Dates) nikalne ke liye
+    timestamps = data.index.strftime('%Y-%m-%d %H:%M')
+    
     a = data['Close'].values.flatten()
     num_steps = len(a)
 
@@ -39,7 +39,7 @@ else:
     c = a - b
 
     # 4. Particle Filter on 'c' (d)
-    num_particles = 300
+    num_particles = 100  # Table ke liye speed badhane ko particles kam kiye hain
     particles = np.random.normal(c[0], 1, num_particles)
     weights = np.ones(num_particles) / num_particles
     d = np.zeros(num_steps)
@@ -56,17 +56,21 @@ else:
             particles = particles[idx]
             weights = np.ones(num_particles) / num_particles
 
-    # 5. Streamlit Graph
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    # ---- STEP 5: CREATING THE SIMPLE TABLE ----
+    df_table = pd.DataFrame({
+        'Date & Time': timestamps,
+        'a: Nifty Close': np.round(a, 2),
+        'b: Kalman Filter': np.round(b, 2),
+        'c: Residual (a - b)': np.round(c, 2),
+        'd: Particle Filter': np.round(d, 2)
+    })
+
+    # Step 6: Set Date as Index
+    df_table.set_index('Date & Time', inplace=True)
+
+    # Step 7: Streamlit Table View
+    st.subheader("Final Processed Data (a, b, c, d)")
+    st.dataframe(df_table, use_container_width=True)
     
-    ax1.plot(a, label="a: Nifty Close (1h)", color='blue')
-    ax1.plot(b, label="b: Kalman Filter", color='red', linestyle='--')
-    ax1.legend()
-    ax1.grid(True)
-    
-    ax2.plot(c, label="c: Residual (a-b)", color='purple')
-    ax2.plot(d, label="d: Particle Filter", color='green', linestyle='-.')
-    ax2.legend()
-    ax2.grid(True)
-    
-    st.pyplot(fig)
+    # Step 8: Success Info
+    st.success("Table ke upar right side mein download button hai, wahan se aap isko Excel/CSV mein nikal sakte hain!")
