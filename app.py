@@ -1,88 +1,72 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import yfinance as yf
 
-# Step 1: Seed for reproducibility
-np.random.seed(42)
-num_steps = 200
+# 1. Nifty ka real data download karo (Yeh ban gaya input 'a')
+print("Nifty 50 ka data download ho raha hai, kripya ruken...")
+data = yf.download('^NSEI', period='6mo', interval='1d')
+a = data['Close'].values.flatten()
+num_steps = len(a)
 
-# Step 2: Generate Dummy Nifty Close Price (a)
-a = 22000 + np.cumsum(np.random.normal(0, 15, num_steps))
-
-# Step 3: Kalman Filter on 'a' to get 'b'
+# 2. Kalman Filter on 'a' (Yeh ban gaya input 'b')
 b = np.zeros(num_steps)
-x_est = a[0]  # Initial state estimate
-P = 1.0       # Initial estimation error covariance
-Q = 0.5       # Process noise covariance
-R = 5.0       # Measurement noise covariance
+x_est = a[0]  # Pehla price starting point hai
+P = 1.0       # Prediction error
+Q = 0.1       # Process noise
+R = 2.0       # Measurement noise
 
 for t in range(num_steps):
-    # Prediction Update
     x_pred = x_est
     P_pred = P + Q
-    
-    # Measurement Update
     K = P_pred / (P_pred + R)  # Kalman Gain
     x_est = x_pred + K * (a[t] - x_pred)
     P = (1 - K) * P_pred
     b[t] = x_est
 
-# Step 4: Calculate c = a - b
+# 3. Calculate 'c' (c = a - b)
 c = a - b
 
-# Step 5 & 6: Particle Filter on 'c' to get 'd'
-num_particles = 500
-particles = np.random.normal(c[0], 2, num_particles)
+# 4. Particle Filter on 'c' (Yeh ban gaya input 'd')
+num_particles = 300
+particles = np.random.normal(c[0], 1, num_particles)
 weights = np.ones(num_particles) / num_particles
-
 d = np.zeros(num_steps)
-process_noise = 0.5
-measurement_noise = 1.5
 
 for t in range(num_steps):
-    # Predict step for particles
-    particles = particles + np.random.normal(0, process_noise, num_particles)
+    # Predict step
+    particles = particles + np.random.normal(0, 0.5, num_particles)
     
-    # Update weights based on distance to actual 'c' value (Likelihood)
+    # Update weights (Kitna paas hai actual 'c' ke)
     distance = particles - c[t]
-    weights = np.exp(- (distance ** 2) / (2 * measurement_noise ** 2))
-    weights += 1e-300  # Avoid division by zero
+    weights = np.exp(- (distance ** 2) / (2 * 1.5 ** 2)) + 1e-300
     weights /= np.sum(weights)  # Normalize
     
-    # Estimate State (d) - Weighted average of particles
+    # State Estimate 'd'
     d[t] = np.sum(particles * weights)
     
-    # Step 7: Resampling (Systematic Resampling)
-    eff_particles = 1.0 / np.sum(weights ** 2)
-    if eff_particles < num_particles / 2:
-        cumulative_sum = np.cumsum(weights)
-        positions = (np.random.random() + np.arange(num_particles)) / num_particles
-        idx = np.zeros(num_particles, dtype=int)
-        i, j = 0, 0
-        while i < num_particles:
-            if positions[i] < cumulative_sum[j]:
-                idx[i] = j
-                i += 1
-            else:
-                j += 1
+    # Simple Resampling
+    if 1.0 / np.sum(weights ** 2) < num_particles / 2:
+        idx = np.random.choice(np.arange(num_particles), size=num_particles, p=weights)
         particles = particles[idx]
         weights = np.ones(num_particles) / num_particles
 
-# Step 8: Plotting the Results
-plt.figure(figsize=(14, 8))
+# 5. Dono graphs ko screen par dikhana
+print("Data processed! Graph generate ho raha hai...")
+plt.figure(figsize=(12, 6))
 
-# Subplot 1: Nifty Price & Kalman Filter
+# Pehla Graph: Nifty aur Kalman
 plt.subplot(2, 1, 1)
-plt.plot(a, label="a: Nifty Close Price", color='blue', alpha=0.6)
-plt.plot(b, label="b: Kalman Filter on 'a'", color='red', linestyle='--')
-plt.title("Nifty Price Tracking using Kalman Filter")
+plt.plot(a, label="a: Nifty Close Price", color='blue')
+plt.plot(b, label="b: Kalman Filter", color='red', linestyle='--')
+plt.title("Part 1: Nifty & Kalman")
 plt.legend()
 plt.grid(True)
 
-# Subplot 2: Residual 'c' & Particle Filter 'd'
+# Dusra Graph: Residual aur Particle Method
 plt.subplot(2, 1, 2)
-plt.plot(c, label="c: Residual (a - b)", color='purple', alpha=0.6)
-plt.plot(d, label="d: Particle Filter on 'c'", color='green', linestyle='-.')
-plt.title("Residual Tracking using Particle Filter")
+plt.plot(c, label="c: Residual (a - b)", color='purple')
+plt.plot(d, label="d: Particle Filter on c", color='green', linestyle='-.')
+plt.title("Part 2: Residual & Particle Method")
 plt.legend()
 plt.grid(True)
 
