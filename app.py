@@ -1,114 +1,83 @@
-import datetime
 import numpy as np
 import pandas as pd
-import streamlit as st
-
-st.set_page_config(page_title="OU Matrix Precision", layout="wide")
-
-st.title("🏛️ Institutional Mean Reversion — Ornstein-Uhlenbeck (OU) Matrix")
-st.write("Formula Applied: $b_2 = b_1 + 0.0001 \times (a_2 - b_1)$ and $c = a - b$")
+import yfinance as yf
+from hmmlearn import hmm
+import matplotlib.pyplot as plt
 
 # ==========================================
-# 1. FIXED DATE DATA LOCK PIPELINE (NSE TIMELINE)
+# STEP 1: DATA INGESTION (Nifty 50)
 # ==========================================
-@st.cache_data(ttl=86400)
-def generate_exact_nse_data():
-    start_date = pd.Timestamp("2025-01-01")
-    end_date = pd.Timestamp("2026-06-26")
-    
-    raw_dates = pd.date_range(start=start_date, end=end_date, freq='1h')
-    nse_dates = [dt for dt in raw_dates if dt.weekday() < 5 and 9 <= dt.hour <= 15]
-    
-    total_candles = len(nse_dates)
-    base_close = 24000
-    np.random.seed(12345)
-    
-    # Live market price simulation for 'a'
-    mock_history = base_close + np.cumsum(np.random.normal(0, 15, total_candles))
-    
-    df_out = pd.DataFrame({'a': mock_history}, index=nse_dates)
-    df_out.index.name = 'Date & Time'
-    return df_out
-
-with st.spinner("⏳ Re-calculating with exact custom formulas..."):
-    df = generate_exact_nse_data()
-    
-    a_vals = df['a'].to_numpy()
-    n = len(a_vals)
-    
-    # ==========================================
-    # 2. EXACT CUSTOM CALCULATION FOR b AND c
-    # ==========================================
-    b_vals = np.zeros(n)
-    
-    # Seed value for b1
-    b_vals[0] = a_vals[0] 
-    
-    # Loop running your exact logic: b2 = b1 + 0.0001 * (a2 - b1)
-    for i in range(1, n):
-        b_vals[i] = b_vals[i-1] + 0.0001 * (a_vals[i] - b_vals[i-1])
-        
-    df['b'] = b_vals
-    df['c'] = df['a'] - df['b']  # Exact c = a - b
-
-    # ==========================================
-    # 3. ORNSTEIN-UHLENBECK PARAMS (Theta & Half Life)
-    # ==========================================
-    lookback = 30
-    theta_arr = np.zeros(n)
-    half_life_arr = np.zeros(n)
-    ou_signal = np.zeros(n)
-    
-    c_vals = df['c'].to_numpy()
-    
-    for i in range(lookback, n):
-        y = c_vals[i-lookback+1 : i+1]
-        x = c_vals[i-lookback : i]
-        
-        poly = np.polyfit(x, y, 1)
-        beta = poly[0]
-        
-        if 0 < beta < 1:
-            theta = -np.log(beta)
-            half_life = np.log(2) / theta
-        else:
-            theta = 0.01
-            half_life = 99.0
-            
-        theta_arr[i] = theta
-        half_life_arr[i] = half_life
-        
-        # Signal Generation based on Variance of 'c'
-        rolling_std = np.std(c_vals[i-lookback : i])
-        ou_equilibrium_barrier = rolling_std * 1.8
-        
-        if c_vals[i] > ou_equilibrium_barrier and c_vals[i] < c_vals[i-1]:
-            ou_signal[i] = -1.00 # Sell Reversion
-        elif c_vals[i] < -ou_equilibrium_barrier and c_vals[i] > c_vals[i-1]:
-            ou_signal[i] = 1.00  # Buy Reversion
-
-    df['Theta'] = theta_arr
-    df['Half_Life_Hours'] = half_life_arr
-    df['Signal'] = ou_signal
-
-st.success("🎯 Calculation Error Resolved. Exact Formulas Locked!")
+print("Step 1: Fetching Nifty 50 Data...")
+# Nifty 50 Index ticker in Yahoo Finance is '^NSEI'
+ticker = "^NSEI"
+data = yf.download(ticker, start="2024-01-01", end="2026-06-25")
 
 # ==========================================
-# 4. STREAMLIT UI DISPLAY
+# STEP 2: FEATURE ENGINEERING
 # ==========================================
-df_display = df.copy()
-df_display.index = df_display.index.strftime('%Y-%m-%d %H:%M')
+print("Step 2: Calculating Returns and Volatility...")
+data['Returns'] = data['Adj Close'].pct_change()
+data['Range'] = (data['High'] - data['Low']) / data['Close']
+data.dropna(inplace=True)
 
-col1, col2, col3 = st.columns(3)
-col1.metric(label="Formula Applied", value="Custom Recursive")
-col2.metric(label="Gap Method", value="c = a - b")
-col3.metric(label="Total Hours Tracked", value=f"{len(df_display)}")
+# Preparing features for HMM (Returns and Intra-day Range)
+X = data[['Returns', 'Range']].values
 
-st.markdown("---")
-st.subheader("🎯 Active OU Reversion Triggers (Strict High-Speed Only)")
-sig_df = df_display[df_display['Signal'] != 0][['a', 'b', 'c', 'Theta', 'Half_Life_Hours', 'Signal']]
-st.dataframe(sig_df.style.format("{:.2f}"), use_container_width=True)
+# ==========================================
+# STEP 3: MODEL CONFIGURATION (HMM)
+# ==========================================
+print("Step 3: Configuring Hidden Markov Model...")
+# Hum 3 Hidden States assume kar rahe hain: Bull, Bear, Sideways
+model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=100, random_state=42)
 
-st.markdown("---")
-st.subheader("📋 Full SDE Parameter Timeline Matrix")
-st.dataframe(df_display[['a', 'b', 'c', 'Theta', 'Half_Life_Hours', 'Signal']].style.format("{:.2f}"), use_container_width=True, height=500)
+# ==========================================
+# STEP 4: MODEL TRAINING (FITTING)
+# ==========================================
+print("Step 4: Training the Model...")
+model.fit(X)
+
+# ==========================================
+# STEP 5: STATE PREDICTION
+# ==========================================
+print("Step 5: Predicting Hidden States...")
+hidden_states = model.predict(X)
+data['State'] = hidden_states
+
+# ==========================================
+# STEP 6: POST-PROCESSING & REGIME LABELLING
+# ==========================================
+print("Step 6: Analyzing State Characteristics...")
+for i in range(model.n_components):
+    state_data = data[data['State'] == i]
+    print(f"State {i} -> Mean Return: {state_data['Returns'].mean():.4f}, Volatility: {state_data['Returns'].std():.4f}")
+
+# ==========================================
+# STEP 7: PLOTTING & VISUALIZATION
+# ==========================================
+print("Step 7: Plotting Nifty Regimes...")
+plt.figure(figsize=(15, 8))
+
+# Define colors for 3 different states
+colors = {0: 'green', 1: 'red', 2: 'blue'}
+labels = {0: 'State 0 (Growth/Bull)', 1: 'State 1 (High Volatility/Bear)', 2: 'State 2 (Consolidation)'}
+
+# Plotting the Close price with state colors
+for i in range(len(data) - 1):
+    plt.plot(data.index[i:i+2], data['Adj Close'].iloc[i:i+2], 
+             color=colors[data['State'].iloc[i]], linewidth=2)
+
+# Custom Legend Creating
+from matplotlib.patches import Patch
+legend_elements = [Patch(facecolor=colors[i], label=labels[i]) for i in range(3)]
+plt.legend(handles=legend_elements, loc='upper left')
+
+plt.title('Nifty 50 Market Regimes Predicted by Hidden Markov Model (HMM)', fontsize=14)
+plt.xlabel('Date', fontsize=12)
+plt.ylabel('Nifty Close Price', fontsize=12)
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# ==========================================
+# STEP 8: OUTCOME GENERATION
+# ==========================================
+print("\nStep 8: [SUCCESS] Execution Complete. Plot generated successfully.")
