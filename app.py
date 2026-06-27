@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-st.title("Nifty 50: Directional TRIX-RAVI Matrix")
-st.write("Layout: A = Close, B = TRIX, C = Residue (A-B), D = Directional RAVI Points (Minus Allowed)")
+st.title("Nifty 50: Absolute Residue Matrix Engine")
+st.write("Layout: A = Close, B = TRIX, C = |A-B| (Minus Not Allowed), D = RAVI on C (1-Hour Candles)")
 
 # ==========================================
 # STEP 1: SAFE DATA INGESTION
@@ -40,9 +40,10 @@ else:
     raw_data['B'] = np.exp(ema3)
     
     # ==========================================
-    # STEP 4 & 5: COLUMN C & D (Directional RAVI)
+    # STEP 4 & 5: COLUMN C (Absolute) & COLUMN D
     # ==========================================
-    raw_data['C'] = raw_data['A'] - raw_data['B']
+    # FIX: Yahan np.abs() laga diya hai, ab C ki value minus mein nahi jayegi
+    raw_data['C'] = np.abs(raw_data['A'] - raw_data['B'])
     
     short_span = 7
     long_span = 65
@@ -50,8 +51,7 @@ else:
     ema_short_c = raw_data['C'].ewm(span=short_span, adjust=False).mean()
     ema_long_c = raw_data['C'].ewm(span=long_span, adjust=False).mean()
     
-    # FIX: Yahan se np.abs() hata diya hai. 
-    # Ab agar Short EMA chota hoga Long EMA se, toh value MINUS mein aayegi.
+    # D = Short EMA - Long EMA (Yeh abhi bhi momentum direction track karega)
     raw_data['D'] = ema_short_c - ema_long_c
 
     raw_data.dropna(subset=['B', 'C', 'D'], inplace=True)
@@ -63,13 +63,13 @@ else:
     
     output_matrix['A'] = output_matrix['A'].map(lambda x: f"{x:.2f}")
     output_matrix['B'] = output_matrix['B'].map(lambda x: f"{x:.2f}")
-    output_matrix['C'] = output_matrix['C'].map(lambda x: f"{x:.4f}")
-    output_matrix['D'] = output_matrix['D'].map(lambda x: f"{x:.4f}") # Minus signs automatic show honge
+    output_matrix['C'] = output_matrix['C'].map(lambda x: f"{x:.4f}") # Hamesha plus me dikhega
+    output_matrix['D'] = output_matrix['D'].map(lambda x: f"{x:.4f}")
     
     output_matrix = output_matrix.sort_index(ascending=False)
 
     # Main Grid output display
-    st.subheader("📋 Directional Mathematical Matrix (Minus Enabled)")
+    st.subheader("📋 Core Mathematical Matrix (C Locked as Positive)")
     st.dataframe(output_matrix, use_container_width=True)
 
-    st.success("Logic Fix: Column D mein se 'Absolute' function hata diya gaya hai. Ab aapko positive aur negative dono trends saaf dikhenge.")
+    st.success("Logic Updated: Column C par Absolute function apply kar diya gaya hai. Ab C hamesha positive absolute distance dikhayega.")
