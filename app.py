@@ -3,24 +3,29 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty Ultra-Smooth Filter (Fast 0.001 & Slow 0.99)")
+st.title("Nifty Kalman High-Low Channel (Q=0.50)")
 
-st.write("Fixed Setup: Fast Q=0.001 aur Slow R=0.99 Active Hai...")
+st.write("Fixed Architecture: Same 0.50 Multiplier Par High aur Low Filters Active Hain...")
 
-# 1. Data Download
+# 1. Data Download (High, Low, Open, Close Sab Kuch)
 data = yf.download('^NSEI', start='2025-01-01', end='2027-01-01', interval='1h')
 
 if data.empty:
-    st.error("Data fetch nahi ho pa raha hai.")
+    st.error("Yahoo Finance se data nahi mil pa raha hai.")
 else:
     data['Date'] = data.index.date
     timestamps = data.index.strftime('%Y-%m-%d %H:%M')
-    a = data['Close'].values.flatten()
+    
+    # Inputs
+    price_high = data['High'].values.flatten()
+    price_low = data['Low'].values.flatten()
     o = data['Open'].values.flatten()
-    num_steps = len(a)
+    c_close = data['Close'].values.flatten()
+    num_steps = len(c_close)
 
-    # 2. COMPLETE GAP DE-TRENDING ENGINE
-    a_adjusted = np.copy(a)
+    # 2. GAP DE-TRENDING FOR HIGH AND LOW
+    high_adjusted = np.copy(price_high)
+    low_adjusted = np.copy(price_low)
     cumulative_gap = 0.0
 
     for t in range(1, num_steps):
@@ -28,66 +33,62 @@ else:
         prev_date = data['Date'].iloc[t-1]
         
         if current_date != prev_date:
-            gap = o[t] - a[t-1]
+            # Gap calculated using Open and previous Close
+            gap = o[t] - c_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
         
-        a_adjusted[t] = a[t] - cumulative_gap
+        high_adjusted[t] = price_high[t] - cumulative_gap
+        low_adjusted[t] = price_low[t] - cumulative_gap
 
-    # 3. FAST KALMAN (Fixed Q = 0.001 - Ultra Smooth)
-    b_fast = np.zeros(num_steps)
-    x_fast = a_adjusted[0]
-    P_f, Q_f, R_f = 1.0, 0.001, 1.0
+    # 3. HIGH KALMAN FILTER (a) - Q=0.50
+    b_high = np.zeros(num_steps)
+    x_high = high_adjusted[0]
+    P_h, Q_h, R_h = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_f + Q_f) / (P_f + Q_f + R_f)
-        x_fast = x_fast + K * (a_adjusted[t] - x_fast)
-        P_f = (1 - K) * (P_f + Q_f)
-        b_fast[t] = x_fast
+        K = (P_h + Q_h) / (P_h + Q_h + R_h)
+        x_high = x_high + K * (high_adjusted[t] - x_high)
+        P_h = (1 - K) * (P_h + Q_h)
+        b_high[t] = x_high
 
-    # 4. SLOW KALMAN (Fixed R = 0.99)
-    b_slow = np.zeros(num_steps)
-    x_slow = a_adjusted[0]
-    P_s, Q_s, R_s = 1.0, 0.01, 0.99
+    # 4. LOW KALMAN FILTER (b) - Q=0.50
+    b_low = np.zeros(num_steps)
+    x_low = low_adjusted[0]
+    P_l, Q_l, R_l = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_s + Q_s) / (P_s + Q_s + R_s)
-        x_slow = x_slow + K * (a_adjusted[t] - x_slow)
-        P_s = (1 - K) * (P_s + Q_s)
-        b_slow[t] = x_slow
+        K = (P_l + Q_l) / (P_l + Q_l + R_l)
+        x_low = x_low + K * (low_adjusted[t] - x_low)
+        P_l = (1 - K) * (P_l + Q_l)
+        b_low[t] = x_low
 
-    # 5. Re-Scaling for Output
-    b_fast_real = b_fast + cumulative_gap
-    b_slow_real = b_slow + cumulative_gap
-    c_diff = b_fast_real - b_slow_real
+    # 5. Bring Back to Real Scale
+    a_high_real = b_high + cumulative_gap
+    b_low_real = b_low + cumulative_gap
+    
+    # 6. CALCULATE C = A - B (Dynamic Channel Spread)
+    c_diff = a_high_real - b_low_real
 
-    # 6. FIXED ANTI-FLIP SYSTEM (Optimized Barrier for Ultra-Smooth Lines)
-    # Lines bhot smooth chalengi, isliye chote crossover noise ko filter karne ke liye barrier 4.0 rakha hai
+    # 7. HIGH-LOW BREAKOUT SIGNAL LOGIC
+    # Agar close price High line ke upar nikle toh BUY, Low line ke niche jaye toh SELL
     signals = []
     current_state = "⚪ SIDEWAYS"
-    barrier_gate = 4.0
-
-    for val in c_diff:
-        if current_state == "⚪ SIDEWAYS":
-            if val > barrier_gate:
-                current_state = "🟢 BUY TREND"
-            elif val < -barrier_gate:
-                current_state = "🔴 SELL TREND"
-        elif current_state == "🟢 BUY TREND":
-            if val < -barrier_gate:
-                current_state = "🔴 SELL TREND"
-        elif current_state == "🔴 SELL TREND":
-            if val > barrier_gate:
-                current_state = "🟢 BUY TREND"
+    
+    for t in range(num_steps):
+        if c_close[t] > a_high_real[t]:
+            current_state = "🟢 BUY (High Breakout)"
+        elif c_close[t] < b_low_real[t]:
+            current_state = "🔴 SELL (Low Breakout)"
         signals.append(current_state)
 
-    # 7. Create DataFrame
+    # 8. Create Channel DataFrame Table
     df_table = pd.DataFrame({
-        'a: Nifty Close': np.round(a, 2),
-        'b_fast (Q=0.001)': np.round(b_fast_real, 2),
-        'b_slow (R=0.99)': np.round(b_slow_real, 2),
-        'c_diff (Spread)': np.round(c_diff, 2),
-        'Final Stable Signal': signals
+        'Nifty Close': np.round(c_close, 2),
+        'a: High Kalman': np.round(a_high_real, 2),
+        'b: Low Kalman': np.round(b_low_real, 2),
+        'c: Spread (a - b)': np.round(c_diff, 2),
+        'Channel Signal': signals
     }, index=timestamps)
 
-    # 8. Render Table (Latest Data on Top)
+    # Render Table (Latest on Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("System successfully locked on Ultra-Smooth Core!")
+    st.success("High-Low Kalman Channel successfully deployed!")
