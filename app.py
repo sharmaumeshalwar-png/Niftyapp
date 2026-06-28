@@ -5,39 +5,44 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty & India VIX 5-Minute Fixed Dashboard")
+st.title("🚀 Nifty & India VIX 5-Minute Flat-Column Dashboard")
 
-st.write("Fixed Architecture: 5-Minute Frequency Enabled | Auto Data Limit Fallback | Q=0.50 | Pure Signals...")
+st.write("Fixed Architecture: MultiIndex Flattened | No More Line 128/165 Errors | Trailing 59 Days Rolling Window...")
 
-# 1. OPTIMIZED FUNCTION FOR 5-MINUTE HIGH-DENSITY DATA WITH CRASH GUARD
+# 1. OPTIMIZED FUNCTION FOR 5-MINUTE HIGH-DENSITY DATA WITH FLAT COLUMNS
 @st.cache_data(ttl=1800)
 def load_five_minute_data():
-    # 5-minute data yfinance sirf pichle 60 din ka deta hai, isliye dynamic fallback lagaya hai
+    # 5-minute data max 60 trailing days tak hi allowed hota hai
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=59)
     
     start_str = start_dt.strftime('%Y-%m-%d')
     end_str = end_dt.strftime('%Y-%m-%d')
     
+    # Raw multi-ticker download
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='5m')
     
     if nifty_raw.empty or vix_raw.empty:
         return None
 
-    # MultiIndex Cross-Section Extraction
+    # CRITICAL FIX: Flattening the MultiIndex Columns immediately
+    nifty_raw.columns = [f"{col[0]}_nifty" if isinstance(col, tuple) else f"{col}_nifty" for col in nifty_raw.columns]
+    vix_raw.columns = [f"{col[0]}_vix" if isinstance(col, tuple) else f"{col}_vix" for col in vix_raw.columns]
+
+    # Directly mapping from flattened structure (Safe from Level Errors)
     nifty_df = pd.DataFrame(index=nifty_raw.index)
-    nifty_df['High_nifty'] = nifty_raw.xs('High', axis=1, level=0).iloc[:, 0]
-    nifty_df['Low_nifty'] = nifty_raw.xs('Low', axis=1, level=0).iloc[:, 0]
-    nifty_df['Open_nifty'] = nifty_raw.xs('Open', axis=1, level=0).iloc[:, 0]
-    nifty_df['Close_nifty'] = nifty_raw.xs('Close', axis=1, level=0).iloc[:, 0]
+    nifty_df['High_nifty'] = nifty_raw['High_nifty']
+    nifty_df['Low_nifty'] = nifty_raw['Low_nifty']
+    nifty_df['Open_nifty'] = nifty_raw['Open_nifty']
+    nifty_df['Close_nifty'] = nifty_raw['Close_nifty']
 
     vix_df = pd.DataFrame(index=vix_raw.index)
-    vix_df['High_vix'] = vix_raw.xs('High', axis=1, level=0).iloc[:, 0]
-    vix_df['Low_vix'] = vix_raw.xs('Low', axis=1, level=0).iloc[:, 0]
-    vix_df['Close_vix'] = vix_raw.xs('Close', axis=1, level=0).iloc[:, 0]
+    vix_df['High_vix'] = vix_raw['High_vix']
+    vix_df['Low_vix'] = vix_raw['Low_vix']
+    vix_df['Close_vix'] = vix_raw['Close_vix']
 
-    # Clean local time alignment
+    # Clean local timezone alignment
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
@@ -47,20 +52,20 @@ def load_five_minute_data():
     nifty_df = nifty_df.reset_index()
     vix_df = vix_df.reset_index()
     
-    # Synchronized Inner Join
+    # Synchronized Join
     combined = pd.merge(nifty_df, vix_df, on='time_key', how='inner')
     combined.index = pd.to_datetime(combined['Datetime_x'])
     combined = combined[~combined.index.duplicated(keep='first')]
     
     return combined.dropna()
 
-# Execute data engine
+# Execute clean data engine
 combined_data = load_five_minute_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("YFinance 5-Minute Limit Error. Data available only for trailing 60 days. Wait for market open or clear Streamlit cache.")
+    st.error("Data Frame Sync Error. Dynamic trailing window empty. Please check internet connection or retry.")
 else:
-    # Line 165 Safe Array Conversion Guard
+    # Safe Array Extractions from Flattened Schema
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
     n_low = combined_data['Low_nifty'].to_numpy(dtype=float)
     n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
@@ -125,4 +130,42 @@ else:
     P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
     for t in range(num_steps):
         K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
-        x_v_low = x_v_low + K * (v_low[t] - x_v
+        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
+        P_vl = (1 - K) * (P_vl + Q_vl)
+        vifty_low[t] = x_v_low
+
+    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
+    nifty_signals = []
+    current_signal = "⏳ INITIALIZING"
+    for t in range(num_steps):
+        if n_close[t] > nifty_high_real[t]:
+            current_signal = "🟢 BUY"
+        elif n_close[t] < nifty_low_real[t]:
+            current_signal = "🔴 SELL"
+        nifty_signals.append(current_signal)
+
+    # 7. INDIA VIX SIGNALS
+    vix_signals = []
+    for t in range(num_steps):
+        if v_close[t] > vifty_high[t]:
+            vix_signals.append("🔴 RISK HIGH")
+        elif v_close[t] < vifty_low[t]:
+            vix_signals.append("🟢 RISK LOW")
+        else:
+            vix_signals.append("⚪ SIDEWAYS")
+
+    # DATAFRAME COMPILATION
+    df_table = pd.DataFrame({
+        'Nifty Close': [f"{x:.2f}" for x in n_close],
+        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
+        '📈 NIFTY HINT': nifty_signals,
+        'VIX Close': [f"{x:.2f}" for x in v_close],
+        'VIX High K': [f"{x:.2f}" for x in vifty_high],
+        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
+        '🔥 VOLATILITY HINT': vix_signals
+    }, index=timestamps)
+
+    df_reversed = df_table.iloc[::-1]
+
+    def style_nifty_strict
