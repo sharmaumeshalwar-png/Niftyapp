@@ -4,108 +4,158 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("🚀 Synthetic Intraday-Gap Kalman Engine")
+st.title("Nifty & India VIX Classic High-Low Gap Dashboard")
 
-st.write("Fixed Architecture: Intraday Move Treated as Gap | Overnight Risks 100% Eliminated | Q=0.50 | Pure Signals...")
+st.write("Fixed Architecture: High/Low Kalman Channels Active | Pure Gap Engine Restored | Q=0.50 | Accurate Hints Locked...")
 
-# 1. FUNCTION TO DOWNLOAD AND EXTRACT HOURLY DATA
+# 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
 def load_frozen_data():
-    # Fetching liquid hourly data
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
-    if nifty_raw.empty:
+    vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
+    
+    if nifty_raw.empty or vix_raw.empty:
         return None
 
+    # Safe MultiIndex Extraction using Cross-Section (.xs)
     nifty_df = pd.DataFrame(index=nifty_raw.index)
-    nifty_df['Open_nifty'] = nifty_raw.xs('Open', axis=1, level=0).iloc[:, 0]
     nifty_df['High_nifty'] = nifty_raw.xs('High', axis=1, level=0).iloc[:, 0]
     nifty_df['Low_nifty'] = nifty_raw.xs('Low', axis=1, level=0).iloc[:, 0]
+    nifty_df['Open_nifty'] = nifty_raw.xs('Open', axis=1, level=0).iloc[:, 0]
     nifty_df['Close_nifty'] = nifty_raw.xs('Close', axis=1, level=0).iloc[:, 0]
 
+    vix_df = pd.DataFrame(index=vix_raw.index)
+    vix_df['High_vix'] = vix_raw.xs('High', axis=1, level=0).iloc[:, 0]
+    vix_df['Low_vix'] = vix_raw.xs('Low', axis=1, level=0).iloc[:, 0]
+    vix_df['Close_vix'] = vix_raw.xs('Close', axis=1, level=0).iloc[:, 0]
+
+    # Timezone clean-up
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
-    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H')
-    nifty_df = nifty_df.reset_index()
+    vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    return nifty_df.dropna()
+    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H')
+    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H')
+    
+    nifty_df = nifty_df.reset_index()
+    vix_df = vix_df.reset_index()
+    
+    # Synchronized Merge
+    combined = pd.merge(nifty_df, vix_df, on='time_key', how='inner')
+    combined.index = pd.to_datetime(combined['Datetime_x'])
+    combined = combined[~combined.index.duplicated(keep='first')]
+    
+    return combined.dropna()
 
 # Execute data engine
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data tracking framework error.")
+    st.error("Data extraction error.")
 else:
     # Pure Linear Arrays
-    n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
     n_low = combined_data['Low_nifty'].to_numpy(dtype=float)
+    n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
     n_close = combined_data['Close_nifty'].to_numpy(dtype=float)
     
+    v_high = combined_data['High_vix'].to_numpy(dtype=float)
+    v_low = combined_data['Low_vix'].to_numpy(dtype=float)
+    v_close = combined_data['Close_vix'].to_numpy(dtype=float)
+    
     num_steps = len(combined_data)
-    timestamps = combined_data['Datetime'].dt.strftime('%Y-%m-%d %H:%M').to_numpy()
-    parsed_dates = combined_data['Datetime'].dt.date.to_numpy()
+    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
+    parsed_dates = combined_data.index.date
 
-    # 2. SYNTHETIC INTRADAY-GAP ACCUMULATION ENGINE
-    # Yahan hum har candle ki intraday real body ko accumulate kar rahe hain
-    synthetic_intraday_series = np.zeros(num_steps)
-    cumulative_intraday = n_close[0] # Shuruat initial price se
+    # 2. PURE GAP DE-TRENDING ENGINE (No Multipliers)
+    n_high_adj = np.copy(n_high)
+    n_low_adj = np.copy(n_low)
+    cumulative_gap = 0.0
 
     for t in range(1, num_steps):
-        # Har ghante ka pure non-gap intraday net change
-        intraday_move = n_close[t] - n_open[t]
-        cumulative_intraday += intraday_move
-        synthetic_intraday_series[t] = cumulative_intraday
+        if parsed_dates[t] != parsed_dates[t-1]:
+            gap = n_open[t] - n_close[t-1]
+            if abs(gap) > 5.0:  
+                cumulative_gap += gap
+        n_high_adj[t] = n_high[t] - cumulative_gap
+        n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH & LOW BOUNDARIES FOR SYNTHETIC TRACK
-    # Synthetic series ke upar high aur low ka spread banaya taaki channel perfect rahe
-    synthetic_high = np.zeros(num_steps)
-    synthetic_low = np.zeros(num_steps)
+    # 3. NIFTY HIGH KALMAN FILTER (Q = 0.50)
+    b_nifty_high = np.zeros(num_steps)
+    x_n_high = n_high_adj[0]
+    P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        spread = (n_high[t] - n_low[t]) / 2.0
-        synthetic_high[t] = synthetic_intraday_series[t] + spread
-        synthetic_low[t] = synthetic_intraday_series[t] - spread
+        K = (P_nh + Q_nh) / (P_nh + Q_nh + R_nh)
+        x_n_high = x_n_high + K * (n_high_adj[t] - x_n_high)
+        P_nh = (1 - K) * (P_nh + Q_nh)
+        b_nifty_high[t] = x_n_high
 
-    # 4. INDEPENDENT KALMAN ON SYNTHETIC HIGH (Q = 0.50)
-    kalman_high = np.zeros(num_steps)
-    x_high = synthetic_high[0]
-    P_h, Q_h, R_h = 1.0, 0.50, 1.0
+    # 4. NIFTY LOW KALMAN FILTER (Q = 0.50)
+    b_nifty_low = np.zeros(num_steps)
+    x_n_low = n_low_adj[0]
+    P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_h + Q_h) / (P_h + Q_h + R_h)
-        x_high = x_high + K * (synthetic_high[t] - x_high)
-        P_h = (1 - K) * (P_h + Q_h)
-        kalman_high[t] = x_high
+        K = (P_nl + Q_nl) / (P_nl + Q_nl + R_nl)
+        x_n_low = x_n_low + K * (n_low_adj[t] - x_n_low)
+        P_nl = (1 - K) * (P_nl + Q_nl)
+        b_nifty_low[t] = x_n_low
 
-    # 5. INDEPENDENT KALMAN ON SYNTHETIC LOW (Q = 0.50)
-    kalman_low = np.zeros(num_steps)
-    x_low = synthetic_low[0]
-    P_l, Q_l, R_l = 1.0, 0.50, 1.0
+    # Re-applying standard cumulative gaps to real-align bands
+    nifty_high_real = b_nifty_high + cumulative_gap
+    nifty_low_real = b_nifty_low + cumulative_gap
+
+    # 5. INDIA VIX KALMAN FILTERS
+    vifty_high = np.zeros(num_steps)
+    x_v_high = v_high[0]
+    P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_l + Q_l) / (P_l + Q_l + R_l)
-        x_low = x_low + K * (synthetic_low[t] - x_low)
-        P_l = (1 - K) * (P_l + Q_l)
-        kalman_low[t] = x_low
+        K = (P_vh + Q_vh) / (P_vh + Q_vh + R_vh)
+        x_v_high = x_v_high + K * (v_high[t] - x_v_high)
+        P_vh = (1 - K) * (P_vh + Q_vh)
+        vifty_high[t] = x_v_high
 
-    # 6. STABLE SIGNAL GENERATION (Strict Red/Green Blocks)
+    vifty_low = np.zeros(num_steps)
+    x_v_low = v_low[0]
+    P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
+    for t in range(num_steps):
+        K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
+        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
+        P_vl = (1 - K) * (P_vl + Q_vl)
+        vifty_low[t] = x_v_low
+
+    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
-        if synthetic_intraday_series[t] > kalman_high[t]:
+        if n_close[t] > nifty_high_real[t]:
             current_signal = "🟢 BUY"
-        elif synthetic_intraday_series[t] < kalman_low[t]:
+        elif n_close[t] < nifty_low_real[t]:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. EXPLICIT MATRICES COMPILATION
+    # 7. INDIA VIX SIGNALS (Uncolored Safe Text)
+    vix_signals = []
+    for t in range(num_steps):
+        if v_close[t] > vifty_high[t]:
+            vix_signals.append("🔴 RISK HIGH")
+        elif v_close[t] < vifty_low[t]:
+            vix_signals.append("🟢 RISK LOW")
+        else:
+            vix_signals.append("⚪ SIDEWAYS")
+
+    # DATAFRAME COMPILATION
     df_table = pd.DataFrame({
-        'Nifty Real Close': [f"{x:.2f}" for x in n_close],
-        'Synthetic Price Track': [f"{x:.2f}" for x in synthetic_intraday_series],
-        'Synthetic High K': [f"{x:.2f}" for x in kalman_high],
-        'Synthetic Low K': [f"{x:.2f}" for x in kalman_low],
-        '📈 NIFTY HINT': nifty_signals
+        'Nifty Close': [f"{x:.2f}" for x in n_close],
+        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
+        '📈 NIFTY HINT': nifty_signals,
+        'VIX Close': [f"{x:.2f}" for x in v_close],
+        'VIX High K': [f"{x:.2f}" for x in vifty_high],
+        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
+        '🔥 VOLATILITY HINT': vix_signals
     }, index=timestamps)
 
     df_reversed = df_table.iloc[::-1]
 
-    # STRICT COLOR MAPPER
     def style_nifty_strict(val):
         if "BUY" in str(val):
             return "background-color: #2e7d32; color: white; font-weight: bold;"
@@ -115,6 +165,6 @@ else:
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
-    # 8. RENDER VIEW
+    # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Perfect Solution! Intraday-only synthetic trend is now active. Flip-flops eliminated.")
+    st.success("Perfect Setup Restored! Traditional High-Low Gap Engine is successfully live.")
