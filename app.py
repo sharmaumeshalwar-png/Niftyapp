@@ -2,18 +2,25 @@ import numpy as np
 import yfinance as yf
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty & India VIX 5-Minute Pure Gap Dashboard")
+st.title("🚀 Nifty & India VIX 5-Minute Fixed Dashboard")
 
-st.write("Fixed Architecture: 5-Minute Frequency Enabled | Start Date: 1 May 2026 | Q=0.50 | Pure Red/Green Loop...")
+st.write("Fixed Architecture: 5-Minute Frequency Enabled | Auto Data Limit Fallback | Q=0.50 | Pure Signals...")
 
-# 1. OPTIMIZED FUNCTION FOR 5-MINUTE HIGH-DENSITY DATA
+# 1. OPTIMIZED FUNCTION FOR 5-MINUTE HIGH-DENSITY DATA WITH CRASH GUARD
 @st.cache_data(ttl=1800)
 def load_five_minute_data():
-    # Fetching 5-minute high-density data from May 1, 2026 onwards
-    nifty_raw = yf.download('^NSEI', start='2026-05-01', end='2026-07-01', interval='5m')
-    vix_raw = yf.download('^INDIAVIX', start='2026-05-01', end='2026-07-01', interval='5m')
+    # 5-minute data yfinance sirf pichle 60 din ka deta hai, isliye dynamic fallback lagaya hai
+    end_dt = datetime.now()
+    start_dt = end_dt - timedelta(days=59)
+    
+    start_str = start_dt.strftime('%Y-%m-%d')
+    end_str = end_dt.strftime('%Y-%m-%d')
+    
+    nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
+    vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='5m')
     
     if nifty_raw.empty or vix_raw.empty:
         return None
@@ -30,11 +37,10 @@ def load_five_minute_data():
     vix_df['Low_vix'] = vix_raw.xs('Low', axis=1, level=0).iloc[:, 0]
     vix_df['Close_vix'] = vix_raw.xs('Close', axis=1, level=0).iloc[:, 0]
 
-    # Clean local time alignment (No tz drops)
+    # Clean local time alignment
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    # 5-Minute Key Matching Engine
     nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H:%M')
     vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H:%M')
     
@@ -52,9 +58,9 @@ def load_five_minute_data():
 combined_data = load_five_minute_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("5-Minute data frame fetch limit or market holiday error.")
+    st.error("YFinance 5-Minute Limit Error. Data available only for trailing 60 days. Wait for market open or clear Streamlit cache.")
 else:
-    # Pure Linear NumPy Arrays for speed processing
+    # Line 165 Safe Array Conversion Guard
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
     n_low = combined_data['Low_nifty'].to_numpy(dtype=float)
     n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
@@ -74,10 +80,9 @@ else:
     cumulative_gap = 0.0
 
     for t in range(1, num_steps):
-        # Identifies day shift at the first 5-minute candle of the morning
         if parsed_dates[t] != parsed_dates[t-1]:
             gap = n_open[t] - n_close[t-1]
-            if abs(gap) > 3.0: # Tight filter for high frequency gaps  
+            if abs(gap) > 3.0:  
                 cumulative_gap += gap
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
@@ -102,11 +107,10 @@ else:
         P_nl = (1 - K) * (P_nl + Q_nl)
         b_nifty_low[t] = x_n_low
 
-    # Re-applying precise cumulative gaps back
     nifty_high_real = b_nifty_high + cumulative_gap
     nifty_low_real = b_nifty_low + cumulative_gap
 
-    # 5. INDIA VIX 5-MINUTE KALMAN FILTERS
+    # 5. INDIA VIX KALMAN FILTERS
     vifty_high = np.zeros(num_steps)
     x_v_high = v_high[0]
     P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
@@ -121,45 +125,4 @@ else:
     P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
     for t in range(num_steps):
         K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
-        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
-        P_vl = (1 - K) * (P_vl + Q_vl)
-        vifty_low[t] = x_v_low
-
-    # 6. SATEEK HIGH-FREQUENCY REACTION HINTS (No Overlap Blocks)
-    nifty_signals = []
-    current_signal = "⏳ INITIALIZING"
-    for t in range(num_steps):
-        if n_close[t] > nifty_high_real[t]:
-            current_signal = "🟢 BUY"
-        elif n_close[t] < nifty_low_real[t]:
-            current_signal = "🔴 SELL"
-        nifty_signals.append(current_signal)
-
-    # 7. INDIA VIX CLEAN MATRIX
-    vix_signals = []
-    for t in range(num_steps):
-        if v_close[t] > vifty_high[t]:
-            vix_signals.append("🔴 RISK HIGH")
-        elif v_close[t] < vifty_low[t]:
-            vix_signals.append("🟢 RISK LOW")
-        else:
-            vix_signals.append("⚪ SIDEWAYS")
-
-    # DATAFRAME COMPILATION
-    df_table = pd.DataFrame({
-        'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
-        '📈 NIFTY HINT': nifty_signals,
-        'VIX Close': [f"{x:.2f}" for x in v_close],
-        'VIX High K': [f"{x:.2f}" for x in vifty_high],
-        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
-        '🔥 VOLATILITY HINT': vix_signals
-    }, index=timestamps)
-
-    df_reversed = df_table.iloc[::-1]
-
-    def style_nifty_strict(val):
-        if "BUY" in str(val):
-            return "background-color: #2e7d32; color: white; font-weight: bold;"
-        elif "SELL
+        x_v_low = x_v_low + K * (v_low[t] - x_v
