@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Color-Coded Dashboard")
+st.title("Nifty & India VIX Custom Kalman Dashboard")
 
-st.write("Fixed Architecture: Direct Style Mapping Active | 100% Anti-Blank Grid Security...")
+st.write("Fixed Architecture: Only Nifty Hint Colored | VIX Default Standard | Q=0.50 | Stable Grid...")
 
 # 1. FUNCTION TO DOWNLOAD, ALIGN AND CLEAN DATA
 @st.cache_data(ttl=3600)
@@ -58,7 +58,7 @@ def load_frozen_data():
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data fetch block error.")
+    st.error("Data load error.")
 else:
     # Arrays extraction
     n_high = combined_data['High_nifty'].values.astype(float).flatten()
@@ -138,7 +138,6 @@ else:
         elif n_close[t] < nifty_low_real[t]:
             current_signal = "🔴 SELL"
         else:
-            # Agar high aur low ke beech mein hai, toh hum signal text ke aage status jod denge
             if "BUY" in current_signal:
                 current_signal = "🟢 BUY [HOLD]"
             elif "SELL" in current_signal:
@@ -148,7 +147,7 @@ else:
                 
         nifty_signals.append(current_signal)
 
-    # 6. INDIA VIX SIGNALS
+    # 6. INDIA VIX SIGNALS (Clean Text, No color tags needed)
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -156,7 +155,7 @@ else:
         elif v_close[t] < vifty_low[t]:
             vix_signals.append("🟢 RISK LOW")
         else:
-            vix_signals.append("💥 OPPOSITE ZONE")
+            vix_signals.append("⚪ SIDEWAYS")
 
     # 7. EXPLICIT MATRICES COMPILE
     df_table = pd.DataFrame({
@@ -172,28 +171,19 @@ else:
 
     df_reversed = df_table.iloc[::-1]
 
-    # DIRECT ELEMENT MAP FUNCTIONS (Ultra Stable, Never Blanks)
+    # DIRECT NIFTY CELL MAP FUNCTION
     def style_nifty_cell(val):
         if "[HOLD]" in str(val):
-            return "background-color: #ef6c00; color: white; font-weight: bold;" # Orange for inside-channel hold
+            return "background-color: #ef6c00; color: white; font-weight: bold;" # Orange background for inside channel hold
         elif "BUY" in str(val):
-            return "background-color: #2e7d32; color: white; font-weight: bold;" # Green for active breakout
+            return "background-color: #2e7d32; color: white; font-weight: bold;" # Green breakout
         elif "SELL" in str(val):
-            return "background-color: #c62828; color: white; font-weight: bold;" # Red for active breakdown
+            return "background-color: #c62828; color: white; font-weight: bold;" # Red breakdown
         return ""
 
-    def style_vix_cell(val):
-        if "OPPOSITE" in str(val):
-            return "background-color: #ef6c00; color: white; font-weight: bold;" # Orange for inside-channel
-        elif "LOW" in str(val):
-            return "background-color: #2e7d32; color: white; font-weight: bold;" # Green
-        elif "HIGH" in str(val):
-            return "background-color: #c62828; color: white; font-weight: bold;" # Red
-        return ""
+    # INJECT STYLE ONLY TO NIFTY COLUMN (VIX mapping completely omitted)
+    styled_final_df = df_reversed.style.map(style_nifty_cell, subset=['📈 NIFTY HINT'])
 
-    # Injecting cell map directly into specific subsets (Safest Pandas Pipeline)
-    styled_final_df = df_reversed.style.map(style_nifty_cell, subset=['📈 NIFTY HINT']).map(style_vix_cell, subset=['🔥 VOLATILITY HINT'])
-
-    # 8. RENDER IMMUTABLE GRID VIEW
+    # 8. RENDER SECURE DATAFRAME VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Grid recovered! Dynamic background styles fully operational.")
+    st.success("Configuration updated! Color styles isolated exclusively to Nifty Hint column.")
