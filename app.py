@@ -3,52 +3,63 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty & India VIX Precise Alignment Engine")
+st.set_page_config(layout="wide") # Dashboard space ko expand karne ke liye
+st.title("Nifty & India VIX Frozen Data Intelligence Engine")
 
-st.write("Fixed Architecture: July 2024 Frame | Q=0.50 | Tilde Indexing Fixed...")
+st.write("Status: Data Matrix Frozen | Cache Lock Active (1 Hour TTL) | Q=0.50 | Dual Independent Hints...")
 
-# 1. DUAL DATA DOWNLOAD WITH UTC/LOCAL TIMESTAMPS ALIGNMENT
-with st.spinner("Nifty aur India VIX ka data sahi samay par align ho raha hai..."):
-    nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
-    vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
+# 1. FUNCTION TO DOWNLOAD AND FREEZE/CACHE DATA
+@st.cache_data(ttl=3600)  # Data ko 1 ghante tak memory mein freeze rakhega
+def load_frozen_data():
+    # Data download from July 2024 to June 2026 frame
+    nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2026-07-01', interval='1h')
+    vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2026-07-01', interval='1h')
+    
+    if nifty_raw.empty or vix_raw.empty:
+        return None
 
-if nifty_raw.empty or vix_raw.empty:
-    st.error("Yahoo Finance se data nahi mila. Tickers check karein.")
-else:
     # yfinance MultiIndex flattening
     if isinstance(nifty_raw.columns, pd.MultiIndex):
         nifty_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in nifty_raw.columns]
     if isinstance(vix_raw.columns, pd.MultiIndex):
         vix_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in vix_raw.columns]
-    
-    # Nifty DataFrame Extraction
+        
+    # Extracting core series
     nifty_df = pd.DataFrame(index=nifty_raw.index)
     nifty_df['High_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'High' in c][0]]
     nifty_df['Low_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Low' in c][0]]
     nifty_df['Open_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Open' in c][0]]
     nifty_df['Close_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Close' in c][0]]
 
-    # VIX DataFrame Extraction
     vix_df = pd.DataFrame(index=vix_raw.index)
     vix_df['High_vix'] = vix_raw[[c for c in vix_raw.columns if 'High' in c][0]]
     vix_df['Low_vix'] = vix_raw[[c for c in vix_raw.columns if 'Low' in c][0]]
     vix_df['Close_vix'] = vix_raw[[c for c in vix_raw.columns if 'Close' in c][0]]
 
-    # Time Flooring for Hour Buckets
-    nifty_df.index = nifty_df.index.strftime('%Y-%m-%d %H:00')
-    vix_df.index = vix_df.index.strftime('%Y-%m-%d %H:00')
+    # Converting index to local timezone naive string for flawless matching
+    nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
+    vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
+    
+    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H')
+    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H')
+    
+    nifty_df = nifty_df.reset_index()
+    vix_df = vix_df.reset_index()
+    
+    # Core Synchronized Merge
+    combined = pd.merge(nifty_df, vix_df, on='time_key', how='inner')
+    combined.index = pd.to_datetime(combined['Datetime_x'])
+    combined = combined[~combined.index.duplicated(keep='first')]
+    
+    return combined
 
-    # Inner merge to align rows perfectly
-    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True, how='inner')
-    
-    # --- CRITICAL FIX: Slicing Bracket Added Correctly ---
-    combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
-    
-    # Parsing dates safely for the gap engine
-    parsed_dates = pd.to_datetime(combined_data.index).date
-    timestamps = combined_data.index
-    
-    # Extracting exact flat arrays
+# Execute the frozen download engine
+combined_data = load_frozen_data()
+
+if combined_data is None:
+    st.error("Data source sync failed. Check Network connectivity.")
+else:
+    # Safe Array Flattening from the static dataframe
     n_high = combined_data['High_nifty'].values.flatten()
     n_low = combined_data['Low_nifty'].values.flatten()
     n_open = combined_data['Open_nifty'].values.flatten()
@@ -59,8 +70,10 @@ else:
     v_close = combined_data['Close_vix'].values.flatten()
     
     num_steps = len(combined_data)
+    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
+    parsed_dates = combined_data.index.date
 
-    # 2. NIFTY GAP DE-TRENDING
+    # 2. NIFTY GAP DE-TRENDING ENGINE
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
@@ -114,7 +127,17 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 5. REVERSE CROSSOVER LOGIC (From VIX Close)
+    # 5. INDEPENDENT NIFTY SIGNALS (Frozen logic maps)
+    nifty_signals = []
+    for t in range(num_steps):
+        if n_close[t] > nifty_high_real[t]:
+            nifty_signals.append("🟢 BUY (Nifty Cross)")
+        elif n_close[t] < nifty_low_real[t]:
+            nifty_signals.append("🔴 SELL (Nifty Break)")
+        else:
+            nifty_signals.append("⚪ SIDEWAYS")
+
+    # 6. INDEPENDENT INDIA VIX SIGNALS
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -124,20 +147,18 @@ else:
         else:
             vix_signals.append("⚪ SIDEWAYS")
 
-    # 6. MASTER DATA COMPILATION
+    # 7. MATRICES COMPILE WITH ABSOLUTE COMPACT VALUE STRING LOCKS
     df_table = pd.DataFrame({
-        'Nifty Close': np.round(n_close, 2),
-        'Nifty High K': np.round(nifty_high_real, 2),
-        'Nifty Low K': np.round(nifty_low_real, 2),
-        'VIX Close': np.round(v_close, 2),
-        'VIX High K': np.round(vifty_high, 2),
-        'VIX Low K': np.round(vifty_low, 2),
+        'Nifty Close': nifty_close_formatted = [f"{x:.2f}" for x in n_close],
+        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
+        '📈 NIFTY SIGNAL': nifty_signals,
+        'VIX Close': [f"{x:.2f}" for x in v_close],
+        'VIX High K': [f"{x:.2f}" for x in vifty_high],
+        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
         '🔥 VOLATILITY SIGNAL': vix_signals
     }, index=timestamps)
 
-    # 7. CHRONOLOGICAL REVERSE RE-INDEX
-    df_rendered = df_table.iloc[::-1]
-
-    # 8. LIVE UI STREAM
-    st.dataframe(df_rendered, use_container_width=True)
-    st.success("Syntax patched correctly. System running 100% fine!")
+    # 8. RENDER IMMUTABLE VIEW (Latest on top)
+    st.dataframe(df_table.iloc[::-1], use_container_width=True)
+    st.button("🔄 Clear Cache & Force Refresh Data") # Manual update feature
