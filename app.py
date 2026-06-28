@@ -3,15 +3,15 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty 1-Hour Kalman Channel (From 1 Jan 2024)")
+st.title("Nifty 1-Hour Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: Q=0.50 Par High/Low Filters (Full 2024-2026 Data Active)...")
+st.write("Fixed Architecture: Q=0.50 Par High/Low Filters (July 2024 Data Active)...")
 
-# 1. Data Download (1-Hour Interval Starting from 1 Jan 2024)
-data = yf.download('^NSEI', start='2024-01-01', end='2027-01-01', interval='1h')
+# 1. Data Download (1-Hour Interval Starting from 1 July 2024)
+data = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
 
 if data.empty:
-    st.error("Yahoo Finance se 1 Jan 2024 se data nahi mil pa raha hai.")
+    st.error("Yahoo Finance se 1 July 2024 ka data nahi mil pa raha hai.")
 else:
     data['Date'] = data.index.date
     timestamps = data.index.strftime('%Y-%m-%d %H:%M')
@@ -23,7 +23,7 @@ else:
     c_close = data['Close'].values.flatten()
     num_steps = len(c_close)
 
-    # 2. LONG-TERM GAP DE-TRENDING FOR HIGH AND LOW
+    # 2. MID-TERM GAP DE-TRENDING FOR HIGH AND LOW
     high_adjusted = np.copy(price_high)
     low_adjusted = np.copy(price_low)
     cumulative_gap = 0.0
@@ -33,6 +33,7 @@ else:
         prev_date = data['Date'].iloc[t-1]
         
         if current_date != prev_date:
+            # Gap calculation based on Open and previous Close
             gap = o[t] - c_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
@@ -89,4 +90,4 @@ else:
 
     # Render Table (Latest rows on Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("Historical 2024-2026 Engine Deployed Successfully!")
+    st.success("July 2024 Historical Engine Initialized!")
