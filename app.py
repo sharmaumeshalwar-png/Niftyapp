@@ -7,30 +7,28 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide")
 st.title("🚀 Nifty & India VIX 5-Minute Flat-Column Dashboard")
 
-st.write("Fixed Architecture: MultiIndex Flattened | No More Line 128/165 Errors | Trailing 59 Days Rolling Window...")
+st.write("Fixed Architecture: MultiIndex Flattened | Line 171 Syntax Corrected | Trailing 59 Days Rolling Window...")
 
 # 1. OPTIMIZED FUNCTION FOR 5-MINUTE HIGH-DENSITY DATA WITH FLAT COLUMNS
 @st.cache_data(ttl=1800)
 def load_five_minute_data():
-    # 5-minute data max 60 trailing days tak hi allowed hota hai
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=59)
     
     start_str = start_dt.strftime('%Y-%m-%d')
     end_str = end_dt.strftime('%Y-%m-%d')
     
-    # Raw multi-ticker download
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='5m')
     
     if nifty_raw.empty or vix_raw.empty:
         return None
 
-    # CRITICAL FIX: Flattening the MultiIndex Columns immediately
+    # Flattening the MultiIndex Columns immediately
     nifty_raw.columns = [f"{col[0]}_nifty" if isinstance(col, tuple) else f"{col}_nifty" for col in nifty_raw.columns]
     vix_raw.columns = [f"{col[0]}_vix" if isinstance(col, tuple) else f"{col}_vix" for col in vix_raw.columns]
 
-    # Directly mapping from flattened structure (Safe from Level Errors)
+    # Mapping from flattened structure
     nifty_df = pd.DataFrame(index=nifty_raw.index)
     nifty_df['High_nifty'] = nifty_raw['High_nifty']
     nifty_df['Low_nifty'] = nifty_raw['Low_nifty']
@@ -168,4 +166,9 @@ else:
 
     df_reversed = df_table.iloc[::-1]
 
-    def style_nifty_strict
+    # CRITICAL STYLER FIX (Brackets and Colon Restored Perfectly)
+    def style_nifty_strict(val):
+        if "BUY" in str(val):
+            return "background-color: #2e7d32; color: white; font-weight: bold;"
+        elif "SELL" in str(val):
+            return "background-color: #c62828; color: white; font-weight: bold
