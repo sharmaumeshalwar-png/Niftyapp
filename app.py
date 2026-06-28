@@ -3,91 +3,136 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty 1-Hour Kalman Channel (From 1 July 2024)")
+st.title("Nifty & India VIX Dual Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: Q=0.50 Par High/Low Filters (July 2024 Data Active)...")
+st.write("Fixed Architecture: Q=0.50 Par Nifty aur India VIX dono ke High/Low Channels Active Hain...")
 
-# 1. Data Download (1-Hour Interval Starting from 1 July 2024)
-data = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
+# 1. DUAL DATA DOWNLOAD (Starting from 1 July 2024, 1-Hour Interval)
+with st.spinner("Nifty aur India VIX ka historical data load ho raha hai..."):
+    nifty_data = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
+    vix_data = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
 
-if data.empty:
-    st.error("Yahoo Finance se 1 July 2024 ka data nahi mil pa raha hai.")
+if nifty_data.empty or vix_data.empty:
+    st.error("Data download karne mein samasya aa rahi hai. Tickers check karein.")
 else:
-    data['Date'] = data.index.date
-    timestamps = data.index.strftime('%Y-%m-%d %H:%M')
+    # Synchronize both dataframes based on index
+    combined_data = pd.merge(nifty_data, vix_data, left_index=True, right_index=True, suffixes=('_nifty', '_vix'))
     
-    # Inputs
-    price_high = data['High'].values.flatten()
-    price_low = data['Low'].values.flatten()
-    o = data['Open'].values.flatten()
-    c_close = data['Close'].values.flatten()
-    num_steps = len(c_close)
+    combined_data['Date'] = combined_data.index.date
+    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
+    
+    # Nifty Arrays
+    n_high = combined_data['High_nifty'].values.flatten()
+    n_low = combined_data['Low_nifty'].values.flatten()
+    n_open = combined_data['Open_nifty'].values.flatten()
+    n_close = combined_data['Close_nifty'].values.flatten()
+    
+    # VIX Arrays
+    v_high = combined_data['High_vix'].values.flatten()
+    v_low = combined_data['Low_vix'].values.flatten()
+    v_close = combined_data['Close_vix'].values.flatten()
+    
+    num_steps = len(combined_data)
 
-    # 2. MID-TERM GAP DE-TRENDING FOR HIGH AND LOW
-    high_adjusted = np.copy(price_high)
-    low_adjusted = np.copy(price_low)
+    # 2. NIFTY GAP DE-TRENDING ENGINE
+    n_high_adj = np.copy(n_high)
+    n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
 
     for t in range(1, num_steps):
-        current_date = data['Date'].iloc[t]
-        prev_date = data['Date'].iloc[t-1]
+        current_date = combined_data['Date'].iloc[t]
+        prev_date = combined_data['Date'].iloc[t-1]
         
         if current_date != prev_date:
-            # Gap calculation based on Open and previous Close
-            gap = o[t] - c_close[t-1]
+            gap = n_open[t] - n_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
         
-        high_adjusted[t] = price_high[t] - cumulative_gap
-        low_adjusted[t] = price_low[t] - cumulative_gap
+        n_high_adj[t] = n_high[t] - cumulative_gap
+        n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH KALMAN FILTER (a) - Fixed Q = 0.50
-    b_high = np.zeros(num_steps)
-    x_high = high_adjusted[0]
-    P_h, Q_h, R_h = 1.0, 0.50, 1.0
+    # 3. NIFTY HIGH/LOW KALMAN FILTERS (Q = 0.50)
+    # Nifty High
+    b_nifty_high = np.zeros(num_steps)
+    x_n_high = n_high_adj[0]
+    P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_h + Q_h) / (P_h + Q_h + R_h)
-        x_high = x_high + K * (high_adjusted[t] - x_high)
-        P_h = (1 - K) * (P_h + Q_h)
-        b_high[t] = x_high
+        K = (P_nh + Q_nh) / (P_nh + Q_nh + R_nh)
+        x_n_high = x_n_high + K * (n_high_adj[t] - x_n_high)
+        P_nh = (1 - K) * (P_nh + Q_nh)
+        b_nifty_high[t] = x_n_high
 
-    # 4. LOW KALMAN FILTER (b) - Fixed Q = 0.50
-    b_low = np.zeros(num_steps)
-    x_low = low_adjusted[0]
-    P_l, Q_l, R_l = 1.0, 0.50, 1.0
+    # Nifty Low
+    b_nifty_low = np.zeros(num_steps)
+    x_n_low = n_low_adj[0]
+    P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_l + Q_l) / (P_l + Q_l + R_l)
-        x_low = x_low + K * (low_adjusted[t] - x_low)
-        P_l = (1 - K) * (P_l + Q_l)
-        b_low[t] = x_low
+        K = (P_nl + Q_nl) / (P_nl + Q_nl + R_nl)
+        x_n_low = x_n_low + K * (n_low_adj[t] - x_n_low)
+        P_nl = (1 - K) * (P_nl + Q_nl)
+        b_nifty_low[t] = x_n_low
 
-    # 5. Bring Back to Real Scale
-    a_high_real = b_high + cumulative_gap
-    b_low_real = b_low + cumulative_gap
-    
-    # 6. CALCULATE C = A - B (Dynamic Channel Spread)
-    c_diff = a_high_real - b_low_real
+    nifty_high_real = b_nifty_high + cumulative_gap
+    nifty_low_real = b_nifty_low + cumulative_gap
+    nifty_spread = nifty_high_real - nifty_low_real
 
-    # 7. HIGH-LOW BREAKOUT SIGNAL LOGIC
-    signals = []
-    current_state = "⚪ SIDEWAYS"
-    
+    # 4. INDIA VIX HIGH/LOW KALMAN FILTERS (Q = 0.50)
+    # VIX High
+    vifty_high = np.zeros(num_steps)
+    x_v_high = v_high[0]
+    P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        if c_close[t] > a_high_real[t]:
-            current_state = "🟢 BUY (High Breakout)"
-        elif c_close[t] < b_low_real[t]:
-            current_state = "🔴 SELL (Low Breakout)"
-        signals.append(current_state)
+        K = (P_vh + Q_vh) / (P_vh + Q_vh + R_vh)
+        x_v_high = x_v_high + K * (v_high[t] - x_v_high)
+        P_vh = (1 - K) * (P_vh + Q_vh)
+        vifty_high[t] = x_v_high
 
-    # 8. Create Channel DataFrame Table
+    # VIX Low
+    vifty_low = np.zeros(num_steps)
+    x_v_low = v_low[0]
+    P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
+    for t in range(num_steps):
+        K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
+        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
+        P_vl = (1 - K) * (P_vl + Q_vl)
+        vifty_low[t] = x_v_low
+
+    vix_spread = vifty_high - vifty_low
+
+    # 5. NIFTY BREAKOUT LOGIC
+    nifty_signals = []
+    n_state = "⚪ SIDEWAYS"
+    for t in range(num_steps):
+        if n_close[t] > nifty_high_real[t]:
+            n_state = "🟢 BUY (Nifty Up)"
+        elif n_close[t] < nifty_low_real[t]:
+            n_state = "🔴 SELL (Nifty Down)"
+        nifty_signals.append(n_state)
+
+    # 6. INDIA VIX BREAKOUT LOGIC
+    vix_signals = []
+    v_state = "⚪ CRUSH"
+    for t in range(num_steps):
+        if v_close[t] > vifty_high[t]:
+            v_state = "⚠️ SPIKE (High Risk)"
+        elif v_close[t] < vifty_low[t]:
+            v_state = "📉 COOL (Safe Market)"
+        vix_signals.append(v_state)
+
+    # 7. COMBINE ALL COLUMNS INTO DATA FRAME
     df_table = pd.DataFrame({
-        'Nifty Close': np.round(c_close, 2),
-        'a: High Kalman': np.round(a_high_real, 2),
-        'b: Low Kalman': np.round(b_low_real, 2),
-        'c: Spread (a - b)': np.round(c_diff, 2),
-        'Channel Signal': signals
+        'Nifty Close': np.round(n_close, 2),
+        'Nifty High K': np.round(nifty_high_real, 2),
+        'Nifty Low K': np.round(nifty_low_real, 2),
+        'Nifty Spread': np.round(nifty_spread, 2),
+        'Nifty Signal': nifty_signals,
+        'VIX Close': np.round(v_close, 2),
+        'VIX High K': np.round(vifty_high, 2),
+        'VIX Low K': np.round(vifty_low, 2),
+        'VIX Spread': np.round(vix_spread, 2),
+        'VIX Signal': vix_signals
     }, index=timestamps)
 
-    # Render Table (Latest rows on Top)
+    # 8. RENDER MASTER TABLE (Latest Rows On Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("July 2024 Historical Engine Initialized!")
+    st.success("Nifty + India VIX Unified Kalman Panel Active from July 2024!")
