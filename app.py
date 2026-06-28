@@ -3,12 +3,12 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty & India VIX Dual Kalman Channel with Solid Hint Engine")
+st.title("Nifty & India VIX Reverse Crossover Engine")
 
-st.write("Architecture Locked: July 2024 Frame | Q=0.50 | Multi-Index Flat | Composite Intelligence Active...")
+st.write("Architecture: July 2024 Frame | Q=0.50 | VIX Boundary Cross = Nifty Signal Control...")
 
 # 1. DUAL DATA DOWNLOAD WITH FLATTENING
-with st.spinner("Nifty aur India VIX ka data sync ho raha hai..."):
+with st.spinner("Nifty aur India VIX ka historical data load ho raha hai..."):
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
     vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
 
@@ -48,7 +48,7 @@ else:
     
     num_steps = len(combined_data)
 
-    # 2. NIFTY GAP DE-TRENDING
+    # 2. NIFTY GAP DE-TRENDING (Keep historical calibration intact)
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
@@ -59,11 +59,10 @@ else:
             gap = n_open[t] - n_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
-        
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. NIFTY KALMAN FILTERS
+    # 3. NIFTY KALMAN FILTERS (For display/reference)
     b_nifty_high = np.zeros(num_steps)
     x_n_high = n_high_adj[0]
     P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
@@ -104,53 +103,30 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 5. BASE SIGNALS GENERATION
-    nifty_signals = []
-    for t in range(num_steps):
-        if n_close[t] > nifty_high_real[t]:
-            nifty_signals.append("BUY")
-        elif n_close[t] < nifty_low_real[t]:
-            nifty_signals.append("SELL")
-        else:
-            nifty_signals.append("SIDEWAYS")
-
+    # 5. REVERSE CROSS SIGNAL INJECTION ENGINE
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
-            vix_signals.append("SPIKE")
+            vix_signals.append("🔴 SELL NIFTY (VIX High Cross)")
         elif v_close[t] < vifty_low[t]:
-            vix_signals.append("COOL")
+            vix_signals.append("🟢 BUY NIFTY (VIX Low Cross)")
         else:
-            vix_signals.append("CRUSH")
+            vix_signals.append("⚪ SIDEWAYS")
 
-    # 6. COMPOSITE SOLID HINT ENGINE (The Merge Intelligence)
-    solid_hints = []
-    for t in range(num_steps):
-        n_sig = nifty_signals[t]
-        v_sig = vix_signals[t]
-        
-        if n_sig == "BUY" and v_sig == "COOL":
-            solid_hints.append("🚀 STRONG BULL RUN (High Conviction)")
-        elif n_sig == "BUY" and v_sig == "SPIKE":
-            solid_hints.append("⚠️ BULL TRAP (Fake Breakout Risk)")
-        elif n_sig == "SELL" and v_sig == "SPIKE":
-            solid_hints.append("💥 PANIC CRASH (Strong Short)")
-        elif n_sig == "SELL" and v_sig == "COOL":
-            solid_hints.append("📉 SLOW DRIFT DOWN (Weak Move)")
-        elif n_sig == "SIDEWAYS":
-            solid_hints.append("⚪ NO TRADE (Chop Zone)")
-        else:
-            solid_hints.append("⏳ WAIT (Signal Aligning)")
-
-    # 7. MASTER DATAFRAME BUILD
+    # 6. MASTER MATRIX COMPILE (Line 130 Fixed)
     df_table = pd.DataFrame({
         'Nifty Close': np.round(n_close, 2),
+        'Nifty High K': np.round(nifty_high_real, 2),
+        'Nifty Low K': np.round(nifty_low_real, 2),
         'VIX Close': np.round(v_close, 2),
-        'Nifty Base': nifty_signals,
-        'VIX Base': vix_signals,
-        '🔥 SOLID HINT': solid_hints
+        'VIX High K': np.round(vifty_high, 2),
+        'VIX Low K': np.round(vifty_low, 2),
+        '🔥 VOLATILITY SIGNAL': vix_signals
     }, index=combined_data.index.strftime('%Y-%m-%d %H:%M'))
 
-    # 8. RENDER VIEW
-    st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("Solid Hint Engine Activated Successfully!")
+    # 7. REVERSE CHRONOLOGICAL SORT
+    df_rendered = df_table.iloc[::-1]
+
+    # 8. PRESENTATION COMPONENT
+    st.dataframe(df_rendered, use_container_width=True)
+    st.success("VIX Master Reverse Signal Engine Deployed!")
