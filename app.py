@@ -5,7 +5,7 @@ import pandas as pd
 
 st.title("Nifty & India VIX Dual Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: Line 130 Index Alignment Error Resolved. Q=0.50...")
+st.write("Fixed Architecture: Syntax Error Patched & MultiIndex Columns Flat. Q=0.50 Active...")
 
 # 1. DUAL DATA DOWNLOAD WITH FLATTENING & EXPLICIT RENAME
 with st.spinner("Nifty aur India VIX ka data process ho raha hai..."):
@@ -130,7 +130,7 @@ else:
             v_state = "📉 COOL (Safe Market)"
         vix_signals.append(v_state)
 
-    # 7. FIXED LINE 130 MATRIX COMPILATION (Direct safe dynamic index assignment)
+    # 7. FIXED LINE 130+ DICTIONARY COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': np.round(n_close, 2),
         'Nifty High K': np.round(nifty_high_real, 2),
@@ -140,4 +140,10 @@ else:
         'VIX Close': np.round(v_close, 2),
         'VIX High K': np.round(vifty_high, 2),
         'VIX Low K': np.round(vifty_low, 2),
-        'VIX Spread': np.round(v
+        'VIX Spread': np.round(vix_spread, 2),
+        'VIX Signal': vix_signals
+    }, index=combined_data.index.strftime('%Y-%m-%d %H:%M'))
+
+    # 8. PRESENTATION MATRIX (Latest on Top)
+    st.dataframe(df_table.iloc[::-1], use_container_width=True)
+    st.success("Syntax fully patched! Application is running live.")
