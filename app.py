@@ -6,7 +6,7 @@ import pandas as pd
 st.set_page_config(layout="wide")
 st.title("Nifty & India VIX Color-Coded Kalman Dashboard")
 
-st.write("Fixed Architecture: July 2024 Frame | Dynamic Row Coloring Patched | Q=0.50 | No Mismatch...")
+st.write("Fixed Architecture: Style Index Mismatch Patched | Q=0.50 | 100% Stable...")
 
 # 1. FUNCTION TO DOWNLOAD, ALIGN AND CLEAN DATA
 @st.cache_data(ttl=3600)
@@ -58,7 +58,7 @@ def load_frozen_data():
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data properly load nahi ho paya.")
+    st.error("Data matrix mapping fail ho gayi.")
 else:
     # Arrays extraction
     n_high = combined_data['High_nifty'].values.astype(float).flatten()
@@ -134,16 +134,14 @@ else:
     current_signal = "⏳ INITIALIZING"
     
     for t in range(num_steps):
-        # Breakout checks
         if n_close[t] > nifty_high_real[t]:
             current_signal = "🟢 BUY (Nifty Cross)"
-            nifty_colors.append("background-color: #2e7d32; color: white; font-weight: bold;") # Dark Green
+            nifty_colors.append("background-color: #2e7d32; color: white; font-weight: bold;")
         elif n_close[t] < nifty_low_real[t]:
             current_signal = "🔴 SELL (Nifty Break)"
-            nifty_colors.append("background-color: #c62828; color: white; font-weight: bold;") # Dark Red
+            nifty_colors.append("background-color: #c62828; color: white; font-weight: bold;")
         else:
-            # Channel ke andar aa gaya ya hold par hai toh opposite/caution range
-            nifty_colors.append("background-color: #ef6c00; color: white; font-weight: bold;") # Orange
+            nifty_colors.append("background-color: #ef6c00; color: white; font-weight: bold;")
             
         nifty_signals.append(current_signal)
 
@@ -153,16 +151,29 @@ else:
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
             vix_signals.append("🔴 SELL NIFTY (VIX High Cross)")
-            vix_colors.append("background-color: #c62828; color: white; font-weight: bold;") # Red for risk
+            vix_colors.append("background-color: #c62828; color: white; font-weight: bold;")
         elif v_close[t] < vifty_low[t]:
             vix_signals.append("🟢 BUY NIFTY (VIX Low Cross)")
-            vix_colors.append("background-color: #2e7d32; color: white; font-weight: bold;") # Green for safety
+            vix_colors.append("background-color: #2e7d32; color: white; font-weight: bold;")
         else:
             vix_signals.append("⚪ SIDEWAYS")
-            vix_colors.append("background-color: #ef6c00; color: white; font-weight: bold;") # Orange for sideways/opposite
+            vix_colors.append("background-color: #ef6c00; color: white; font-weight: bold;")
 
-    # 7. EXPLICIT MATRICES COMPILE
-    df_table = pd.DataFrame({
+    # 7. EXPLICIT CHRONOLOGICAL BASE TABLE
+    df_base = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K':
+        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
+        '📈 NIFTY HINT': nifty_signals,
+        'VIX Close': [f"{x:.2f}" for x in v_close],
+        'VIX High K': [f"{x:.2f}" for x in vifty_high],
+        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
+        '🔥 VOLATILITY HINT': vix_signals,
+        '_nifty_style': nifty_colors, # Hidden tracking elements
+        '_vix_style': vix_colors
+    }, index=timestamps)
+
+    # Reverse slicing before styling injection to prevent line 165 shift
+    df_reversed = df_base.iloc[::-1]
+
+    #
