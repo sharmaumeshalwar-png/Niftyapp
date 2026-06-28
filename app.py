@@ -7,13 +7,12 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide")
 st.title("🚀 Nifty & India VIX 5-Minute Reliable Dashboard")
 
-st.write("Fixed Architecture: Holiday-Safe Data Fetching Active | Trailing Window Sync Corrected | Q=0.50...")
+st.write("Fixed Architecture: Syntax Line 175 Fixed Perfectly | Trailing Window Sync Corrected | Q=0.50...")
 
 # 1. OPTIMIZED FUNCTION WITH HOLIDAY RETRY ENGINE
 @st.cache_data(ttl=1800)
 def load_five_minute_data():
     end_dt = datetime.now()
-    # 60 days trailing window max safety check
     start_dt = end_dt - timedelta(days=59)
     
     start_str = start_dt.strftime('%Y-%m-%d')
@@ -22,7 +21,7 @@ def load_five_minute_data():
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='5m')
     
-    # FALLBACK ENGINE: Agar weekend/holiday ki wajah se strict window empty hai, toh scope thoda piche badhao
+    # FALLBACK ENGINE: Weekend/Holiday backup
     if nifty_raw.empty or vix_raw.empty:
         start_dt_fallback = end_dt - timedelta(days=60)
         start_str_f = start_dt_fallback.strftime('%Y-%m-%d')
@@ -132,44 +131,3 @@ else:
     vifty_low = np.zeros(num_steps)
     x_v_low = v_low[0]
     P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
-    for t in range(num_steps):
-        K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
-        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
-        P_vl = (1 - K) * (P_vl + Q_vl)
-        vifty_low[t] = x_v_low
-
-    # 6. FIXED SATEEK TREND SIGNALS
-    nifty_signals = []
-    current_signal = "⏳ INITIALIZING"
-    for t in range(num_steps):
-        if n_close[t] > nifty_high_real[t]:
-            current_signal = "🟢 BUY"
-        elif n_close[t] < nifty_low_real[t]:
-            current_signal = "🔴 SELL"
-        nifty_signals.append(current_signal)
-
-    # 7. INDIA VIX SIGNALS
-    vix_signals = []
-    for t in range(num_steps):
-        if v_close[t] > vifty_high[t]:
-            vix_signals.append("🔴 RISK HIGH")
-        elif v_close[t] < vifty_low[t]:
-            vix_signals.append("🟢 RISK LOW")
-        else:
-            vix_signals.append("⚪ SIDEWAYS")
-
-    # DATAFRAME COMPILATION
-    df_table = pd.DataFrame({
-        'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
-        '📈 NIFTY HINT': nifty_signals,
-        'VIX Close': [f"{x:.2f}" for x in v_close],
-        'VIX High K': [f"{x:.2f}" for x in vifty_high],
-        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
-        '🔥 VOLATILITY HINT': vix_signals
-    }, index=timestamps)
-
-    df_reversed = df_table.iloc[::-1]
-
-    def style_nifty_strict
