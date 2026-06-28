@@ -5,23 +5,42 @@ import pandas as pd
 
 st.title("Nifty & India VIX Dual Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: Q=0.50 Par Nifty aur India VIX dono ke High/Low Channels Active Hain...")
+st.write("Fixed Architecture: MultiIndex Column Bug Resolved. Q=0.50 Active...")
 
-# 1. DUAL DATA DOWNLOAD (Starting from 1 July 2024, 1-Hour Interval)
-with st.spinner("Nifty aur India VIX ka historical data load ho raha hai..."):
-    nifty_data = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
-    vix_data = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
+# 1. DUAL DATA DOWNLOAD WITH COLUMN FLATTENING
+with st.spinner("Nifty aur India VIX ka data download aur flat ho raha hai..."):
+    nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
+    vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
 
-if nifty_data.empty or vix_data.empty:
-    st.error("Data download karne mein samasya aa rahi hai. Tickers check karein.")
+if nifty_raw.empty or vix_raw.empty:
+    st.error("Yahoo Finance se data nahi mil pa raha hai. Kripya internet ya tickers check karein.")
 else:
-    # Synchronize both dataframes based on index
-    combined_data = pd.merge(nifty_data, vix_data, left_index=True, right_index=True, suffixes=('_nifty', '_vix'))
+    # --- FIX: MultiIndex Columns ko Flatten karna ---
+    # Agar yfinance multi-level columns de raha hai, toh hum use single string bana denge
+    if isinstance(nifty_raw.columns, pd.MultiIndex):
+        nifty_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in nifty_raw.columns]
+    if isinstance(vix_raw.columns, pd.MultiIndex):
+        vix_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in vix_raw.columns]
+    
+    # Ab hum easily clean columns ko locate kar sakte hain
+    nifty_df = pd.DataFrame(index=nifty_raw.index)
+    nifty_df['High'] = nifty_raw[[c for c in nifty_raw.columns if 'High' in c][0]]
+    nifty_df['Low'] = nifty_raw[[c for c in nifty_raw.columns if 'Low' in c][0]]
+    nifty_df['Open'] = nifty_raw[[c for c in nifty_raw.columns if 'Open' in c][0]]
+    nifty_df['Close'] = nifty_raw[[c for c in nifty_raw.columns if 'Close' in c][0]]
+
+    vix_df = pd.DataFrame(index=vix_raw.index)
+    vix_df['High'] = vix_raw[[c for c in vix_raw.columns if 'High' in c][0]]
+    vix_df['Low'] = vix_raw[[c for c in vix_raw.columns if 'Low' in c][0]]
+    vix_df['Close'] = vix_raw[[c for c in vix_raw.columns if 'Close' in c][0]]
+
+    # Combined matching rows
+    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True, suffixes=('_nifty', '_vix'))
     
     combined_data['Date'] = combined_data.index.date
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     
-    # Nifty Arrays
+    # Nifty Arrays (Ab bina kisi error ke safely flatten honge)
     n_high = combined_data['High_nifty'].values.flatten()
     n_low = combined_data['Low_nifty'].values.flatten()
     n_open = combined_data['Open_nifty'].values.flatten()
@@ -51,8 +70,8 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. NIFTY HIGH/LOW KALMAN FILTERS (Q = 0.50)
-    # Nifty High
+    # 3. NIFTY KALMAN FILTERS (Q = 0.50)
+    # High
     b_nifty_high = np.zeros(num_steps)
     x_n_high = n_high_adj[0]
     P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
@@ -62,7 +81,7 @@ else:
         P_nh = (1 - K) * (P_nh + Q_nh)
         b_nifty_high[t] = x_n_high
 
-    # Nifty Low
+    # Low
     b_nifty_low = np.zeros(num_steps)
     x_n_low = n_low_adj[0]
     P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
@@ -76,7 +95,7 @@ else:
     nifty_low_real = b_nifty_low + cumulative_gap
     nifty_spread = nifty_high_real - nifty_low_real
 
-    # 4. INDIA VIX HIGH/LOW KALMAN FILTERS (Q = 0.50)
+    # 4. INDIA VIX KALMAN FILTERS (Q = 0.50)
     # VIX High
     vifty_high = np.zeros(num_steps)
     x_v_high = v_high[0]
@@ -99,7 +118,7 @@ else:
 
     vix_spread = vifty_high - vifty_low
 
-    # 5. NIFTY BREAKOUT LOGIC
+    # 5. NIFTY SIGNALS
     nifty_signals = []
     n_state = "⚪ SIDEWAYS"
     for t in range(num_steps):
@@ -109,7 +128,7 @@ else:
             n_state = "🔴 SELL (Nifty Down)"
         nifty_signals.append(n_state)
 
-    # 6. INDIA VIX BREAKOUT LOGIC
+    # 6. INDIA VIX SIGNALS
     vix_signals = []
     v_state = "⚪ CRUSH"
     for t in range(num_steps):
@@ -119,7 +138,7 @@ else:
             v_state = "📉 COOL (Safe Market)"
         vix_signals.append(v_state)
 
-    # 7. COMBINE ALL COLUMNS INTO DATA FRAME
+    # 7. DATA MATRIX COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': np.round(n_close, 2),
         'Nifty High K': np.round(nifty_high_real, 2),
@@ -133,6 +152,6 @@ else:
         'VIX Signal': vix_signals
     }, index=timestamps)
 
-    # 8. RENDER MASTER TABLE (Latest Rows On Top)
+    # 8. PRESENTATION MATRIX (Latest on Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("Nifty + India VIX Unified Kalman Panel Active from July 2024!")
+    st.success("Columns Fixed! Dual Kalman Channel Active from July 2024.")
