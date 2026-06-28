@@ -5,48 +5,47 @@ import pandas as pd
 
 st.title("Nifty & India VIX Dual Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: MultiIndex Column Bug Resolved. Q=0.50 Active...")
+st.write("Fixed Architecture: Explicit Suffix Engine Active. Q=0.50...")
 
-# 1. DUAL DATA DOWNLOAD WITH COLUMN FLATTENING
-with st.spinner("Nifty aur India VIX ka data download aur flat ho raha hai..."):
+# 1. DUAL DATA DOWNLOAD WITH FLATTENING & EXPLICIT RENAME
+with st.spinner("Nifty aur India VIX ka data download ho raha hai..."):
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
     vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
 
 if nifty_raw.empty or vix_raw.empty:
-    st.error("Yahoo Finance se data nahi mil pa raha hai. Kripya internet ya tickers check karein.")
+    st.error("Yahoo Finance se data nahi mil pa raha hai. Please tickers verify karein.")
 else:
-    # --- FIX: MultiIndex Columns ko Flatten karna ---
-    # Agar yfinance multi-level columns de raha hai, toh hum use single string bana denge
+    # yfinance MultiIndex check aur flattening
     if isinstance(nifty_raw.columns, pd.MultiIndex):
         nifty_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in nifty_raw.columns]
     if isinstance(vix_raw.columns, pd.MultiIndex):
         vix_raw.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in vix_raw.columns]
     
-    # Ab hum easily clean columns ko locate kar sakte hain
+    # Nifty DataFrame Extraction with Explicit Names
     nifty_df = pd.DataFrame(index=nifty_raw.index)
-    nifty_df['High'] = nifty_raw[[c for c in nifty_raw.columns if 'High' in c][0]]
-    nifty_df['Low'] = nifty_raw[[c for c in nifty_raw.columns if 'Low' in c][0]]
-    nifty_df['Open'] = nifty_raw[[c for c in nifty_raw.columns if 'Open' in c][0]]
-    nifty_df['Close'] = nifty_raw[[c for c in nifty_raw.columns if 'Close' in c][0]]
+    nifty_df['High_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'High' in c][0]]
+    nifty_df['Low_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Low' in c][0]]
+    nifty_df['Open_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Open' in c][0]]
+    nifty_df['Close_nifty'] = nifty_raw[[c for c in nifty_raw.columns if 'Close' in c][0]]
 
+    # VIX DataFrame Extraction with Explicit Names
     vix_df = pd.DataFrame(index=vix_raw.index)
-    vix_df['High'] = vix_raw[[c for c in vix_raw.columns if 'High' in c][0]]
-    vix_df['Low'] = vix_raw[[c for c in vix_raw.columns if 'Low' in c][0]]
-    vix_df['Close'] = vix_raw[[c for c in vix_raw.columns if 'Close' in c][0]]
+    vix_df['High_vix'] = vix_raw[[c for c in vix_raw.columns if 'High' in c][0]]
+    vix_df['Low_vix'] = vix_raw[[c for c in vix_raw.columns if 'Low' in c][0]]
+    vix_df['Close_vix'] = vix_raw[[c for c in vix_raw.columns if 'Close' in c][0]]
 
-    # Combined matching rows
-    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True, suffixes=('_nifty', '_vix'))
+    # Clean merge using identical pre-named tracks
+    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True)
     
     combined_data['Date'] = combined_data.index.date
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     
-    # Nifty Arrays (Ab bina kisi error ke safely flatten honge)
+    # Extracting flat numpy arrays safely
     n_high = combined_data['High_nifty'].values.flatten()
     n_low = combined_data['Low_nifty'].values.flatten()
     n_open = combined_data['Open_nifty'].values.flatten()
     n_close = combined_data['Close_nifty'].values.flatten()
     
-    # VIX Arrays
     v_high = combined_data['High_vix'].values.flatten()
     v_low = combined_data['Low_vix'].values.flatten()
     v_close = combined_data['Close_vix'].values.flatten()
@@ -71,7 +70,6 @@ else:
         n_low_adj[t] = n_low[t] - cumulative_gap
 
     # 3. NIFTY KALMAN FILTERS (Q = 0.50)
-    # High
     b_nifty_high = np.zeros(num_steps)
     x_n_high = n_high_adj[0]
     P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
@@ -81,7 +79,6 @@ else:
         P_nh = (1 - K) * (P_nh + Q_nh)
         b_nifty_high[t] = x_n_high
 
-    # Low
     b_nifty_low = np.zeros(num_steps)
     x_n_low = n_low_adj[0]
     P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
@@ -96,7 +93,6 @@ else:
     nifty_spread = nifty_high_real - nifty_low_real
 
     # 4. INDIA VIX KALMAN FILTERS (Q = 0.50)
-    # VIX High
     vifty_high = np.zeros(num_steps)
     x_v_high = v_high[0]
     P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
@@ -106,7 +102,6 @@ else:
         P_vh = (1 - K) * (P_vh + Q_vh)
         vifty_high[t] = x_v_high
 
-    # VIX Low
     vifty_low = np.zeros(num_steps)
     x_v_low = v_low[0]
     P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
@@ -132,26 +127,4 @@ else:
     vix_signals = []
     v_state = "⚪ CRUSH"
     for t in range(num_steps):
-        if v_close[t] > vifty_high[t]:
-            v_state = "⚠️ SPIKE (High Risk)"
-        elif v_close[t] < vifty_low[t]:
-            v_state = "📉 COOL (Safe Market)"
-        vix_signals.append(v_state)
-
-    # 7. DATA MATRIX COMPILATION
-    df_table = pd.DataFrame({
-        'Nifty Close': np.round(n_close, 2),
-        'Nifty High K': np.round(nifty_high_real, 2),
-        'Nifty Low K': np.round(nifty_low_real, 2),
-        'Nifty Spread': np.round(nifty_spread, 2),
-        'Nifty Signal': nifty_signals,
-        'VIX Close': np.round(v_close, 2),
-        'VIX High K': np.round(vifty_high, 2),
-        'VIX Low K': np.round(vifty_low, 2),
-        'VIX Spread': np.round(vix_spread, 2),
-        'VIX Signal': vix_signals
-    }, index=timestamps)
-
-    # 8. PRESENTATION MATRIX (Latest on Top)
-    st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("Columns Fixed! Dual Kalman Channel Active from July 2024.")
+        if v_close[t] > vifty_high
