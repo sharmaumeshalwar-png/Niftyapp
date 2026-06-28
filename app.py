@@ -5,15 +5,15 @@ import pandas as pd
 
 st.title("Nifty & India VIX Dual Kalman Channel (From 1 July 2024)")
 
-st.write("Fixed Architecture: Explicit Suffix Engine Active. Q=0.50...")
+st.write("Fixed Architecture: Line 130 Index Alignment Error Resolved. Q=0.50...")
 
 # 1. DUAL DATA DOWNLOAD WITH FLATTENING & EXPLICIT RENAME
-with st.spinner("Nifty aur India VIX ka data download ho raha hai..."):
+with st.spinner("Nifty aur India VIX ka data process ho raha hai..."):
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
     vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
 
 if nifty_raw.empty or vix_raw.empty:
-    st.error("Yahoo Finance se data nahi mil pa raha hai. Please tickers verify karein.")
+    st.error("Yahoo Finance se data nahi mila. Tickers check karein.")
 else:
     # yfinance MultiIndex check aur flattening
     if isinstance(nifty_raw.columns, pd.MultiIndex):
@@ -34,13 +34,10 @@ else:
     vix_df['Low_vix'] = vix_raw[[c for c in vix_raw.columns if 'Low' in c][0]]
     vix_df['Close_vix'] = vix_raw[[c for c in vix_raw.columns if 'Close' in c][0]]
 
-    # Clean merge using identical pre-named tracks
-    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True)
+    # Inner merge to keep only perfectly matching timestamps
+    combined_data = pd.merge(nifty_df, vix_df, left_index=True, right_index=True, how='inner')
     
-    combined_data['Date'] = combined_data.index.date
-    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
-    
-    # Extracting flat numpy arrays safely
+    # Extracting flat numpy arrays safely from synchronized dataframe
     n_high = combined_data['High_nifty'].values.flatten()
     n_low = combined_data['Low_nifty'].values.flatten()
     n_open = combined_data['Open_nifty'].values.flatten()
@@ -57,11 +54,11 @@ else:
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
 
+    # Date mapping array for safe loop checks
+    dates_array = combined_data.index.date
+
     for t in range(1, num_steps):
-        current_date = combined_data['Date'].iloc[t]
-        prev_date = combined_data['Date'].iloc[t-1]
-        
-        if current_date != prev_date:
+        if dates_array[t] != dates_array[t-1]:
             gap = n_open[t] - n_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
@@ -127,4 +124,20 @@ else:
     vix_signals = []
     v_state = "⚪ CRUSH"
     for t in range(num_steps):
-        if v_close[t] > vifty_high
+        if v_close[t] > vifty_high[t]:
+            v_state = "⚠️ SPIKE (High Risk)"
+        elif v_close[t] < vifty_low[t]:
+            v_state = "📉 COOL (Safe Market)"
+        vix_signals.append(v_state)
+
+    # 7. FIXED LINE 130 MATRIX COMPILATION (Direct safe dynamic index assignment)
+    df_table = pd.DataFrame({
+        'Nifty Close': np.round(n_close, 2),
+        'Nifty High K': np.round(nifty_high_real, 2),
+        'Nifty Low K': np.round(nifty_low_real, 2),
+        'Nifty Spread': np.round(nifty_spread, 2),
+        'Nifty Signal': nifty_signals,
+        'VIX Close': np.round(v_close, 2),
+        'VIX High K': np.round(vifty_high, 2),
+        'VIX Low K': np.round(vifty_low, 2),
+        'VIX Spread': np.round(v
