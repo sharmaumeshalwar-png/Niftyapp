@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Custom Kalman Dashboard")
+st.title("Nifty & India VIX Strict Red/Green Dashboard")
 
-st.write("Fixed Architecture: Only Nifty Hint Colored | VIX Default Standard | Q=0.50 | Stable Grid...")
+st.write("Fixed Architecture: No Orange Style | Continuous Red-Green Lock | Q=0.50 | Stable Grid...")
 
 # 1. FUNCTION TO DOWNLOAD, ALIGN AND CLEAN DATA
 @st.cache_data(ttl=3600)
@@ -58,7 +58,7 @@ def load_frozen_data():
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data load error.")
+    st.error("Data load issue.")
 else:
     # Arrays extraction
     n_high = combined_data['High_nifty'].values.astype(float).flatten()
@@ -128,7 +128,7 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 5. NIFTY CONTINUOUS SIGNALS WITH STATE LABELING
+    # 5. STRICT NIFTY SIGNALS (Hold Text Removed, Direct Red/Green Maintain)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     
@@ -137,17 +137,10 @@ else:
             current_signal = "🟢 BUY"
         elif n_close[t] < nifty_low_real[t]:
             current_signal = "🔴 SELL"
-        else:
-            if "BUY" in current_signal:
-                current_signal = "🟢 BUY [HOLD]"
-            elif "SELL" in current_signal:
-                current_signal = "🔴 SELL [HOLD]"
-            else:
-                current_signal = "⏳ INITIALIZING"
-                
+        # Channel ke andar rehne par pichla trend text hi continue push hoga
         nifty_signals.append(current_signal)
 
-    # 6. INDIA VIX SIGNALS (Clean Text, No color tags needed)
+    # 6. INDIA VIX SIGNALS (Clean Standard Text)
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -171,19 +164,17 @@ else:
 
     df_reversed = df_table.iloc[::-1]
 
-    # DIRECT NIFTY CELL MAP FUNCTION
-    def style_nifty_cell(val):
-        if "[HOLD]" in str(val):
-            return "background-color: #ef6c00; color: white; font-weight: bold;" # Orange background for inside channel hold
-        elif "BUY" in str(val):
-            return "background-color: #2e7d32; color: white; font-weight: bold;" # Green breakout
+    # CLEAN PARENT CELL MAP FUNCTION (Only Red & Green Styles Allowed)
+    def style_nifty_strict(val):
+        if "BUY" in str(val):
+            return "background-color: #2e7d32; color: white; font-weight: bold;" # Continuous Green
         elif "SELL" in str(val):
-            return "background-color: #c62828; color: white; font-weight: bold;" # Red breakdown
+            return "background-color: #c62828; color: white; font-weight: bold;" # Continuous Red
         return ""
 
-    # INJECT STYLE ONLY TO NIFTY COLUMN (VIX mapping completely omitted)
-    styled_final_df = df_reversed.style.map(style_nifty_cell, subset=['📈 NIFTY HINT'])
+    # Element level subset assignment
+    styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
-    # 8. RENDER SECURE DATAFRAME VIEW
+    # 8. RENDER IMMUTABLE GRID VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Configuration updated! Color styles isolated exclusively to Nifty Hint column.")
+    st.success("Orange tags completely dropped! Strict Red/Green block tracking is active.")
