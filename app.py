@@ -3,15 +3,15 @@ import yfinance as yf
 import streamlit as st
 import pandas as pd
 
-st.title("Nifty Kalman High-Low Channel (From 1 Jan 2026)")
+st.title("Nifty 1-Hour Kalman Channel (From 1 May 2026)")
 
-st.write("Fixed Architecture: Same 0.50 Multiplier Par High aur Low Filters (2026 Data Locked)...")
+st.write("Fixed Architecture: Same 0.50 Multiplier Par High aur Low Filters (1-Hour Frame Locked)...")
 
-# 1. Data Download (Starting from 1 Jan 2026)
-data = yf.download('^NSEI', start='2026-01-01', end='2027-01-01', interval='1h')
+# 1. Data Download (1-Hour Interval Starting from 1 May 2026)
+data = yf.download('^NSEI', start='2026-05-01', end='2026-07-01', interval='1h')
 
 if data.empty:
-    st.error("Yahoo Finance se 2026 ka data nahi mil pa raha hai.")
+    st.error("Yahoo Finance se 1 May 2026 ka 1-Hour data nahi mil pa raha hai.")
 else:
     data['Date'] = data.index.date
     timestamps = data.index.strftime('%Y-%m-%d %H:%M')
@@ -33,6 +33,7 @@ else:
         prev_date = data['Date'].iloc[t-1]
         
         if current_date != prev_date:
+            # Gap calculation based on Open and previous Close
             gap = o[t] - c_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
@@ -87,6 +88,6 @@ else:
         'Channel Signal': signals
     }, index=timestamps)
 
-    # Render Table (Latest 2026 rows on Top)
+    # Render Table (Latest 1-Hour rows on Top)
     st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("2026 Data Locked Successfully!")
+    st.success("May-June 2026 1-Hour Architecture Deployed!")
