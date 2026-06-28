@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Dual Kalman Channel")
+st.title("Nifty & India VIX Locked Q=0.50 Kalman Engine")
 
-st.write("Fixed Architecture: High/Low Kalman Channels Independent | Price Range Aligned | Q=0.50...")
+st.write("Fixed Architecture: Strict Q=0.50 for High & Low Channels | Absolute Precision Loop...")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT SINGLE-COLUMN SERIES
 @st.cache_data(ttl=3600)
@@ -45,11 +45,11 @@ def load_frozen_data():
     
     return combined.dropna()
 
-# Execute clean data engine
+# Execute data engine
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data tracking framework error.")
+    st.error("Data framework extraction error.")
 else:
     # Pure Linear Arrays
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
@@ -63,20 +63,20 @@ else:
     num_steps = len(combined_data)
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
 
-    # 2. INDEPENDENT HIGH KALMAN FILTER (Only Tracks High Prices)
+    # 2. HIGH KALMAN TRACK CALCULATION WITH FIXED Q = 0.50
     nifty_high_real = np.zeros(num_steps)
     x_n_high = n_high[0]
-    P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
+    P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0 # Locked Q=0.50
     for t in range(num_steps):
         K = (P_nh + Q_nh) / (P_nh + Q_nh + R_nh)
         x_n_high = x_n_high + K * (n_high[t] - x_n_high)
         P_nh = (1 - K) * (P_nh + Q_nh)
         nifty_high_real[t] = x_n_high
 
-    # 3. INDEPENDENT LOW KALMAN FILTER (Only Tracks Low Prices)
+    # 3. LOW KALMAN TRACK CALCULATION WITH FIXED Q = 0.50
     nifty_low_real = np.zeros(num_steps)
     x_n_low = n_low[0]
-    P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
+    P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0 # Locked Q=0.50
     for t in range(num_steps):
         K = (P_nl + Q_nl) / (P_nl + Q_nl + R_nl)
         x_n_low = x_n_low + K * (n_low[t] - x_n_low)
@@ -102,7 +102,7 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 5. STRICT CONTINUOUS NIFTY SIGNALS (Red/Green Continuous Block)
+    # 5. STRICT CONTINUOUS NIFTY SIGNALS (Direct Red/Green Block Only)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -112,7 +112,7 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 6. INDIA VIX SIGNALS (Standard Transparent Text)
+    # 6. INDIA VIX SIGNALS (Clean Text Configuration)
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -122,7 +122,7 @@ else:
         else:
             vix_signals.append("⚪ SIDEWAYS")
 
-    # 7. EXPLICIT MATRICES COMPILATION
+    # 7. EXPLICIT MATRICES COMPILE
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
@@ -136,7 +136,7 @@ else:
 
     df_reversed = df_table.iloc[::-1]
 
-    # STRICT RED/GREEN CELL MAP FUNCTION
+    # STRICT CELL MAP INJECTION (Anti-Orange Engine)
     def style_nifty_strict(val):
         if "BUY" in str(val):
             return "background-color: #2e7d32; color: white; font-weight: bold;"
@@ -146,6 +146,6 @@ else:
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
-    # 8. RENDER VIEW
+    # 8. RENDER SECURE DATAFRAME VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Perfect Dual Channel Active! High and Low tracks are independently operating.")
+    st.success("High and Low channels successfully locked at Q=0.50! Calculation engine completed.")
