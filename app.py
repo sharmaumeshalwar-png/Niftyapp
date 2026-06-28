@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Dual Kalman Channel")
+st.title("Nifty & India VIX Color-Coded Kalman Dashboard")
 
-st.write("Fixed Architecture: ValueError Solved | NaN Drop Active | Q=0.50 | Dual Independent Hints...")
+st.write("Fixed Architecture: July 2024 Frame | Dynamic Row Coloring Patched | Q=0.50 | No Mismatch...")
 
 # 1. FUNCTION TO DOWNLOAD, ALIGN AND CLEAN DATA
 @st.cache_data(ttl=3600)
@@ -50,18 +50,17 @@ def load_frozen_data():
     combined.index = pd.to_datetime(combined['Datetime_x'])
     combined = combined[~combined.index.duplicated(keep='first')]
     
-    # --- CRITICAL VALUE ERROR FIX: Drop any row containing missing values ---
+    # Drop missing values
     combined = combined.dropna()
-    
     return combined
 
 # Execute data engine
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data fetch error ya empty dataset. Tickers check karein.")
+    st.error("Data properly load nahi ho paya.")
 else:
-    # Safe Flat Arrays (No NaN values remaining)
+    # Arrays extraction
     n_high = combined_data['High_nifty'].values.astype(float).flatten()
     n_low = combined_data['Low_nifty'].values.astype(float).flatten()
     n_open = combined_data['Open_nifty'].values.astype(float).flatten()
@@ -129,38 +128,41 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 5. INDEPENDENT NIFTY SIGNALS
+    # 5. INDEPENDENT NIFTY SIGNALS + REAL DIRECTION TRACKING
     nifty_signals = []
+    nifty_colors = []
+    current_signal = "⏳ INITIALIZING"
+    
     for t in range(num_steps):
+        # Breakout checks
         if n_close[t] > nifty_high_real[t]:
-            nifty_signals.append("🟢 BUY (Nifty Cross)")
+            current_signal = "🟢 BUY (Nifty Cross)"
+            nifty_colors.append("background-color: #2e7d32; color: white; font-weight: bold;") # Dark Green
         elif n_close[t] < nifty_low_real[t]:
-            nifty_signals.append("🔴 SELL (Nifty Break)")
+            current_signal = "🔴 SELL (Nifty Break)"
+            nifty_colors.append("background-color: #c62828; color: white; font-weight: bold;") # Dark Red
         else:
-            nifty_signals.append("⚪ SIDEWAYS")
+            # Channel ke andar aa gaya ya hold par hai toh opposite/caution range
+            nifty_colors.append("background-color: #ef6c00; color: white; font-weight: bold;") # Orange
+            
+        nifty_signals.append(current_signal)
 
-    # 6. INDEPENDENT INDIA VIX SIGNALS
+    # 6. INDEPENDENT INDIA VIX SIGNALS + DIRECTION TRACKING
     vix_signals = []
+    vix_colors = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
             vix_signals.append("🔴 SELL NIFTY (VIX High Cross)")
+            vix_colors.append("background-color: #c62828; color: white; font-weight: bold;") # Red for risk
         elif v_close[t] < vifty_low[t]:
             vix_signals.append("🟢 BUY NIFTY (VIX Low Cross)")
+            vix_colors.append("background-color: #2e7d32; color: white; font-weight: bold;") # Green for safety
         else:
             vix_signals.append("⚪ SIDEWAYS")
+            vix_colors.append("background-color: #ef6c00; color: white; font-weight: bold;") # Orange for sideways/opposite
 
-    # 7. EXPLICIT MATRICES COMPILE 
+    # 7. EXPLICIT MATRICES COMPILE
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
-        '📈 NIFTY HINT': nifty_signals,
-        'VIX Close': [f"{x:.2f}" for x in v_close],
-        'VIX High K': [f"{x:.2f}" for x in vifty_high],
-        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
-        '🔥 VOLATILITY HINT': vix_signals
-    }, index=timestamps)
-
-    # 8. RENDER SECURE DATAFRAME
-    st.dataframe(df_table.iloc[::-1], use_container_width=True)
-    st.success("ValueError completely resolved! Saari entries terminal se accurate hain.")
+        'Nifty Low K':
