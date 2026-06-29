@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Classic High-Low 5x Matrix Dashboard")
+st.title("Nifty Slope Divergence 4x Dashboard")
 
-st.write("Fixed Architecture: Accelerated Gain Active (K=0.01) | 5x Spread Matrix | Balanced Frequency Mode")
+st.write("Solid Technical Setup: K=0.0001 | 4x Spread Matrix | Slope Velocity Predictor Engine Live")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -60,50 +60,65 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH ACCELERATED FILTER (K set to 0.01)
+    # 3. HIGH ULTRA ULTRA-SLOW FILTER (K = 0.0001)
     b_nifty_high = np.zeros(num_steps)
     b_nifty_high[0] = n_high_adj[0]
-    K_target = 0.01  # Gain matrix updated to 0.01 for steady speed
+    K_ultra = 0.0001  
     
     for t in range(1, num_steps):
-        b_nifty_high[t] = b_nifty_high[t-1] + K_target * (n_high_adj[t] - b_nifty_high[t-1])
+        b_nifty_high[t] = b_nifty_high[t-1] + K_ultra * (n_high_adj[t] - b_nifty_high[t-1])
 
-    # 4. LOW ACCELERATED FILTER (K set to 0.01)
+    # 4. LOW ULTRA ULTRA-SLOW FILTER
     b_nifty_low = np.zeros(num_steps)
     b_nifty_low[0] = n_low_adj[0]
     
     for t in range(1, num_steps):
-        b_nifty_low[t] = b_nifty_low[t-1] + K_target * (n_low_adj[t] - b_nifty_low[t-1])
+        b_nifty_low[t] = b_nifty_low[t-1] + K_ultra * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY 5x SPREAD MULTIPLIER ON ACCELERATED BANDS
+    # 5. APPLY WIDE 4x SPREAD MULTIPLIER
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
-    b_nifty_high_5x = fixed_mid + (fixed_spread * 2.5) # Total 5x dynamic width configuration
-    b_nifty_low_5x = fixed_mid - (fixed_spread * 2.5)
+    b_nifty_high_4x = fixed_mid + (fixed_spread * 2.0) 
+    b_nifty_low_4x = fixed_mid - (fixed_spread * 2.0)
 
     # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
-    nifty_high_real = b_nifty_high_5x + historical_gaps
-    nifty_low_real = b_nifty_low_5x + historical_gaps
+    nifty_high_real = b_nifty_high_4x + historical_gaps
+    nifty_low_real = b_nifty_low_4x + historical_gaps
 
     # 6. EXACT HIGH MINUS LOW CALCULATION
     high_minus_low = nifty_high_real - nifty_low_real
 
-    # TREND SIGNALS LOOP
+    # 7. SLOPE DIVERGENCE ENGINE LOGIC (Increased Signal Frequency)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
-    for t in range(num_steps):
-        if n_close[t] > nifty_high_real[t]:
+    
+    # Pre-calculate center line for comparison
+    mid_real_line = (nifty_high_real + nifty_low_real) / 2.0
+    
+    for t in range(3, num_steps):
+        # Calculate recent slopes (Dhalan) for both channels
+        slope_high = nifty_high_real[t] - nifty_high_real[t-2]
+        slope_low = nifty_low_real[t] - nifty_low_real[t-2]
+        avg_slope = (slope_high + slope_low) / 2.0
+        
+        # Solid Structural Strategy: Check pivot shifts
+        if n_close[t] > mid_real_line[t] and avg_slope > 0.05:
             current_signal = "🟢 BUY"
-        elif n_close[t] < nifty_low_real[t]:
+        elif n_close[t] < mid_real_line[t] and avg_slope < -0.05:
             current_signal = "🔴 SELL"
+        # Sideways lock logic stays intact inside minor slope bounds
+            
         nifty_signals.append(current_signal)
+        
+    # Padding initial values to maintain index size uniformity
+    nifty_signals = ["⏳ INITIALIZING", "⏳ INITIALIZING", "⏳ INITIALIZING"] + nifty_signals
 
-    # 7. DATAFRAME COMPILATION
+    # 8. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K (5x)': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K (5x)': [f"{x:.2f}" for x in nifty_low_real],
+        'Nifty High K (4x)': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K (4x)': [f"{x:.2f}" for x in nifty_low_real],
         'High - Low': [f"{x:.2f}" for x in high_minus_low],
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
@@ -119,6 +134,6 @@ else:
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
-    # 8. RENDER SECURE VIEW
+    # RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Configured for K=0.01 and 5x Matrix. System operational!")
+    st.success("Mathematical Slope Engine live! Frequency amplified safely.")
