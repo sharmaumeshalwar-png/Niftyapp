@@ -4,9 +4,17 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Classic Gap-Engine Dashboard")
+st.title("Nifty & India VIX Classic High-Low Gap Dashboard")
 
-st.write("Fixed Architecture: Standard Gap Engine Restored | No Multiplier | Q=0.50 | Pure Red/Green Locked...")
+# --- SPEED & MULTIPLIER CONTROLLER SIDEBAR ---
+st.sidebar.header("Tuning Settings")
+st.sidebar.write("⚡ Bada Q = Fast Price Tracking")
+q_value = st.sidebar.slider("Signal Flip Speed (Q)", min_value=0.1, max_value=10.0, value=3.0, step=0.1)
+
+st.sidebar.write("🎯 Multiplier Chota (e.g. 0.995) = Fast Flip / Tight Bands")
+multiplier = st.sidebar.slider("Kalman Channel Multiplier", min_value=0.980, max_value=1.020, value=1.000, step=0.001)
+
+st.write(f"Fixed Architecture: High/Low Kalman Channels Active | Q = {q_value} | Multiplier = {multiplier}")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -66,7 +74,7 @@ else:
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. CLASSIC PURE GAP DE-TRENDING ENGINE (No Multiplier Boost)
+    # 2. PURE GAP DE-TRENDING ENGINE (No Multipliers)
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
@@ -75,39 +83,39 @@ else:
         if parsed_dates[t] != parsed_dates[t-1]:
             gap = n_open[t] - n_close[t-1]
             if abs(gap) > 5.0:  
-                # Pure classic accumulation
                 cumulative_gap += gap
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. NIFTY HIGH KALMAN FILTER (Q = 0.50)
+    # 3. NIFTY HIGH KALMAN FILTER (Dynamic Q)
     b_nifty_high = np.zeros(num_steps)
     x_n_high = n_high_adj[0]
-    P_nh, Q_nh, R_nh = 1.0, 0.50, 1.0
+    P_nh, Q_nh, R_nh = 1.0, q_value, 1.0
     for t in range(num_steps):
         K = (P_nh + Q_nh) / (P_nh + Q_nh + R_nh)
         x_n_high = x_n_high + K * (n_high_adj[t] - x_n_high)
         P_nh = (1 - K) * (P_nh + Q_nh)
         b_nifty_high[t] = x_n_high
 
-    # 4. NIFTY LOW KALMAN FILTER (Q = 0.50)
+    # 4. NIFTY LOW KALMAN FILTER (Dynamic Q)
     b_nifty_low = np.zeros(num_steps)
     x_n_low = n_low_adj[0]
-    P_nl, Q_nl, R_nl = 1.0, 0.50, 1.0
+    P_nl, Q_nl, R_nl = 1.0, q_value, 1.0
     for t in range(num_steps):
         K = (P_nl + Q_nl) / (P_nl + Q_nl + R_nl)
         x_n_low = x_n_low + K * (n_low_adj[t] - x_n_low)
         P_nl = (1 - K) * (P_nl + Q_nl)
         b_nifty_low[t] = x_n_low
 
-    # Re-applying pure cumulative gap to align bands
-    nifty_high_real = b_nifty_high + cumulative_gap
-    nifty_low_real = b_nifty_low + cumulative_gap
+    # 5. MULTIPLIER APPLICATION FOR FAST FLIP
+    # Channels are tuned using the responsive multiplier coefficient
+    nifty_high_real = (b_nifty_high + cumulative_gap) * multiplier
+    nifty_low_real = (b_nifty_low + cumulative_gap) * (2.0 - multiplier)
 
-    # 5. INDIA VIX KALMAN FILTERS
+    # INDIA VIX KALMAN FILTERS
     vifty_high = np.zeros(num_steps)
     x_v_high = v_high[0]
-    P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
+    P_vh, Q_vh, R_vh = 1.0, q_value, 1.0
     for t in range(num_steps):
         K = (P_vh + Q_vh) / (P_vh + Q_vh + R_vh)
         x_v_high = x_v_high + K * (v_high[t] - x_v_high)
@@ -116,14 +124,14 @@ else:
 
     vifty_low = np.zeros(num_steps)
     x_v_low = v_low[0]
-    P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
+    P_vl, Q_vl, R_vl = 1.0, q_value, 1.0
     for t in range(num_steps):
         K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
         x_v_low = x_v_low + K * (v_low[t] - x_v_low)
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 6. CLASSIC CONTINUOUS TREND SIGNALS (Only Red and Green Blocks)
+    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -133,7 +141,7 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. INDIA VIX SIGNALS (Transparent Text)
+    # 7. INDIA VIX SIGNALS (Uncolored Safe Text)
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -166,6 +174,6 @@ else:
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
-    # 8. RENDER IMMUTABLE VIEW
+    # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Classic Gap-Engine restored successfully! High-precision hints are active.")
+    st.success("Perfect Multiplier Tuning Restored! System is hyper-sensitive now.")
