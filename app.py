@@ -4,20 +4,22 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Classic High-Low Gap Dashboard")
+st.title("🔥 Nifty & India VIX Super-Sonic Fast Flip Dashboard")
 
-# --- SPEED & MULTIPLIER CONTROLLER SIDEBAR ---
-st.sidebar.header("Tuning Settings")
-st.sidebar.write("⚡ Bada Q = Fast Price Tracking")
-q_value = st.sidebar.slider("Signal Flip Speed (Q)", min_value=0.1, max_value=10.0, value=3.0, step=0.1)
+# --- HYPER-DRIVE CONTROLLER SIDEBAR ---
+st.sidebar.header("🚀 Hyper-Drive Tuning")
+st.sidebar.write("🔴 WARNING: High speed means instant flips on minor movements!")
 
-st.sidebar.write("🎯 Multiplier Chota (e.g. 0.995) = Fast Flip / Tight Bands")
-multiplier = st.sidebar.slider("Kalman Channel Multiplier", min_value=0.980, max_value=1.020, value=1.000, step=0.001)
+# Process Noise Slider (Bada number = Instant reaction)
+q_value = st.sidebar.slider("Filter Reaction Speed (Q)", min_value=0.5, max_value=50.0, value=15.0, step=0.5)
 
-st.write(f"Fixed Architecture: High/Low Kalman Channels Active | Q = {q_value} | Multiplier = {multiplier}")
+# Tight Band Multiplier (0.990 aur usse neeche = Super tight/Fastest Flip)
+multiplier = st.sidebar.slider("Tight Band Multiplier", min_value=0.950, max_value=1.050, value=0.994, step=0.001)
+
+st.write(f"⚡ **Hyper-Drive Status:** Active | **Q Speed:** {q_value} | **Band Compression:** {multiplier}")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800) # Reduced TTL for fresher live updates
 def load_frozen_data():
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
     vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
@@ -74,7 +76,7 @@ else:
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. PURE GAP DE-TRENDING ENGINE (No Multipliers)
+    # 2. PURE GAP DE-TRENDING ENGINE
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
@@ -87,7 +89,7 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. NIFTY HIGH KALMAN FILTER (Dynamic Q)
+    # 3. NIFTY HIGH KALMAN FILTER (Hyper-Drive Q Setting)
     b_nifty_high = np.zeros(num_steps)
     x_n_high = n_high_adj[0]
     P_nh, Q_nh, R_nh = 1.0, q_value, 1.0
@@ -97,7 +99,7 @@ else:
         P_nh = (1 - K) * (P_nh + Q_nh)
         b_nifty_high[t] = x_n_high
 
-    # 4. NIFTY LOW KALMAN FILTER (Dynamic Q)
+    # 4. NIFTY LOW KALMAN FILTER (Hyper-Drive Q Setting)
     b_nifty_low = np.zeros(num_steps)
     x_n_low = n_low_adj[0]
     P_nl, Q_nl, R_nl = 1.0, q_value, 1.0
@@ -107,8 +109,8 @@ else:
         P_nl = (1 - K) * (P_nl + Q_nl)
         b_nifty_low[t] = x_n_low
 
-    # 5. MULTIPLIER APPLICATION FOR FAST FLIP
-    # Channels are tuned using the responsive multiplier coefficient
+    # 5. ULTRA-COMPRESSION MULTI-LOCK ENGINE
+    # Directly pushing the channel boundaries to the absolute limit
     nifty_high_real = (b_nifty_high + cumulative_gap) * multiplier
     nifty_low_real = (b_nifty_low + cumulative_gap) * (2.0 - multiplier)
 
@@ -131,7 +133,7 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
+    # 6. INSTANT TREND SIGNALS
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -141,7 +143,7 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. INDIA VIX SIGNALS (Uncolored Safe Text)
+    # 7. INDIA VIX SIGNALS
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -176,4 +178,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Perfect Multiplier Tuning Restored! System is hyper-sensitive now.")
+    st.success("Hyper-Drive Active! Zero-Lag Signals are now fully operational.")
