@@ -4,16 +4,17 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty & India VIX Classic High-Low Gap Dashboard (5-Min)")
+st.title("Nifty & India VIX Classic High-Low Gap Dashboard")
 
-st.write("Fixed Architecture: 5-Min Kalman Channels Active | Pure Gap Engine Running | Q=0.50 | Start: May 1, 2026...")
+st.write("Fixed Architecture: 5-Min Kalman Channels Active | Max 60D Intraday Data Frozen | Q=0.50 | Pure Gap Engine Live...")
 
-# 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES (5-Min Interval)
-@st.cache_data(ttl=300)  # 5-min data ke liye cache ttl 5 minute kiya hai taaki dynamic update ho sake
+# 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES (Auto-Frozen to Max 60 Days)
+@st.cache_data(ttl=300)
 def load_frozen_data():
-    # Start date changed to 2026-05-01 and interval set to 5m
-    nifty_raw = yf.download('^NSEI', start='2026-05-01', end='2027-01-01', interval='5m')
-    vix_raw = yf.download('^INDIAVIX', start='2026-05-01', end='2027-01-01', interval='5m')
+    # Note: 5m interval ke liye Yahoo Finance maximum pichle 60 days ka data hi deta hai.
+    # Isliye humne period='60d' set kiya hai taaki app kabhi blank na ho.
+    nifty_raw = yf.download('^NSEI', period='60d', interval='5m')
+    vix_raw = yf.download('^INDIAVIX', period='60d', interval='5m')
     
     if nifty_raw.empty or vix_raw.empty:
         return None
@@ -34,7 +35,6 @@ def load_frozen_data():
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    # 5-minute merge ke liye key me minutes (%M) ko bhi add kiya hai
     nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H:%M')
     vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H:%M')
     
@@ -52,7 +52,7 @@ def load_frozen_data():
 combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Data extraction error or no data available for the selected range.")
+    st.error("Yahoo Finance server did not return intraday data. Please refresh or try again in a moment.")
 else:
     # Pure Linear Arrays
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
@@ -68,7 +68,7 @@ else:
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. PURE GAP DE-TRENDING ENGINE (Running cleanly on 5-Min Intervals)
+    # 2. PURE GAP DE-TRENDING ENGINE
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap_arr = np.zeros(num_steps)
@@ -112,28 +112,4 @@ else:
     x_v_high = v_high[0]
     P_vh, Q_vh, R_vh = 1.0, 0.50, 1.0
     for t in range(num_steps):
-        K = (P_vh + Q_vh) / (P_vh + Q_vh + R_vh)
-        x_v_high = x_v_high + K * (v_high[t] - x_v_high)
-        P_vh = (1 - K) * (P_vh + Q_vh)
-        vifty_high[t] = x_v_high
-
-    vifty_low = np.zeros(num_steps)
-    x_v_low = v_low[0]
-    P_vl, Q_vl, R_vl = 1.0, 0.50, 1.0
-    for t in range(num_steps):
-        K = (P_vl + Q_vl) / (P_vl + Q_vl + R_vl)
-        x_v_low = x_v_low + K * (v_low[t] - x_v_low)
-        P_vl = (1 - K) * (P_vl + Q_vl)
-        vifty_low[t] = x_v_low
-
-    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
-    nifty_signals = []
-    current_signal = "⏳ INITIALIZING"
-    for t in range(num_steps):
-        if n_close[t] > nifty_high_real[t]:
-            current_signal = "🟢 BUY"
-        elif n_close[t] < nifty_low_real[t]:
-            current_signal = "🔴 SELL"
-        nifty_signals.append(current_signal)
-
-    #
+        K = (P_vh + Q
