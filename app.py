@@ -174,9 +174,9 @@ else:
             return "background-color: #c62828; color: white; font-weight: bold;"
         return ""
 
-    # Aapka exact applymap logic
-    styled_final_df = df_reversed.style.applymap(style_nifty_strict, subset=['📈 NIFTY HINT'])
+    # Yahan applymap ko hata kar .map() kar diya hai taaki modern Pandas me crash na ho
+    styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
     # 8. RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Daily Macro Engine is running exactly with your original code architecture!")
+    st.success("Daily Macro Engine Syntax fixed! Dashboard is live without warnings.")
