@@ -1,6 +1,5 @@
 import numpy as np
-import yf as yf  # Changed from yfinance import statement style to match your setup
-import yfinance as yf
+import yfinance as yf  # Fixed the broken import statement here
 import streamlit as st
 import pandas as pd
 
@@ -67,7 +66,7 @@ else:
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. PURE GAP DE-TRENDING ENGINE (Array Fixed)
+    # 2. PURE GAP DE-TRENDING ENGINE 
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap_arr = np.zeros(num_steps)
@@ -102,7 +101,7 @@ else:
         P_nl = (1 - K) * (P_nl + Q_nl)
         b_nifty_low[t] = x_n_low
 
-    # Re-applying matching row gaps instead of final global scalar sum
+    # Re-applying matching row gaps
     nifty_high_real = b_nifty_high + cumulative_gap_arr
     nifty_low_real = b_nifty_low + cumulative_gap_arr
 
