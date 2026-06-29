@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Hyper-Compressed Slope 0.001 Dashboard")
+st.title("Nifty Kalman Overnight Predictor (BTST / STBT Engine)")
 
-st.write("Matched Architecture: Active Tracking Speed (K=0.001) | 0.001x Razor Spread Matrix | Slope Engine")
+st.write("Option Architecture: K=0.001 | 0.001x Matrix | 3:00 PM Carry-Forward Scan Active")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -42,7 +42,8 @@ else:
     n_close = combined_data['Close_nifty'].to_numpy(dtype=float)
     
     num_steps = len(combined_data)
-    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
+    raw_timestamps = combined_data.index
+    timestamps_formatted = raw_timestamps.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
     # 2. PURE GAP DE-TRENDING ENGINE (Tracking Matrix)
@@ -75,7 +76,7 @@ else:
     for t in range(1, num_steps):
         b_nifty_low[t] = b_nifty_low[t-1] + K_factor * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY ULTRA-COMPRESSED 0.001x SPREAD MULTIPLIER (0.0005x on each side from midpoint)
+    # 5. APPLY ULTRA-COMPRESSED 0.001x SPREAD MULTIPLIER (0.0005x on each side)
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
@@ -85,33 +86,42 @@ else:
     # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
     nifty_high_real = b_nifty_high_0001x + historical_gaps
     nifty_low_real = b_nifty_low_0001x + historical_gaps
-
-    # 6. EXACT HIGH MINUS LOW CALCULATION
     high_minus_low = nifty_high_real - nifty_low_real
-
-    # 7. SLOPE ENGINE LOGIC (Optimized for hyper-tight 0.001x structure)
-    nifty_signals = []
-    current_signal = "⏳ INITIALIZING"
-    
-    # Pre-calculate center line for comparison
     mid_real_line = (nifty_high_real + nifty_low_real) / 2.0
-    
-    for t in range(3, num_steps):
-        # Calculate recent slopes for hyper-tight channels
-        slope_high = nifty_high_real[t] - nifty_high_real[t-2]
-        slope_low = nifty_low_real[t] - nifty_low_real[t-2]
-        avg_slope = (slope_high + slope_low) / 2.0
+
+    # 6 & 7. OVERNIGHT CARRY POSITION PREDICTOR LOGIC
+    nifty_signals = []
+    current_state = "⏳ NO POSITION"
+
+    for t in range(num_steps):
+        current_time = raw_timestamps[t]
+        hour = current_time.hour
+        minute = current_time.minute
         
-        # Signal Generation Trigger based on pivot crossings
-        if n_close[t] > mid_real_line[t] and avg_slope > 0.02:
-            current_signal = "🟢 BUY"
-        elif n_close[t] < mid_real_line[t] and avg_slope < -0.02:
-            current_signal = "🔴 SELL"
-            
-        nifty_signals.append(current_signal)
-        
-    # Padding initial values
-    nifty_signals = ["⏳ INITIALIZING", "⏳ INITIALIZING", "⏳ INITIALIZING"] + nifty_signals
+        # Calculate slope
+        if t >= 2:
+            slope = (mid_real_line[t] - mid_real_line[t-2]) / 2.0
+        else:
+            slope = 0.0
+
+        # CRITICAL CHECK: Market closing hours scan (2:30 PM to 3:30 PM candles)
+        if hour == 14 or hour == 15:
+            if n_close[t] > mid_real_line[t] and slope > 0.01:
+                current_state = "🟢 BTST: CARRY BUY"
+            elif n_close[t] < mid_real_line[t] and slope < -0.01:
+                current_state = "🔴 STBT: CARRY SELL"
+            else:
+                current_state = "⏳ WAIT: NO CARRY"
+        else:
+            # Intraday hours - Maintain status quo or show holding matrix
+            if "BUY" in current_state:
+                current_state = "🟢 HOLD BUY POSITION"
+            elif "SELL" in current_state:
+                current_state = "🔴 HOLD SELL POSITION"
+            else:
+                current_state = "⏳ INTRADAY: OBSERVING"
+
+        nifty_signals.append(current_state)
 
     # 8. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
@@ -120,19 +130,23 @@ else:
         'Nifty Low K (0.001x)': [f"{x:.2f}" for x in nifty_low_real],
         'High - Low': [f"{x:.2f}" for x in high_minus_low],
         '📈 NIFTY HINT': nifty_signals
-    }, index=timestamps)
+    }, index=timestamps_formatted)
 
     df_reversed = df_table.iloc[::-1]
 
     def style_nifty_strict(val):
-        if "BUY" in str(val):
-            return "background-color: #2e7d32; color: white; font-weight: bold;"
-        elif "SELL" in str(val):
-            return "background-color: #c62828; color: white; font-weight: bold;"
+        if "CARRY BUY" in str(val):
+            return "background-color: #1b5e20; color: white; font-weight: bold; border: 2px solid white;"
+        elif "CARRY SELL" in str(val):
+            return "background-color: #b71c1c; color: white; font-weight: bold; border: 2px solid white;"
+        elif "HOLD BUY" in str(val):
+            return "background-color: #2e7d32; color: #e8f5e9;"
+        elif "HOLD SELL" in str(val):
+            return "background-color: #c62828; color: #ffebee;"
         return ""
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
     # RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Hyper-Compressed 0.001 balanced engine deployed successfully!")
+    st.success("Overnight Option Carry Engine active! 3:00 PM institutional triggers are live.")
