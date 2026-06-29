@@ -2,32 +2,27 @@ import numpy as np
 import yfinance as yf
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("Nifty High-Frequency Institutional Flow Dashboard")
+st.title("Nifty High-Frequency Dashboard (Strictly June 2026)")
 
-st.write("Stable HFT Engine: K=0.001 | 0.001x Matrix | Auto-Fallback Active | 3:20 PM Signal Lock")
+st.write("Target Framework: June 2026 Only | K=0.001 | 0.001x Matrix | 3:20 PM Institutional Lock")
 
-# 1. DYNAMIC DATA LOADER WITH AUTOMATIC FALLBACK TO PREVENT BLANK SCREEN
+# 1. FIXED DATE DATA LOADER FOR JUNE 2026
 @st.cache_data(ttl=300)
-def load_safe_high_frequency_data():
-    today = datetime.now()
-    # Looking back last 6 days for deep data availability
-    start_date = (today - timedelta(days=6)).strftime('%Y-%m-%d')
+def load_june_2026_data():
+    # Explicitly locking dates to June 2026
+    start_date = "2026-06-01"
+    end_date = "2026-07-01"
     
-    st.info("Attempting to stream 1-Minute Institutional Ticks...")
-    nifty_raw = yf.download('^NSEI', start=start_date, interval='1m')
+    st.info("Streaming high-frequency data for June 2026 matrix...")
     
-    # FALLBACK: If 1-Min data comes empty or breaks, shift to 5-Min data instantly
-    if nifty_raw.empty or len(nifty_raw) == 0:
-        st.warning("1-Min stream unavailable or rate-limited. Shifting to 5-Minute High-Frequency Backup Stream...")
-        nifty_raw = yf.download('^NSEI', start=start_date, interval='5m')
-        interval_used = "5m"
-    else:
-        interval_used = "1m"
+    # 1-min data won't cover the whole month of June 2026 if requested later, 
+    # so we pull 5-min blocks directly for historical stability across the whole month.
+    nifty_raw = yf.download('^NSEI', start=start_date, end=end_date, interval='5m')
+    interval_used = "5m"
         
-    if nifty_raw.empty:
+    if nifty_raw.empty or len(nifty_raw) == 0:
         return None, None
 
     nifty_df = pd.DataFrame(index=nifty_raw.index)
@@ -41,12 +36,12 @@ def load_safe_high_frequency_data():
     return nifty_df.dropna(), interval_used
 
 # Execute data pipe
-combined_data, dynamic_interval = load_safe_high_frequency_data()
+combined_data, dynamic_interval = load_june_2026_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Severe Error: Live stock exchange servers returned empty array data. Please reload after a minute.")
+    st.error("Error: No data returned for the June 2026 cycle. Double-check stock exchange session status.")
 else:
-    st.success(f"Successfully loaded continuous data matrix using '{dynamic_interval}' data blocks.")
+    st.success(f"Successfully rendered June 2026 data logs using historical '{dynamic_interval}' matrix framework.")
     
     # Pure Linear Arrays
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
@@ -116,4 +111,57 @@ else:
         # Base Day Volume calculation up to 3 PM
         current_day = parsed_dates[t]
         day_indices = np.where(parsed_dates == current_day)[0]
-        day_indices_before_3pm = [idx for idx in day_indices if raw_timestamps[idx].hour
+        day_indices_before_3pm = [idx for idx in day_indices if raw_timestamps[idx].hour < 15 and idx <= t]
+        
+        if len(day_indices_before_3pm) > 0:
+            avg_base_vol = np.mean(n_vol[day_indices_before_3pm])
+        else:
+            avg_base_vol = 1.0
+            
+        if avg_base_vol == 0:
+            avg_base_vol = 1.0
+
+        # EXACT TRIGGER CLOCK EXECUTION (3:20 PM Zone)
+        if hour == 15 and minute == 20:
+            vol_slice = n_vol[max(0, t-4):t+1]
+            recent_vol_avg = float(np.mean(vol_slice)) if len(vol_slice) > 0 else 1.0
+            
+            is_institutional_heavy = recent_vol_avg > (avg_base_vol * 1.5)
+            
+            if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy:
+                hint = "🟢 INSTITUTIONAL GAP-UP BUILD (BTST)"
+            elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy:
+                hint = "🔴 INSTITUTIONAL GAP-DOWN BUILD (STBT)"
+            else:
+                hint = "⏳ WEAK FLOW: SQUARE OFF / NO CARRY"
+        elif hour == 15 and minute > 20:
+            hint = nifty_hints[-1] if len(nifty_hints) > 0 else "⏳ ANALYZING SESSION"
+        else:
+            hint = "⏳ INTRADAY DATAFLOW"
+            
+        nifty_hints.append(hint)
+
+    # 7. DATAFRAME COMPILATION
+    df_table = pd.DataFrame({
+        'Price Close': [f"{x:.2f}" for x in n_close],
+        'Dynamic VWAP': [f"{x:.2f}" for x in vwap],
+        'Kalman Center': [f"{x:.2f}" for x in mid_real_line],
+        'Volume Stack': [f"{int(x)}" for x in n_vol],
+        '📈 INSTITUTIONAL HINT': nifty_hints
+    }, index=timestamps_formatted)
+
+    df_reversed = df_table.iloc[::-1]
+
+    def style_institutional_flow(val):
+        if "GAP-UP" in str(val):
+            return "background-color: #1b5e20; color: white; font-weight: bold; border: 2px solid green;"
+        elif "GAP-DOWN" in str(val):
+            return "background-color: #b71c1c; color: white; font-weight: bold; border: 2px solid red;"
+        elif "WEAK" in str(val):
+            return "background-color: #e65100; color: white; font-weight: bold;"
+        return ""
+
+    styled_final_df = df_reversed.style.map(style_institutional_flow, subset=['📈 INSTITUTIONAL HINT'])
+
+    # 8. RENDER SECURE INTERFACE VIEW
+    st.dataframe(styled_final_df, use_container_width=True)
