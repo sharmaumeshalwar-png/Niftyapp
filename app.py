@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Fast-Track 4x Matrix Dashboard")
+st.title("Nifty Classic High-Low 5x Matrix Dashboard")
 
-st.write("Fixed Architecture: Hyper-Fast Gain Active (K=0.02) | 4x Spread Matrix | High Reactivity Mode")
+st.write("Fixed Architecture: Accelerated Gain Active (K=0.01) | 5x Spread Matrix | Balanced Frequency Mode")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -60,31 +60,31 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH ACCELERATED FILTER (K set to 0.02)
+    # 3. HIGH ACCELERATED FILTER (K set to 0.01)
     b_nifty_high = np.zeros(num_steps)
     b_nifty_high[0] = n_high_adj[0]
-    K_hyper = 0.02  # Speed badha kar market swings track karne ke liye update kiya
+    K_target = 0.01  # Gain matrix updated to 0.01 for steady speed
     
     for t in range(1, num_steps):
-        b_nifty_high[t] = b_nifty_high[t-1] + K_hyper * (n_high_adj[t] - b_nifty_high[t-1])
+        b_nifty_high[t] = b_nifty_high[t-1] + K_target * (n_high_adj[t] - b_nifty_high[t-1])
 
-    # 4. LOW ACCELERATED FILTER (K set to 0.02)
+    # 4. LOW ACCELERATED FILTER (K set to 0.01)
     b_nifty_low = np.zeros(num_steps)
     b_nifty_low[0] = n_low_adj[0]
     
     for t in range(1, num_steps):
-        b_nifty_low[t] = b_nifty_low[t-1] + K_hyper * (n_low_adj[t] - b_nifty_low[t-1])
+        b_nifty_low[t] = b_nifty_low[t-1] + K_target * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY 4x SPREAD MULTIPLIER ON ACCELERATED BANDS
+    # 5. APPLY 5x SPREAD MULTIPLIER ON ACCELERATED BANDS
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
-    b_nifty_high_4x = fixed_mid + (fixed_spread * 2.0) # 4x Matrix logic intact
-    b_nifty_low_4x = fixed_mid - (fixed_spread * 2.0)
+    b_nifty_high_5x = fixed_mid + (fixed_spread * 2.5) # Total 5x dynamic width configuration
+    b_nifty_low_5x = fixed_mid - (fixed_spread * 2.5)
 
     # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
-    nifty_high_real = b_nifty_high_4x + historical_gaps
-    nifty_low_real = b_nifty_low_4x + historical_gaps
+    nifty_high_real = b_nifty_high_5x + historical_gaps
+    nifty_low_real = b_nifty_low_5x + historical_gaps
 
     # 6. EXACT HIGH MINUS LOW CALCULATION
     high_minus_low = nifty_high_real - nifty_low_real
@@ -102,8 +102,8 @@ else:
     # 7. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K (4x)': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K (4x)': [f"{x:.2f}" for x in nifty_low_real],
+        'Nifty High K (5x)': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K (5x)': [f"{x:.2f}" for x in nifty_low_real],
         'High - Low': [f"{x:.2f}" for x in high_minus_low],
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
@@ -121,4 +121,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Hyper-Fast K=0.02 with 4x Channels deployed perfectly!")
+    st.success("Configured for K=0.01 and 5x Matrix. System operational!")
