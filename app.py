@@ -5,9 +5,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🦅 Nifty & India VIX Daily Close-Only Dashboard")
+st.title("🦅 Nifty & India VIX Daily Close-Only Dashboard (Q = 0.001)")
 
-st.write("Fixed Architecture: Daily Continuous Interval | Close Price Kalman Filter Only | Q=0.50 | Pure Signals...")
+st.write("Fixed Architecture: Daily Continuous Interval | Close Price Kalman Filter Only | Ultra-Smooth Q=0.001 | Pure Signals...")
 
 # 1. OPTIMIZED FUNCTION FOR DAILY DATA FETCHING (Close Prices Only)
 @st.cache_data(ttl=3600) 
@@ -29,7 +29,7 @@ def load_daily_close_data():
     nifty_raw.columns = [f"{col[0]}_nifty" if isinstance(col, tuple) else f"{col}_nifty" for col in nifty_raw.columns]
     vix_raw.columns = [f"{col[0]}_vix" if isinstance(col, tuple) else f"{col}_vix" for col in vix_raw.columns]
 
-    # Mapping from flattened structure (High and Low removed)
+    # Mapping from flattened structure
     nifty_df = pd.DataFrame(index=nifty_raw.index)
     nifty_df['Open_nifty'] = nifty_raw['Open_nifty']
     nifty_df['Close_nifty'] = nifty_raw['Close_nifty']
@@ -80,10 +80,10 @@ else:
                 cumulative_gap += gap
         n_close_adj[t] = n_close[t] - cumulative_gap
 
-    # 3. NIFTY CLOSE KALMAN FILTER (Q = 0.50)
+    # 3. NIFTY CLOSE KALMAN FILTER (Tuned to Ultra-Smooth Q = 0.001)
     b_nifty_close = np.zeros(num_steps)
     x_n_close = n_close_adj[0]
-    P_nc, Q_nc, R_nc = 1.0, 0.50, 1.0
+    P_nc, Q_nc, R_nc = 1.0, 0.001, 1.0  # Q changed to 0.001 here
     for t in range(num_steps):
         K = (P_nc + Q_nc) / (P_nc + Q_nc + R_nc)
         x_n_close = x_n_close + K * (n_close_adj[t] - x_n_close)
@@ -92,10 +92,10 @@ else:
 
     nifty_close_real = b_nifty_close + cumulative_gap
 
-    # 4. INDIA VIX CLOSE KALMAN FILTER
+    # 4. INDIA VIX CLOSE KALMAN FILTER (Tuned to Ultra-Smooth Q = 0.001)
     vifty_close = np.zeros(num_steps)
     x_v_close = v_close[0]
-    P_vc, Q_vc, R_vc = 1.0, 0.50, 1.0
+    P_vc, Q_vc, R_vc = 1.0, 0.001, 1.0  # Q changed to 0.001 here
     for t in range(num_steps):
         K = (P_vc + Q_vc) / (P_vc + Q_vc + R_vc)
         x_v_close = x_v_close + K * (v_close[t] - x_v_close)
@@ -122,7 +122,7 @@ else:
         else:
             vix_signals.append("⚪ SIDEWAYS")
 
-    # 7. DATAFRAME COMPILATION (Clean & Light View)
+    # 7. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty Close K': [f"{x:.2f}" for x in nifty_close_real],
@@ -145,4 +145,4 @@ else:
 
     # 8. RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Close-Only Dashboard is running perfectly. High-Low boundaries removed successfully!")
+    st.success("System updated! Kalman filters are now locked onto ultra-smooth tracking state (Q = 0.001).")
