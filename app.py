@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Classic High-Low 4x Matrix Dashboard")
+st.title("Nifty Fast-Track 4x Matrix Dashboard")
 
-st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 4x Spread Matrix | 'High - Low' Column Restored")
+st.write("Fixed Architecture: Hyper-Fast Gain Active (K=0.02) | 4x Spread Matrix | High Reactivity Mode")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -60,26 +60,26 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH FIXED-GAIN FILTER (K = 0.001)
+    # 3. HIGH ACCELERATED FILTER (K set to 0.02)
     b_nifty_high = np.zeros(num_steps)
     b_nifty_high[0] = n_high_adj[0]
-    K_fixed = 0.001
+    K_hyper = 0.02  # Speed badha kar market swings track karne ke liye update kiya
     
     for t in range(1, num_steps):
-        b_nifty_high[t] = b_nifty_high[t-1] + K_fixed * (n_high_adj[t] - b_nifty_high[t-1])
+        b_nifty_high[t] = b_nifty_high[t-1] + K_hyper * (n_high_adj[t] - b_nifty_high[t-1])
 
-    # 4. LOW FIXED-GAIN FILTER
+    # 4. LOW ACCELERATED FILTER (K set to 0.02)
     b_nifty_low = np.zeros(num_steps)
     b_nifty_low[0] = n_low_adj[0]
     
     for t in range(1, num_steps):
-        b_nifty_low[t] = b_nifty_low[t-1] + K_fixed * (n_low_adj[t] - b_nifty_low[t-1])
+        b_nifty_low[t] = b_nifty_low[t-1] + K_hyper * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY 4x SPREAD MULTIPLIER ON DE-TRENDED BANDS
+    # 5. APPLY 4x SPREAD MULTIPLIER ON ACCELERATED BANDS
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
-    b_nifty_high_4x = fixed_mid + (fixed_spread * 2.0)
+    b_nifty_high_4x = fixed_mid + (fixed_spread * 2.0) # 4x Matrix logic intact
     b_nifty_low_4x = fixed_mid - (fixed_spread * 2.0)
 
     # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
@@ -89,7 +89,7 @@ else:
     # 6. EXACT HIGH MINUS LOW CALCULATION
     high_minus_low = nifty_high_real - nifty_low_real
 
-    # FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
+    # TREND SIGNALS LOOP
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -99,12 +99,12 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. DATAFRAME COMPILATION (Exact Names & Ordered Sequence)
+    # 7. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty High K (4x)': [f"{x:.2f}" for x in nifty_high_real],
         'Nifty Low K (4x)': [f"{x:.2f}" for x in nifty_low_real],
-        'High - Low': [f"{x:.2f}" for x in high_minus_low], # Target Column Inserted Here
+        'High - Low': [f"{x:.2f}" for x in high_minus_low],
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
 
@@ -121,4 +121,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Perfect Grid Setup Live! 'High - Low' column is placed explicitly before signals.")
+    st.success("Hyper-Fast K=0.02 with 4x Channels deployed perfectly!")
