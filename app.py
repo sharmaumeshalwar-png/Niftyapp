@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Classic High-Low 4x Dashboard")
+st.title("Nifty Classic High-Low 4x Matrix Dashboard")
 
-st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 4x Spread Matrix | Pure Gap Engine Restored")
+st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 4x Spread Matrix | 'High - Low' Column Restored")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -76,7 +76,6 @@ else:
         b_nifty_low[t] = b_nifty_low[t-1] + K_fixed * (n_low_adj[t] - b_nifty_low[t-1])
 
     # 5. APPLY 4x SPREAD MULTIPLIER ON DE-TRENDED BANDS
-    # Midpoint aur spread nikal kar exact 4x width maintain ki (* 2.0 on each side)
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
@@ -87,7 +86,10 @@ else:
     nifty_high_real = b_nifty_high_4x + historical_gaps
     nifty_low_real = b_nifty_low_4x + historical_gaps
 
-    # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
+    # 6. EXACT HIGH MINUS LOW CALCULATION
+    high_minus_low = nifty_high_real - nifty_low_real
+
+    # FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -97,11 +99,12 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. DATAFRAME COMPILATION
+    # 7. DATAFRAME COMPILATION (Exact Names & Ordered Sequence)
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
         'Nifty High K (4x)': [f"{x:.2f}" for x in nifty_high_real],
         'Nifty Low K (4x)': [f"{x:.2f}" for x in nifty_low_real],
+        'High - Low': [f"{x:.2f}" for x in high_minus_low], # Target Column Inserted Here
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
 
@@ -118,4 +121,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("4x Multiplier Setup Deployed Successfully! Wide structural channels live.")
+    st.success("Perfect Grid Setup Live! 'High - Low' column is placed explicitly before signals.")
