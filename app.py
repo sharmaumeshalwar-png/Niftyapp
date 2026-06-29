@@ -11,7 +11,6 @@ st.write("Fixed Architecture: Daily Kalman Channels Active | Pure Gap Engine Res
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES (Daily Interval)
 @st.cache_data(ttl=3600)
 def load_frozen_data():
-    # Interval set to '1d' and start date restored to '2024-07-01'
     nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1d')
     vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1d')
     
@@ -34,7 +33,6 @@ def load_frozen_data():
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    # Daily format me sirf Date string use hoti hai
     nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d')
     vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d')
     
@@ -66,19 +64,21 @@ else:
     
     num_steps = len(combined_data)
     timestamps = combined_data.index.strftime('%Y-%m-%d')
-    parsed_dates = combined_data.index.date
 
     # 2. PURE DAILY GAP DE-TRENDING ENGINE
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap_arr = np.zeros(num_steps)
+    single_gap_tracker = np.zeros(num_steps)
     running_gap = 0.0
 
     for t in range(1, num_steps):
-        # Daily candle me har step par date alag hoti hai, isliye overnight gap perfectly capture hoga
         gap = n_open[t] - n_close[t-1]
+        single_gap_tracker[t] = gap
+        
         if abs(gap) > 5.0:  
             running_gap += gap
+            
         cumulative_gap_arr[t] = running_gap
         n_high_adj[t] = n_high[t] - running_gap
         n_low_adj[t] = n_low[t] - running_gap
@@ -148,7 +148,9 @@ else:
 
     # DATAFRAME COMPILATION
     df_table = pd.DataFrame({
+        'Nifty Open': [f"{x:.2f}" for x in n_open],
         'Nifty Close': [f"{x:.2f}" for x in n_close],
+        '⚡ Overnight Gap': [f"{x:.2f}" for x in single_gap_tracker],
         'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
         'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
         '📈 NIFTY HINT': nifty_signals,
@@ -162,4 +164,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(df_reversed, use_container_width=True)
-    st.success("Perfect Setup Restored! Daily High-Low Gap Engine is successfully live from 1 July 2024.")
+    st.success("Bilkul sahi bhai! Reverse sequencing logic perfectly aligned aur functional hai.")
