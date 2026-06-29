@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Classic High-Low Fixed-Gain Dashboard")
+st.title("Nifty Classic High-Low Pure 1x Dashboard")
 
-st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 5x Spread Matrix | Pure Gap Engine Restored")
+st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | Pure 1x Scale | Pure Gap Engine Restored")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -60,31 +60,24 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH FIXED-GAIN FILTER (b2 = b1 + 0.001 * (a3 - b1) Logic)
+    # 3. HIGH FIXED-GAIN FILTER (Pure 1x - No Multipliers)
     b_nifty_high = np.zeros(num_steps)
-    b_nifty_high[0] = n_high_adj[0] # Seed initialization
+    b_nifty_high[0] = n_high_adj[0]
     K_fixed = 0.001
     
     for t in range(1, num_steps):
         b_nifty_high[t] = b_nifty_high[t-1] + K_fixed * (n_high_adj[t] - b_nifty_high[t-1])
 
-    # 4. LOW FIXED-GAIN FILTER
+    # 4. LOW FIXED-GAIN FILTER (Pure 1x - No Multipliers)
     b_nifty_low = np.zeros(num_steps)
-    b_nifty_low[0] = n_low_adj[0] # Seed initialization
+    b_nifty_low[0] = n_low_adj[0]
     
     for t in range(1, num_steps):
         b_nifty_low[t] = b_nifty_low[t-1] + K_fixed * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY 5x SPREAD MULTIPLIER ON DE-TRENDED FIXED-GAIN CHANNELS
-    fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
-    fixed_spread = b_nifty_high - b_nifty_low
-    
-    b_nifty_high_5x = fixed_mid + (fixed_spread * 2.5)
-    b_nifty_low_5x = fixed_mid - (fixed_spread * 2.5)
-
-    # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
-    nifty_high_real = b_nifty_high_5x + historical_gaps
-    nifty_low_real = b_nifty_low_5x + historical_gaps
+    # 5. DYNAMIC STEP REALIGNMENT (Direct 1x Base Bands + Gaps)
+    nifty_high_real = b_nifty_high + historical_gaps
+    nifty_low_real = b_nifty_low + historical_gaps
 
     # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
     nifty_signals = []
@@ -99,8 +92,8 @@ else:
     # 7. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K (Fixed 5x)': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K (Fixed 5x)': [f"{x:.2f}" for x in nifty_low_real],
+        'Nifty High K (1x)': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K (1x)': [f"{x:.2f}" for x in nifty_low_real],
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
 
@@ -117,4 +110,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Constant-Gain Filter Integration Completed flawlessly!")
+    st.success("Pure 1x Fixed-Gain Engine Restored Successfully!")
