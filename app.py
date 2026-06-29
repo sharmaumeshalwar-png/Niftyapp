@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Kalman Overnight Predictor (BTST / STBT Engine)")
+st.title("Nifty Closing Velocity 0.001 (BTST / STBT Engine)")
 
-st.write("Option Architecture: K=0.001 | 0.001x Matrix | 3:00 PM Carry-Forward Scan Active")
+st.write("Option Architecture: K=0.001 | 0.001x Matrix | Institutional Closing Velocity Filter Active")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -89,37 +89,37 @@ else:
     high_minus_low = nifty_high_real - nifty_low_real
     mid_real_line = (nifty_high_real + nifty_low_real) / 2.0
 
-    # 6 & 7. OVERNIGHT CARRY POSITION PREDICTOR LOGIC
+    # 6 & 7. CLOSING VELOCITY OPTION CRITERIA
     nifty_signals = []
     current_state = "⏳ NO POSITION"
 
     for t in range(num_steps):
         current_time = raw_timestamps[t]
         hour = current_time.hour
-        minute = current_time.minute
         
-        # Calculate slope
-        if t >= 2:
-            slope = (mid_real_line[t] - mid_real_line[t-2]) / 2.0
+        # Calculate instant shift momentum
+        if t >= 1:
+            instant_slope = mid_real_line[t] - mid_real_line[t-1]
         else:
-            slope = 0.0
+            instant_slope = 0.0
 
-        # CRITICAL CHECK: Market closing hours scan (2:30 PM to 3:30 PM candles)
+        # Targeted Check for Closing Hour Candles (2 PM to 3:30 PM execution frames)
         if hour == 14 or hour == 15:
-            if n_close[t] > mid_real_line[t] and slope > 0.01:
+            # Sensitive velocity parameters matching your tight matrix setup
+            if n_close[t] >= mid_real_line[t] and instant_slope >= 0.02:
                 current_state = "🟢 BTST: CARRY BUY"
-            elif n_close[t] < mid_real_line[t] and slope < -0.01:
+            elif n_close[t] < mid_real_line[t] and instant_slope <= -0.02:
                 current_state = "🔴 STBT: CARRY SELL"
             else:
-                current_state = "⏳ WAIT: NO CARRY"
+                current_state = "⏳ CHOP: NO CARRY"
         else:
-            # Intraday hours - Maintain status quo or show holding matrix
+            # Persistent mapping to lock intraday state transitions cleanly
             if "BUY" in current_state:
-                current_state = "🟢 HOLD BUY POSITION"
+                current_state = "🟢 HOLD OVERNIGHT BUY"
             elif "SELL" in current_state:
-                current_state = "🔴 HOLD SELL POSITION"
+                current_state = "🔴 HOLD OVERNIGHT SELL"
             else:
-                current_state = "⏳ INTRADAY: OBSERVING"
+                current_state = "⏳ SCANNING SESSION"
 
         nifty_signals.append(current_state)
 
@@ -136,17 +136,15 @@ else:
 
     def style_nifty_strict(val):
         if "CARRY BUY" in str(val):
-            return "background-color: #1b5e20; color: white; font-weight: bold; border: 2px solid white;"
+            return "background-color: #1b5e20; color: white; font-weight: bold; border: 2px solid #a5d6a7;"
         elif "CARRY SELL" in str(val):
-            return "background-color: #b71c1c; color: white; font-weight: bold; border: 2px solid white;"
-        elif "HOLD BUY" in str(val):
-            return "background-color: #2e7d32; color: #e8f5e9;"
-        elif "HOLD SELL" in str(val):
-            return "background-color: #c62828; color: #ffebee;"
+            return "background-color: #b71c1c; color: white; font-weight: bold; border: 2px solid #ef9a9a;"
+        elif "HOLD" in str(val):
+            return "color: #b0bec5; font-style: italic;"
         return ""
 
     styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
 
     # RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("Overnight Option Carry Engine active! 3:00 PM institutional triggers are live.")
+    st.success("Closing Velocity Dashboard updated. Sensitive Overnight entry parameters deployed!")
