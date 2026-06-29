@@ -5,21 +5,30 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("Nifty 1-Min Institutional Flow Dashboard")
+st.title("Nifty High-Frequency Institutional Flow Dashboard")
 
-st.write("Institutional Grid: K=0.001 | 0.001x Matrix | 3:20 PM VWAP & Volume Surge Lock")
+st.write("Stable HFT Engine: K=0.001 | 0.001x Matrix | Auto-Fallback Active | 3:20 PM Signal Lock")
 
-# 1. FETCH 1-MINUTE HIGH FREQUENCY DATA
+# 1. DYNAMIC DATA LOADER WITH AUTOMATIC FALLBACK TO PREVENT BLANK SCREEN
 @st.cache_data(ttl=300)
-def load_1min_institutional_data():
-    # 1-min data availability is limited to last few days
+def load_safe_high_frequency_data():
     today = datetime.now()
-    start_date = (today - timedelta(days=5)).strftime('%Y-%m-%d')
+    # Looking back last 6 days for deep data availability
+    start_date = (today - timedelta(days=6)).strftime('%Y-%m-%d')
     
+    st.info("Attempting to stream 1-Minute Institutional Ticks...")
     nifty_raw = yf.download('^NSEI', start=start_date, interval='1m')
     
+    # FALLBACK: If 1-Min data comes empty or breaks, shift to 5-Min data instantly
+    if nifty_raw.empty or len(nifty_raw) == 0:
+        st.warning("1-Min stream unavailable or rate-limited. Shifting to 5-Minute High-Frequency Backup Stream...")
+        nifty_raw = yf.download('^NSEI', start=start_date, interval='5m')
+        interval_used = "5m"
+    else:
+        interval_used = "1m"
+        
     if nifty_raw.empty:
-        return None
+        return None, None
 
     nifty_df = pd.DataFrame(index=nifty_raw.index)
     nifty_df['High_nifty'] = nifty_raw.xs('High', axis=1, level=0).iloc[:, 0]
@@ -29,14 +38,17 @@ def load_1min_institutional_data():
     nifty_df['Volume_nifty'] = nifty_raw.xs('Volume', axis=1, level=0).iloc[:, 0]
 
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
-    return nifty_df.dropna()
+    return nifty_df.dropna(), interval_used
 
-combined_data = load_1min_institutional_data()
+# Execute data pipe
+combined_data, dynamic_interval = load_safe_high_frequency_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("High frequency 1-minute data stream offline or unavailable.")
+    st.error("Severe Error: Live stock exchange servers returned empty array data. Please reload after a minute.")
 else:
-    # Convert to pure linear arrays
+    st.success(f"Successfully loaded continuous data matrix using '{dynamic_interval}' data blocks.")
+    
+    # Pure Linear Arrays
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
     n_low = combined_data['Low_nifty'].to_numpy(dtype=float)
     n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
@@ -48,8 +60,7 @@ else:
     timestamps_formatted = raw_timestamps.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. RUN PURE KALMAN FILTER BASICS (K=0.001 | 0.001x Matrix)
-    # Note: 1-min data has internal daily continuous stream, gap tracking applied at day changes
+    # 2. CONTINUOUS INTRADAY GAP CALCULATOR
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     historical_gaps = np.zeros(num_steps)
@@ -64,6 +75,7 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
+    # 3. FILTRATION ARCHITECTURE (K = 0.001)
     b_nifty_high = np.zeros(num_steps)
     b_nifty_low = np.zeros(num_steps)
     b_nifty_high[0], b_nifty_low[0] = n_high_adj[0], n_low_adj[0]
@@ -79,7 +91,7 @@ else:
     nifty_low_real = (fixed_mid - (fixed_spread * 0.0005)) + historical_gaps
     mid_real_line = (nifty_high_real + nifty_low_real) / 2.0
 
-    # 3. HIGH-SPEED DYNAMIC VWAP CALCULATION
+    # 4. DYNAMIC VWAP CORRIDOR
     vwap = np.zeros(num_steps)
     cum_pv = 0.0
     cum_vol = 0.0
@@ -93,69 +105,15 @@ else:
             cum_vol += n_vol[t]
         vwap[t] = cum_pv / cum_vol if cum_vol > 0 else n_close[t]
 
-    # 4 & 5. INSTITUTIONAL 3:20 PM VOLUME SURGE & DIRECTION MATCHING ENGINE
+    # 5 & 6. TARGETED INSTITUTIONAL 3:20 PM PATTERN MATCHING
     nifty_hints = []
     
-    # Pre-identify daily boundaries for volume indexing
     for t in range(num_steps):
         current_time = raw_timestamps[t]
         hour = current_time.hour
         minute = current_time.minute
         
-        # Extract slices belonging to current day up to 3:00 PM for base baseline
+        # Base Day Volume calculation up to 3 PM
         current_day = parsed_dates[t]
         day_indices = np.where(parsed_dates == current_day)[0]
-        day_indices_before_3pm = [idx for idx in day_indices if raw_timestamps[idx].hour < 15 and idx <= t]
-        
-        if len(day_indices_before_3pm) > 0:
-            avg_base_vol = np.mean(n_vol[day_indices_before_3pm])
-        else:
-            avg_base_vol = 1.0
-
-        # CRITICAL EVALUATION CLOCK: 3:20 PM Execution Window
-        if hour == 15 and minute == 20:
-            # Check last 10 minutes average volume surge
-            recent_vol_avg = np.mean(n_vol[max(0, t-10):t+1])
-            is_institutional_heavy = recent_vol_avg > (avg_base_vol * 2.0) # 2x volume baseline clear breakout
-            
-            # Pure Structural Rule Alignment
-            if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy:
-                hint = "🟢 INSTITUTIONAL GAP-UP BUILD (BTST)"
-            elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy:
-                hint = "🔴 INSTITUTIONAL GAP-DOWN BUILD (STBT)"
-            else:
-                hint = "⏳ WEAK FLOW: SQUARE OFF / NO CARRY"
-        
-        # 3:21 PM se 3:30 PM tak state ko hold rakhte hain clear visibility ke liye
-        elif hour == 15 and minute > 20:
-            hint = nifty_hints[-1] if len(nifty_hints) > 0 else "⏳ ANALYZING FLOW"
-        else:
-            hint = "⏳ INTRADAY TRACKING"
-            
-        nifty_hints.append(hint)
-
-    # 6 & 7. DATAFRAME COMPILATION
-    df_table = pd.DataFrame({
-        '1-Min Close': [f"{x:.2f}" for x in n_close],
-        'Dynamic VWAP': [f"{x:.2f}" for x in vwap],
-        'Kalman Center Line': [f"{x:.2f}" for x in mid_real_line],
-        'Minute Volume': [f"{int(x)}" for x in n_vol],
-        '📈 INSTITUTIONAL HINT': nifty_hints
-    }, index=timestamps_formatted)
-
-    df_reversed = df_table.iloc[::-1]
-
-    def style_institutional_flow(val):
-        if "GAP-UP" in str(val):
-            return "background-color: #1b5e20; color: white; font-weight: bold; border: 2px solid green;"
-        elif "GAP-DOWN" in str(val):
-            return "background-color: #b71c1c; color: white; font-weight: bold; border: 2px solid red;"
-        elif "WEAK" in str(val):
-            return "background-color: #e65100; color: white; font-weight: bold;"
-        return ""
-
-    styled_final_df = df_reversed.style.map(style_institutional_flow, subset=['📈 INSTITUTIONAL HINT'])
-
-    # 8. RENDER LIVE MATRIX VIEW
-    st.dataframe(styled_final_df, use_container_width=True)
-    st.success("HFT Institutional Flow Engine operational at 1-Min scale. 3:20 PM prediction algorithm locked!")
+        day_indices_before_3pm = [idx for idx in day_indices if raw_timestamps[idx].hour
