@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("Nifty Classic High-Low 2x Dashboard")
+st.title("Nifty Classic High-Low 4x Dashboard")
 
-st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 2x Spread Matrix | Pure Gap Engine Restored")
+st.write("Fixed Architecture: Constant Gain Filter Active (K=0.001) | 4x Spread Matrix | Pure Gap Engine Restored")
 
 # 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
 @st.cache_data(ttl=3600)
@@ -75,17 +75,17 @@ else:
     for t in range(1, num_steps):
         b_nifty_low[t] = b_nifty_low[t-1] + K_fixed * (n_low_adj[t] - b_nifty_low[t-1])
 
-    # 5. APPLY 2x SPREAD MULTIPLIER ON DE-TRENDED BANDS
-    # Midpoint aur spread nikal kar exact 2x width maintain ki
+    # 5. APPLY 4x SPREAD MULTIPLIER ON DE-TRENDED BANDS
+    # Midpoint aur spread nikal kar exact 4x width maintain ki (* 2.0 on each side)
     fixed_mid = (b_nifty_high + b_nifty_low) / 2.0
     fixed_spread = b_nifty_high - b_nifty_low
     
-    b_nifty_high_2x = fixed_mid + (fixed_spread * 1.0)
-    b_nifty_low_2x = fixed_mid - (fixed_spread * 1.0)
+    b_nifty_high_4x = fixed_mid + (fixed_spread * 2.0)
+    b_nifty_low_4x = fixed_mid - (fixed_spread * 2.0)
 
     # DYNAMIC STEP REALIGNMENT (With Gaps Re-applied)
-    nifty_high_real = b_nifty_high_2x + historical_gaps
-    nifty_low_real = b_nifty_low_2x + historical_gaps
+    nifty_high_real = b_nifty_high_4x + historical_gaps
+    nifty_low_real = b_nifty_low_4x + historical_gaps
 
     # 6. FIXED SATEEK TREND SIGNALS (Continuous Green/Red Only)
     nifty_signals = []
@@ -100,8 +100,8 @@ else:
     # 7. DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K (2x)': [f"{x:.2f}" for x in nifty_high_real],
-        'Nifty Low K (2x)': [f"{x:.2f}" for x in nifty_low_real],
+        'Nifty High K (4x)': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K (4x)': [f"{x:.2f}" for x in nifty_low_real],
         '📈 NIFTY HINT': nifty_signals
     }, index=timestamps)
 
@@ -118,4 +118,4 @@ else:
 
     # 8. RENDER SECURE VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("2x Multiplier Dashboard Live! Perfect balance achieved.")
+    st.success("4x Multiplier Setup Deployed Successfully! Wide structural channels live.")
