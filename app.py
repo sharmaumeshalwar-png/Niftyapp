@@ -2,69 +2,57 @@ import numpy as np
 import yfinance as yf
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🦅 Nifty & India VIX 1-Hour Macro Dashboard")
+st.title("Nifty & India VIX Classic Gap-Engine Dashboard")
 
-st.write("Fixed Architecture: 1-Hour Continuous Interval | 730-Day Historical Data | Q=0.50 | Pure Signals...")
+st.write("Fixed Architecture: Standard Gap Engine Restored | No Multiplier | Q=0.50 | Pure Red/Green Locked...")
 
-# 1. OPTIMIZED FUNCTION FOR 1-HOUR DATA FETCHING
-@st.cache_data(ttl=3600) # 1-hour data ke liye cache 1 ghante tak valid rahega
-def load_one_hour_data():
-    end_dt = datetime.now()
-    start_dt = end_dt - timedelta(days=730)  # Pichle 2 saal ka deep historical data
-    
-    start_str = start_dt.strftime('%Y-%m-%d')
-    end_str = end_dt.strftime('%Y-%m-%d')
-    
-    # Fetching 1-Hour Data
-    nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='1h', progress=False)
-    vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='1h', progress=False)
+# 1. FUNCTION TO DOWNLOAD AND EXTRACT EXPLICIT MULTIINDEX SERIES
+@st.cache_data(ttl=3600)
+def load_frozen_data():
+    nifty_raw = yf.download('^NSEI', start='2024-07-01', end='2027-01-01', interval='1h')
+    vix_raw = yf.download('^INDIAVIX', start='2024-07-01', end='2027-01-01', interval='1h')
     
     if nifty_raw.empty or vix_raw.empty:
         return None
 
-    # Flattening MultiIndex Columns safely
-    nifty_raw.columns = [f"{col[0]}_nifty" if isinstance(col, tuple) else f"{col}_nifty" for col in nifty_raw.columns]
-    vix_raw.columns = [f"{col[0]}_vix" if isinstance(col, tuple) else f"{col}_vix" for col in vix_raw.columns]
-
-    # Mapping from flattened structure
+    # Safe MultiIndex Extraction using Cross-Section (.xs)
     nifty_df = pd.DataFrame(index=nifty_raw.index)
-    nifty_df['High_nifty'] = nifty_raw['High_nifty']
-    nifty_df['Low_nifty'] = nifty_raw['Low_nifty']
-    nifty_df['Open_nifty'] = nifty_raw['Open_nifty']
-    nifty_df['Close_nifty'] = nifty_raw['Close_nifty']
+    nifty_df['High_nifty'] = nifty_raw.xs('High', axis=1, level=0).iloc[:, 0]
+    nifty_df['Low_nifty'] = nifty_raw.xs('Low', axis=1, level=0).iloc[:, 0]
+    nifty_df['Open_nifty'] = nifty_raw.xs('Open', axis=1, level=0).iloc[:, 0]
+    nifty_df['Close_nifty'] = nifty_raw.xs('Close', axis=1, level=0).iloc[:, 0]
 
     vix_df = pd.DataFrame(index=vix_raw.index)
-    vix_df['High_vix'] = vix_raw['High_vix']
-    vix_df['Low_vix'] = vix_raw['Low_vix']
-    vix_df['Close_vix'] = vix_raw['Close_vix']
+    vix_df['High_vix'] = vix_raw.xs('High', axis=1, level=0).iloc[:, 0]
+    vix_df['Low_vix'] = vix_raw.xs('Low', axis=1, level=0).iloc[:, 0]
+    vix_df['Close_vix'] = vix_raw.xs('Close', axis=1, level=0).iloc[:, 0]
 
-    # Clean timezone alignment
+    # Timezone clean-up
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H:%M')
-    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H:%M')
+    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H')
+    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H')
     
     nifty_df = nifty_df.reset_index()
     vix_df = vix_df.reset_index()
     
-    # Synchronized Join
+    # Synchronized Merge
     combined = pd.merge(nifty_df, vix_df, on='time_key', how='inner')
     combined.index = pd.to_datetime(combined['Datetime_x'])
     combined = combined[~combined.index.duplicated(keep='first')]
     
     return combined.dropna()
 
-# Execute clean data engine
-combined_data = load_one_hour_data()
+# Execute data engine
+combined_data = load_frozen_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Error loading 1-Hour historical data stream. Please check connection.")
+    st.error("Data extraction error.")
 else:
-    # Array Extractions
+    # Pure Linear Arrays
     n_high = combined_data['High_nifty'].to_numpy(dtype=float)
     n_low = combined_data['Low_nifty'].to_numpy(dtype=float)
     n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
@@ -78,7 +66,7 @@ else:
     timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. GAP DE-TRENDING ENGINE FOR 1-HOUR CANDLES
+    # 2. CLASSIC PURE GAP DE-TRENDING ENGINE (No Multiplier Boost)
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
     cumulative_gap = 0.0
@@ -86,7 +74,8 @@ else:
     for t in range(1, num_steps):
         if parsed_dates[t] != parsed_dates[t-1]:
             gap = n_open[t] - n_close[t-1]
-            if abs(gap) > 5.0:  # Adjusted gap threshold for hourly charts
+            if abs(gap) > 5.0:  
+                # Pure classic accumulation
                 cumulative_gap += gap
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
@@ -111,6 +100,7 @@ else:
         P_nl = (1 - K) * (P_nl + Q_nl)
         b_nifty_low[t] = x_n_low
 
+    # Re-applying pure cumulative gap to align bands
     nifty_high_real = b_nifty_high + cumulative_gap
     nifty_low_real = b_nifty_low + cumulative_gap
 
@@ -133,7 +123,7 @@ else:
         P_vl = (1 - K) * (P_vl + Q_vl)
         vifty_low[t] = x_v_low
 
-    # 6. NON-REPAINT TREND SIGNALS FOR HOURLY BANDS
+    # 6. CLASSIC CONTINUOUS TREND SIGNALS (Only Red and Green Blocks)
     nifty_signals = []
     current_signal = "⏳ INITIALIZING"
     for t in range(num_steps):
@@ -143,7 +133,7 @@ else:
             current_signal = "🔴 SELL"
         nifty_signals.append(current_signal)
 
-    # 7. INDIA VIX SIGNALS
+    # 7. INDIA VIX SIGNALS (Transparent Text)
     vix_signals = []
     for t in range(num_steps):
         if v_close[t] > vifty_high[t]:
@@ -156,4 +146,26 @@ else:
     # DATAFRAME COMPILATION
     df_table = pd.DataFrame({
         'Nifty Close': [f"{x:.2f}" for x in n_close],
-        'Nifty High K':
+        'Nifty High K': [f"{x:.2f}" for x in nifty_high_real],
+        'Nifty Low K': [f"{x:.2f}" for x in nifty_low_real],
+        '📈 NIFTY HINT': nifty_signals,
+        'VIX Close': [f"{x:.2f}" for x in v_close],
+        'VIX High K': [f"{x:.2f}" for x in vifty_high],
+        'VIX Low K': [f"{x:.2f}" for x in vifty_low],
+        '🔥 VOLATILITY HINT': vix_signals
+    }, index=timestamps)
+
+    df_reversed = df_table.iloc[::-1]
+
+    def style_nifty_strict(val):
+        if "BUY" in str(val):
+            return "background-color: #2e7d32; color: white; font-weight: bold;"
+        elif "SELL" in str(val):
+            return "background-color: #c62828; color: white; font-weight: bold;"
+        return ""
+
+    styled_final_df = df_reversed.style.map(style_nifty_strict, subset=['📈 NIFTY HINT'])
+
+    # 8. RENDER IMMUTABLE VIEW
+    st.dataframe(styled_final_df, use_container_width=True)
+    st.success("Classic Gap-Engine restored successfully! High-precision hints are active.")
