@@ -5,22 +5,22 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🦅 Nifty & India VIX Daily Close-Only Dashboard (Q = 0.001)")
+st.title("🦅 Nifty & India VIX 1-Hour Close-Only Dashboard (Q = 0.001)")
 
-st.write("Fixed Architecture: Daily Continuous Interval | Close Price Kalman Filter Only | Ultra-Smooth Q=0.001 | Pure Signals...")
+st.write("Fixed Architecture: 1-Hour Continuous Interval | Close Price Kalman Filter Only | Ultra-Smooth Q=0.001 | Pure Gaps Preserved...")
 
-# 1. OPTIMIZED FUNCTION FOR DAILY DATA FETCHING (Close Prices Only)
+# 1. OPTIMIZED FUNCTION FOR 1-HOUR DATA FETCHING (Close Prices Only)
 @st.cache_data(ttl=3600) 
-def load_daily_close_data():
+def load_hourly_close_data():
     end_dt = datetime.now()
-    start_dt = end_dt - timedelta(days=730)  # Pichle 2 saal ka historical data
+    start_dt = end_dt - timedelta(days=730)  # Pichle 2 saal ka deep historical data
     
     start_str = start_dt.strftime('%Y-%m-%d')
     end_str = end_dt.strftime('%Y-%m-%d')
     
-    # Fetching Daily Data
-    nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='1d', progress=False)
-    vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='1d', progress=False)
+    # Fetching 1-Hour Data
+    nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='1h', progress=False)
+    vix_raw = yf.download('^INDIAVIX', start=start_str, end=end_str, interval='1h', progress=False)
     
     if nifty_raw.empty or vix_raw.empty:
         return None
@@ -29,7 +29,7 @@ def load_daily_close_data():
     nifty_raw.columns = [f"{col[0]}_nifty" if isinstance(col, tuple) else f"{col}_nifty" for col in nifty_raw.columns]
     vix_raw.columns = [f"{col[0]}_vix" if isinstance(col, tuple) else f"{col}_vix" for col in vix_raw.columns]
 
-    # Mapping from flattened structure
+    # Mapping from flattened structure (High and Low fully removed)
     nifty_df = pd.DataFrame(index=nifty_raw.index)
     nifty_df['Open_nifty'] = nifty_raw['Open_nifty']
     nifty_df['Close_nifty'] = nifty_raw['Close_nifty']
@@ -41,24 +41,25 @@ def load_daily_close_data():
     nifty_df.index = pd.to_datetime(nifty_df.index).tz_localize(None)
     vix_df.index = pd.to_datetime(vix_df.index).tz_localize(None)
     
-    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d')
-    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d')
+    # Hourly formatting format strings
+    nifty_df['time_key'] = nifty_df.index.strftime('%Y-%m-%d %H:%M')
+    vix_df['time_key'] = vix_df.index.strftime('%Y-%m-%d %H:%M')
     
     nifty_df = nifty_df.reset_index()
     vix_df = vix_df.reset_index()
     
     # Synchronized Join
     combined = pd.merge(nifty_df, vix_df, on='time_key', how='inner')
-    combined.index = pd.to_datetime(combined['Date_x'] if 'Date_x' in combined.columns else combined['Datetime_x'])
+    combined.index = pd.to_datetime(combined['Datetime_x'])
     combined = combined[~combined.index.duplicated(keep='first')]
     
     return combined.dropna()
 
 # Execute clean data engine
-combined_data = load_daily_close_data()
+combined_data = load_hourly_close_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Error loading Daily historical data stream. Please check connection.")
+    st.error("Error loading 1-Hour historical data stream. Please check connection.")
 else:
     # Array Extractions
     n_open = combined_data['Open_nifty'].to_numpy(dtype=float)
@@ -66,36 +67,38 @@ else:
     v_close = combined_data['Close_vix'].to_numpy(dtype=float)
     
     num_steps = len(combined_data)
-    timestamps = combined_data.index.strftime('%Y-%m-%d')
+    timestamps = combined_data.index.strftime('%Y-%m-%d %H:%M')
     parsed_dates = combined_data.index.date
 
-    # 2. GAP DE-TRENDING ENGINE FOR DAILY CLOSE ONLY
+    # 2. OVERNIGHT GAP ENGINE FOR 1-HOUR CANDLES (Retained intact)
     n_close_adj = np.copy(n_close)
     cumulative_gap = 0.0
 
     for t in range(1, num_steps):
+        # Jab date change hogi (overnight transition), tabhi gap apply hoga
         if parsed_dates[t] != parsed_dates[t-1]:
             gap = n_open[t] - n_close[t-1]
             if abs(gap) > 5.0:  
                 cumulative_gap += gap
         n_close_adj[t] = n_close[t] - cumulative_gap
 
-    # 3. NIFTY CLOSE KALMAN FILTER (Tuned to Ultra-Smooth Q = 0.001)
+    # 3. NIFTY CLOSE KALMAN FILTER (Locked on Q = 0.001)
     b_nifty_close = np.zeros(num_steps)
     x_n_close = n_close_adj[0]
-    P_nc, Q_nc, R_nc = 1.0, 0.001, 1.0  # Q changed to 0.001 here
+    P_nc, Q_nc, R_nc = 1.0, 0.001, 1.0
     for t in range(num_steps):
         K = (P_nc + Q_nc) / (P_nc + Q_nc + R_nc)
         x_n_close = x_n_close + K * (n_close_adj[t] - x_n_close)
         P_nc = (1 - K) * (P_nc + Q_nc)
         b_nifty_close[t] = x_n_close
 
+    # Gap dynamically added back to keep overnight values perfect
     nifty_close_real = b_nifty_close + cumulative_gap
 
-    # 4. INDIA VIX CLOSE KALMAN FILTER (Tuned to Ultra-Smooth Q = 0.001)
+    # 4. INDIA VIX CLOSE KALMAN FILTER (Locked on Q = 0.001)
     vifty_close = np.zeros(num_steps)
     x_v_close = v_close[0]
-    P_vc, Q_vc, R_vc = 1.0, 0.001, 1.0  # Q changed to 0.001 here
+    P_vc, Q_vc, R_vc = 1.0, 0.001, 1.0
     for t in range(num_steps):
         K = (P_vc + Q_vc) / (P_vc + Q_vc + R_vc)
         x_v_close = x_v_close + K * (v_close[t] - x_v_close)
@@ -145,4 +148,4 @@ else:
 
     # 8. RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
-    st.success("System updated! Kalman filters are now locked onto ultra-smooth tracking state (Q = 0.001).")
+    st.success("1-Hour Close Macro Dashboard is fully live with ultra-smooth Q=0.001 and secure gaps!")
