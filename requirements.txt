@@ -1,7 +1,5 @@
-numpy
-pandas
-scipy
-scikit-learn
 yfinance
-pandas-ta
-filterpy
+pandas
+scikit-learn
+numpy
+git+https://github.com/twopirllc/pandas-ta.git@main
