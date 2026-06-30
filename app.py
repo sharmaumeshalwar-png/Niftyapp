@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
 st.title("🛡️ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.1")
+st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.2")
 
 # 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH EMPTY FALLBACK
 @st.cache_data(ttl=60)  
@@ -121,3 +121,6 @@ else:
         losses = np.zeros(num_steps, dtype=float)
         
         for t in range(1, num_steps):
+            diff = n_close[t] - n_close[t-1]
+            gains[t] = diff if diff > 0 else 0.0
+            losses[t] = -diff if diff
