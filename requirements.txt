@@ -1,4 +1,6 @@
-numpy
-pandas
 yfinance
-streamlit
+pandas-ta
+filterpy
+scikit-learn
+pandas
+numpy
