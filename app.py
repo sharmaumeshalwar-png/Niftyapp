@@ -2,35 +2,32 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, time
+from datetime import datetime, timedelta, time
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Hourly Nifty BeES Tracker", layout="wide")
-st.title("🎯 Nifty BeES Hourly Institutional Tracker")
-st.subheader("Every-Candle 1-Hour Matrix From 1st Jan 2025 to June 2026")
+st.set_page_config(page_title="Kalman Institutional Tracker", layout="wide")
+st.title("🎯 Kalman Filter & VWAP Institutional Engine")
+st.subheader("1-Hour Candle Matrix Frame (From 1st Jan 2025 Onwards)")
 
 st.write("---")
 st.write("### 8-Step Verification Progress:")
 
-# STEP 1: Institutional Hourly Window Filter
+# STEP 1: Institutional Window Definition (Hourly Blocks)
 def check_hourly_window(timestamp):
     h = timestamp.hour
-    # Stock market hourly candles are split as: 9:15-10:15, 10:15-11:15, etc.
-    # We focus on opening hours and afternoon European absorption blocks
     if h in [9, 10]:
         return "Morning_Momentum"
     elif h in [13, 14]:
         return "European_Absorption"
     return "No_Zone"
 
-st.success("Step 1: Hourly Institutional Time Windows Locked.")
+st.success("Step 1: Institutional Time Zones Locked.")
 
 # STEP 2: Fetch Long-Term Data (1st Jan 2025 onwards)
 @st.cache_data
 def fetch_hourly_bees_data():
     ticker = "NIFTYBEES.NS"
     start_date = "2025-01-01"
-    # Fetching 1-Hour Interval Data
     data = yf.download(ticker, start=start_date, interval="1h", progress=False)
     return data
 
@@ -41,67 +38,86 @@ try:
         if isinstance(raw_data.columns, pd.MultiIndex):
             raw_data.columns = raw_data.columns.get_level_values(0)
         df = raw_data.copy()
-        st.success(f"Step 2: Hourly data parsed successfully from 1st January 2025 ({len(df)} rows loaded).")
+        st.success(f"Step 2: Hourly data parsed successfully from 1st January 2025.")
     else:
         raise ValueError("Dataframe completely empty.")
 except Exception as e:
     st.error(f"Step 2 Fetch Error: {e}")
     st.stop()
 
-# STEP 3: Pure Intraday VWAP Calculation (Day-wise Reset Engine)
+# STEP 3: Variable Assignments (A = Close, B = VWAP)
 df['Date'] = df.index.date
 df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
 df['TP_Vol'] = df['Typical_Price'] * df['Volume']
 df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
 df['Cum_Vol'] = df.groupby('Date')['Volume'].cumsum()
-df['VWAP'] = df['Cum_TP_Vol'] / df['Cum_Vol']
-st.success("Step 3: Cumulative Hourly VWAP Layers Plotted.")
 
-# STEP 4: Hourly Volume Benchmark (1.8x Multiplier over 20-period Average)
+df['A'] = df['Close']                      # Variable A = Close
+df['B'] = df['Cum_TP_Vol'] / df['Cum_Vol'] # Variable B = VWAP
+st.success("Step 3: Variables A (Close) and B (VWAP) Assigned.")
+
+# STEP 4: Variable C Formulation (A > B + Standard Volatility Constraints)
 df['Vol_MA'] = df['Volume'].rolling(window=20, min_periods=1).mean()
-df['Is_Heavy_Volume'] = df['Volume'] > (df['Vol_MA'] * 1.8)
-st.success("Step 4: 1.8x Hourly Volume Breakthrough Filters Active.")
-
-# STEP 5: Price Range Spread Filter (1.3x over 20-period Average)
-df['Candle_Spread'] = df['High'] - df['Low']
-df['Spread_MA'] = df['Candle_Spread'].rolling(window=20, min_periods=1).mean()
-df['Is_Big_Spread'] = df['Candle_Spread'] > (df['Spread_MA'] * 1.3)
-st.success("Step 5: Price Action Volatility Filters Configured.")
-
-# STEP 6 & 7: Filtration and Condition Matrix Alignment
+df['Is_Heavy_Volume'] = df['Volume'] > (df['Vol_MA'] * 1.5)
 df['Zone'] = [check_hourly_window(idx) for idx in df.index]
 df['Valid_Zone'] = df['Zone'] != "No_Zone"
-df['Is_Bullish'] = df['Close'] > df['Open']
 
-# Core Rules: Price > VWAP + Bullish Hourly Candle + Volume Spike + Correct Time Window
-df['Signal'] = df['Is_Heavy_Volume'] & df['Is_Big_Spread'] & df['Valid_Zone'] & (df['Close'] > df['VWAP']) & df['Is_Bullish']
-st.success("Step 6 & 7: Noise Filter Applied. Final Matrix Compiled.")
+# C is the boolean matrix where Close > VWAP inside Institutional Windows
+df['C'] = (df['A'] > df['B']) & df['Valid_Zone'] & df['Is_Heavy_Volume']
+st.success("Step 4: Variable C Core State Vector Formulated.")
 
-# STEP 8: Final Count & Interactive Render
+# STEP 5: Kalman Filter Layer Implementation (D = Kalman of 0.0001 of C)
+# Mathematical Equation for Kalman Filter Tracking:
+# $$x_{k|k} = x_{k|k-1} + K_k (z_k - x_{k|k-1})$$
+def apply_kalman_filter(series, noise_q=0.0001):
+    kalman_values = []
+    # Initial state
+    x_hat = 0.0  # Estimated true state of C
+    p = 1.0      # Estimation error covariance
+    r = 0.1      # Measurement noise covariance
+    
+    for val in series:
+        # Prediction update
+        p = p + noise_q
+        # Measurement update (Gain calculation)
+        k_gain = p / (p + r)
+        x_hat = x_hat + k_gain * (float(val) - x_hat)
+        p = (1 - k_gain) * p
+        kalman_values.append(x_hat)
+    return kalman_values
+
+df['D'] = apply_kalman_filter(df['C'], noise_q=0.0001)
+st.success("Step 5: Kalman Filter Math Model D Generated with Process Noise Q = 0.0001.")
+
+# STEP 6 & 7: Signal E Formulation (E Trigger Logic)
+# Signal E triggers when Kalman filter confidence spikes up significantly
+df['E_Signal'] = (df['D'] > 0.3) & (df['A'] > df['B'])
+st.success("Step 6 & 7: Matrix Target E Signal Compiled.")
+
+# STEP 8: Render Every Candle Wise Display
 st.write("---")
-st.header("📋 8-STEP HOURLY CANDLE-WISE MATRIX REPORT")
+st.header("📋 8-STEP KALMAL-VWAP EQUATION REPORT")
 
 display_df = pd.DataFrame(index=df.index)
 display_df['Date/Time'] = df.index.strftime('%Y-%m-%d %H:%M')
-display_df['Institutional Block'] = df['Zone']
-display_df['Close Price'] = df['Close'].round(2)
-display_df['VWAP Level'] = df['VWAP'].round(2)
-display_df['Hourly Volume'] = df['Volume'].astype(int)
-display_df['Avg Vol'] = df['Vol_MA'].astype(int)
-display_df['Status'] = ["🎯 BUY ALERT" if s else "❌ No Action" for s in df['Signal']]
+display_df['A (Close)'] = df['A'].round(2)
+display_df['B (VWAP)'] = df['B'].round(2)
+display_df['C (State)'] = df['C'].astype(int)
+display_df['D (Kalman Vector)'] = df['D'].round(5)
+display_df['E Signal Status'] = ["🎯 BUY ALERT" if s else "❌ No Action" for s in df['E_Signal']]
 
-total_signals = int(df['Signal'].sum())
-st.metric(label="Total Long-Term Institutional Breaks Verified", value=total_signals)
+total_signals = int(df['E_Signal'].sum())
+st.metric(label="Total Institutional Breaks Verified via Kalman State", value=total_signals)
 
-st.write("### Every 1-Hour Candle Breakdown Table (Scroll to scan):")
+st.write("### Every 1-Hour Candle Breakdown Table:")
 st.dataframe(display_df, use_container_width=True)
 
 st.write("---")
-st.subheader("⚡ Filtered Institutional Entry Summary (1-Hour Breakouts):")
-signals_only = display_df[display_df['Status'] == "🎯 BUY ALERT"]
+st.subheader("⚡ Signal E Execution Table:")
+signals_only = display_df[display_df['E Signal Status'] == "🎯 BUY ALERT"]
 
 if not signals_only.empty:
     st.dataframe(signals_only, use_container_width=True)
-    st.success("Step 8: Final Verification Complete. Long-term hourly matrix mapped successfully!")
+    st.success("Step 8: Final Count Verified. Kalman state logic mapped successfully!")
 else:
-    st.warning("1 Jan 2025 se lekar ab tak in strict parameters par koi clear alert match nahi hua. Aap parameters ko thoda relax kar sakte hain agar signals badhane hon.")
+    st.warning("1 Jan 2025 se lekar ab tak Kalman parameters par koi active trace pass nahi hua. Noise constraint change karein.")
