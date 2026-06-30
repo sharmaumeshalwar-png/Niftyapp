@@ -2,29 +2,24 @@ import numpy as np
 import yfinance as yf
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 
 st.set_page_config(layout="wide")
 st.title("🛡️ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.3 (Data Locked)")
+st.write("Strict Range: June 1, 2026 to June 30, 2026 | Data Locked & Cached | Production Stable")
 
-# 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH IMMUTABLE CACHE (FREEZE MODE)
-@st.cache_data(ttl=86400)  # Locked Data Vector for 24 Hours to freeze arrays completely
-def load_5min_engine_data():
-    end_date = datetime(2026, 7, 1)
-    start_date = end_date - timedelta(days=50)
+# 1. FIXED DATE ROLLING 5-MIN DATA LOADER (June 1 Base Lock)
+@st.cache_data(ttl=86400)  # Data completely frozen for 24 hours
+def load_strict_june_data():
+    # Setting fixed window from June 1, 2026 to July 1, 2026 to capture all June 30 intraday bars safely
+    start_str = "2026-06-01"
+    end_str = "2026-07-01"
     
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-    
-    st.info(f"Streaming high-density 5-minute vectors from {start_str} to {end_str}...")
+    st.info(f"Streaming high-density 5-minute vectors strictly from {start_str} to {end_str}...")
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     
-    if nifty_raw.empty or len(nifty_raw) < 25:
-        start_date_fb = end_date - timedelta(days=55)
-        nifty_raw = yf.download('^NSEI', start=start_date_fb.strftime('%Y-%m-%d'), end=end_str, interval='5m')
-        
-    if nifty_raw.empty:
+    if nifty_raw.empty or len(nifty_raw) < 5:
+        st.error("Severe Error: yfinance returned empty data slice for the specified June window.")
         return None
 
     # Cross-Section Structural Extraction
@@ -43,13 +38,13 @@ def load_5min_engine_data():
     df.index = pd.to_datetime(df.index).tz_localize(None)
     return df.dropna()
 
-# Execute high-frequency pipeline
-combined_data = load_5min_engine_data()
+# Execute locked pipeline
+combined_data = load_strict_june_data()
 
 if combined_data is None or len(combined_data) < 20:
-    st.error("🚨 Severe Error: API Server returned insufficient bars. Standby for market data stream to initialize.")
+    st.error("🚨 Severe Error: API Server returned insufficient bars for June. Check connection or tickers.")
 else:
-    st.success(f"Successfully loaded {len(combined_data)} high-frequency 5-min intervals.")
+    st.success(f"Successfully loaded {len(combined_data)} frozen high-frequency 5-min intervals from June 1 onwards.")
     
     # Pure Linear Arrays
     n_high = combined_data['High'].to_numpy(dtype=float)
@@ -179,9 +174,10 @@ else:
         '🎯 FREQUENCY ACTION': nifty_signals
     })
 
-    df_reversed = df_raw_table.iloc[::-1].reset_index(drop=True).head(50)
+    # Displaying the latest 100 rows from the structured June dataset
+    df_reversed = df_raw_table.iloc[::-1].reset_index(drop=True).head(100)
     
-    # Precision Formatting Safely with structural type enforcement
+    # Precision Formatting safely guarded against casting crash
     df_reversed['Price Close'] = df_reversed['Price Close'].astype(float).map(lambda x: f"{x:.2f}")
     df_reversed['Dynamic VWAP'] = df_reversed['Dynamic VWAP'].astype(float).map(lambda x: f"{x:.2f}")
     df_reversed['Kalman Center'] = df_reversed['Kalman Center'].astype(float).map(lambda x: f"{x:.2f}")
@@ -200,5 +196,5 @@ else:
     styled_final_df = output_df.style.map(style_scalp_flow, subset=['🎯 FREQUENCY ACTION'])
 
     # 8. RENDER LIVE VIEW
-    st.subheader("🎯 Real-Time 5-Minute Execution Stream (Latest Candles)")
+    st.subheader("🎯 Strict June 5-Minute Execution Stream")
     st.dataframe(styled_final_df, use_container_width=True)
