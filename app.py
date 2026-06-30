@@ -11,7 +11,6 @@ st.write("Strict Active Window: June 1, 2026 onwards | Data Locked & Cached | Cr
 # 1. FIXED SAFE WINDOW LOADER (June 1 Safe Execution Protection)
 @st.cache_data(ttl=86400)  # Data completely frozen for 24 hours to prevent runtime lag
 def load_strict_june_data():
-    # Today is June 30, 2026. 50 days buffer perfectly keeps data within yfinance 60-day rule for 5m interval
     end_date = datetime(2026, 7, 1)
     start_date = end_date - timedelta(days=50)
     
@@ -22,7 +21,6 @@ def load_strict_june_data():
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     
     if nifty_raw.empty or len(nifty_raw) < 5:
-        # Emergency secondary fallback logic
         start_date_fb = end_date - timedelta(days=45)
         nifty_raw = yf.download('^NSEI', start=start_date_fb.strftime('%Y-%m-%d'), end=end_str, interval='5m')
         
@@ -187,7 +185,24 @@ else:
     # Continuous chronological matrix display limit set to top 100 rows
     df_reversed = df_raw_table.iloc[::-1].reset_index(drop=True).head(100)
     
-    # Safe Precision Mapping (Prevents string/float structure mismatch layout crashes)
+    # FIX: Corrected structural mapping assignments to prevent key alignment errors
     df_reversed['Price Close'] = df_reversed['Price Close'].astype(float).map(lambda x: f"{x:.2f}")
     df_reversed['Dynamic VWAP'] = df_reversed['Dynamic VWAP'].astype(float).map(lambda x: f"{x:.2f}")
-    df_reversed['Kalman Center'] = df_reversed
+    df_reversed['Kalman Center'] = df_reversed['Kalman Center'].astype(float).map(lambda x: f"{x:.2f}")
+    df_reversed['RSI (14)'] = df_reversed['RSI (14)'].astype(float).map(lambda x: f"{x:.1f}")
+    df_reversed['Futures Volume'] = df_reversed['Futures Volume'].astype(float).map(lambda x: f"{x:.0f}")
+
+    output_df = df_reversed[['Timestamp', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'RSI (14)', 'Futures Volume', '🎯 FREQUENCY ACTION']]
+
+    def style_scalp_flow(val):
+        if "LONG" in str(val) or "BTST" in str(val):
+            return "background-color: #0d47a1; color: white; font-weight: bold;"
+        elif "SHORT" in str(val) or "STBT" in str(val):
+            return "background-color: #b71c1c; color: white; font-weight: bold;"
+        return "color: #757575;"
+
+    styled_final_df = output_df.style.map(style_scalp_flow, subset=['🎯 FREQUENCY ACTION'])
+
+    # 8. RENDER LIVE VIEW
+    st.subheader("🎯 Strict June 5-Minute Execution Stream (Latest 100 Candles)")
+    st.dataframe(styled_final_df, use_container_width=True)
