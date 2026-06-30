@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
 st.title("⚡ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Volatility Bands & Momentum Filters Included")
+st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Live-Session Injection Mode")
 
-# 1. DYNAMIC ROLLING 5-MIN DATA LOADER (Prevents yfinance 60-day limit crash)
-@st.cache_data(ttl=300)
+# 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH EMPTY FALLBACK
+@st.cache_data(ttl=60)  # Reduced to 60 seconds for active live session updating
 def load_5min_engine_data():
-    # Today is June 30, 2026. Rolling back ~50 days safely within the 60-day limit for 5m interval.
+    # Today is June 30, 2026. Setting dynamic bounds safely inside 60 days
     end_date = datetime(2026, 7, 1)
     start_date = end_date - timedelta(days=50)
     
@@ -21,7 +21,12 @@ def load_5min_engine_data():
     st.info(f"Streaming high-density 5-minute vectors from {start_str} to {end_str}...")
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     
-    if nifty_raw.empty or len(nifty_raw) == 0:
+    if nifty_raw.empty or len(nifty_raw) < 5:
+        # Fallback to safely fetch past context if current session is under-buffered
+        start_date_fb = end_date - timedelta(days=55)
+        nifty_raw = yf.download('^NSEI', start=start_date_fb.strftime('%Y-%m-%d'), end=end_str, interval='5m')
+        
+    if nifty_raw.empty:
         return None
 
     # Cross-Section Structural Extraction
@@ -43,8 +48,8 @@ def load_5min_engine_data():
 # Execute high-frequency pipeline
 combined_data = load_5min_engine_data()
 
-if combined_data is None or len(combined_data) == 0:
-    st.error("Severe Error: 5-Minute Data pipeline returned empty array. Check network or date constraints.")
+if combined_data is None or len(combined_data) < 20:
+    st.error("🚨 Severe Error: API Server returned insufficient bars. Standby for market data stream to initialize.")
 else:
     st.success(f"Successfully loaded {len(combined_data)} high-frequency 5-min intervals.")
     
@@ -68,17 +73,17 @@ else:
     for t in range(1, num_steps):
         if parsed_dates[t] != parsed_dates[t-1]:
             gap = n_open[t] - n_close[t-1]
-            if abs(gap) > 3.0: # Tightened threshold for 5m chart openings
+            if abs(gap) > 3.0: 
                 cumulative_gap += gap
         historical_gaps[t] = cumulative_gap
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. HIGH-FREQUENCY KALMAN FILTRATION ENGINE (K tuned to 0.005 for 5-min responsiveness)
+    # 3. HIGH-FREQUENCY KALMAN FILTRATION ENGINE 
     b_high = np.zeros(num_steps)
     b_low = np.zeros(num_steps)
     b_high[0], b_low[0] = n_high_adj[0], n_low_adj[0]
-    K_factor = 0.005 # Faster tracking for micro-trends
+    K_factor = 0.005 
 
     for t in range(1, num_steps):
         b_high[t] = b_high[t-1] + K_factor * (n_high_adj[t] - b_high[t-1])
@@ -94,8 +99,8 @@ else:
         tr = max(n_high[t] - n_low[t], abs(n_high[t] - n_close[t-1]), abs(n_low[t] - n_close[t-1]))
         atr[t] = (atr[t-1] * 19 + tr) / 20  
     
-    # Scalping corridor bands
     kalman_upper = mid_real_line + (0.75 * atr)
     kalman_lower = mid_real_line - (0.75 * atr)
 
-    # 4. INTRAD
+    # 4. INTRADAY SESSION CUMULATIVE VWAP 
+    vwap =
