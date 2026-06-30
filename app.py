@@ -1,161 +1,98 @@
-import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestRegressor
+import pandas_ta as ta
+from filterpy.kalman import KalmanFilter
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import accuracy_score
 
-# Streamlit Page Configuration
-st.set_page_config(page_title="Nifty 2026 Optimized Engine", layout="wide")
-st.title("🏹 Nifty 50: Strict 2026 IST ML Engine (Instant Load)")
-st.write("A = Nifty Actual Close | B = Kalman Filter | C = Features | D = ML Predict | **A - D = Residual**")
-st.write("**Engine Clock:** Indian Standard Time (IST) | **Optimization:** High-Speed Single Fit Layer")
-
-# -------------------------------------------------------------------------
-# Mathematical Functions (Kalman, RSI, MACD)
-# -------------------------------------------------------------------------
-def apply_kalman_filter(prices, Q=0.0001, R=0.5):
-    n_timestamps = len(prices)
-    filtered_prices = np.zeros(n_timestamps)
-    if n_timestamps == 0: return filtered_prices
-    x_hat = prices[0]  
-    P = 1.0            
-    for t in range(n_timestamps):
-        x_hat_minus = x_hat
-        P_minus = P + Q
-        K = P_minus / (P_minus + R)  
-        x_hat = x_hat_minus + K * (prices[t] - x_hat_minus)
-        P = (1 - K) * P_minus
-        filtered_prices[t] = x_hat
+# =====================================================================
+# STEP 1 & 2: DATA FETCHING & KALMAN FILTER FUNCTION
+# =====================================================================
+def apply_kalman_filter(price_array):
+    kf = KalmanFilter(dim_x=2, dim_z=1)
+    kf.x = np.array([[price_array[0]], [0.]]) # Initial state (price, velocity)
+    kf.F = np.array([[1., 1.], [0., 1.]])    # State transition matrix
+    kf.H = np.array([[1., 0.]])               # Measurement matrix
+    kf.P *= 1000.                             # Covariance matrix
+    kf.R = 0.5                                # Measurement noise
+    kf.Q = np.array([[0.01, 0.], [0., 0.01]]) # Process noise
+    
+    filtered_prices = []
+    for z in price_array:
+        kf.predict()
+        kf.update(z)
+        filtered_prices.append(kf.x[0, 0])
     return filtered_prices
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
-    rs = gain / (loss + 1e-10)
-    return 100 - (100 / (1 + rs))
+# Fetching 1-Hour Candle Data for Nifty BeES
+print("Fetching 1-Hour data for NIFTYBEES.NS...")
+df = yf.download("NIFTYBEES.NS", start="2025-01-01", end="2026-06-30", interval="1h")
 
-def calculate_macd(series, slow=26, fast=12, signal=9):
-    exp1 = series.ewm(span=fast, adjust=False).mean()
-    exp2 = series.ewm(span=slow, adjust=False).mean()
-    macd_line = exp1 - exp2
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    return macd_line, signal_line
+# Fix MultiIndex columns if present
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
 
-# -------------------------------------------------------------------------
-# Dynamic Deep Data Stream Engine with Timezone Conversion
-# -------------------------------------------------------------------------
-@st.cache_data(ttl=60)
-def fetch_nifty_optimized_2026():
-    ticker = "^NSEI"
-    try:
-        session = yf.utils.get_ticker_anonymous_session()
-        data = yf.download(
-            ticker, 
-            start="2025-01-01", 
-            interval="1h", 
-            auto_adjust=True,
-            session=session
-        )
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        
-        if not data.empty and len(data) > 100:
-            data.index = data.index.tz_convert('Asia/Kolkata')
-            return pd.DataFrame({"Close_A": data['Close'].dropna()})
-    except Exception:
-        pass
-        
-    # Standard fallback dataset ONLY if internet is completely disconnected
-    dates = pd.date_range(start="2025-01-01", end="2026-06-30", freq="h", tz='Asia/Kolkata')
-    np.random.seed(42)
-    mock_prices = 24100 + np.cumsum(np.random.normal(0.3, 14, len(dates)))
-    return pd.DataFrame({"Close_A": mock_prices}, index=dates)
+# Apply Kalman Filter on Close Price
+df['Kalman_Price'] = apply_kalman_filter(df['Close'].values)
 
-try:
-    with st.spinner("Processing Nifty Matrix in IST coordinates..."):
-        df = fetch_nifty_optimized_2026()
+# =====================================================================
+# STEP 3: TECHNICAL INDICATORS
+# =====================================================================
+df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+df.ta.macd(append=True) # MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
+df.ta.rsi(append=True)  # RSI_14
+df.ta.atr(append=True)  # ATRe_14
+df.ta.adx(append=True)  # ADX_14, DMP_14 (+DI), DMN_14 (-DI)
 
-    # Feature Engineering Layer
-    df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.5)
-    df['RSI'] = calculate_rsi(df['Close_A'])
-    df['MACD_L'], df['MACD_S'] = calculate_macd(df['Close_A'])
-    
-    df['Hourly_Return'] = df['Close_A'].pct_change()
-    df['Target_Return_D'] = df['Hourly_Return'].shift(-1)
-    
-    df_clean = df.dropna().copy()
+df.dropna(inplace=True)
 
-    # 1 Jan 2026 Strict Split Matrix Boundary
-    timeline_start = pd.to_datetime('2026-01-01').tz_localize('Asia/Kolkata')
-    
-    df_train = df_clean[df_clean.index < timeline_start]
-    df_test = df_clean[df_clean.index >= timeline_start].copy()
-    
-    if df_test.empty:
-        df_test = df_clean.tail(200).copy()
-        
-    feature_cols = ['Hourly_Return', 'RSI', 'MACD_L', 'MACD_S']
-    
-    # -------------------------------------------------------------------------
-    # SPEED FIX: Single Fast Fit Engine instead of heavy loops
-    # -------------------------------------------------------------------------
-    X_train = df_train[feature_cols]
-    y_train = df_train['Target_Return_D']
-    
-    model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
-    model.fit(X_train, y_train)
-    
-    # Predict everything in 1 millisecond
-    X_test = df_test[feature_cols]
-    df_test['Predicted_Return_D'] = model.predict(X_test)
-    
-    df_test['ML_Prediction_D'] = df_test['Close_A'] * (1 + df_test['Predicted_Return_D'])
-    df_test['Diff_A_minus_D'] = df_test['Close_A'] - df_test['ML_Prediction_D']
+# Target: Next hour return direction (1 = Up, 0 = Down)
+df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
 
-    # -------------------------------------------------------------------------
-    # Trading Signal Engine
-    # -------------------------------------------------------------------------
-    signals = []
-    for idx, row in df_test.iterrows():
-        act_close = row['Close_A']
-        kalman_val = row['Kalman_B']
-        pred_change = row['Predicted_Return_D']
-        rsi_val = row['RSI']
-        macd_l = row['MACD_L']
-        macd_s = row['MACD_S']
-        
-        if (pred_change > 0.0001) and (act_close > kalman_val) and (rsi_val < 68) and (macd_l > macd_s):
-            signals.append("🟢 BUY")
-        elif (pred_change < -0.0001) and (act_close < kalman_val) and (rsi_val > 32) and (macd_l < macd_s):
-            signals.append("🔴 SELL")
-        else:
-            signals.append("🟡 HOLD")
+# Features array
+features = ['Volume', 'VWAP', 'Kalman_Price', 'MACD_12_26_9', 'RSI_14', 'ATRe_14', 'DMP_14', 'DMN_14']
+X = df[features]
+y = df['Target']
 
-    df_test['Trading_Action_Signal'] = signals
+# =====================================================================
+# STEP 4 & 5: DATA SPLITTING & MODEL TRAINING (Jan 2025 - Jan 2026)
+# =====================================================================
+train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
+test_mask = (df.index >= '2026-01-01')
 
-    # -------------------------------------------------------------------------
-    # UI Table Generation
-    # -------------------------------------------------------------------------
-    st.success("🎯 App Rendered! Displaying continuous 2026 candles in Indian Standard Time (IST).")
-    st.markdown("---")
-    
-    output_table = df_test[['Close_A', 'Kalman_B', 'RSI', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
-    output_table.columns = [
-        "Nifty Close (A)", 
-        "Kalman Smooth (B)", 
-        "RSI (14)",
-        "Difference (A - D)",
-        "Trading Action Signal"
-    ]
+X_train, y_train = X[train_mask], y[train_mask]
+X_test, y_test = X[test_mask], y[test_mask]
 
-    # Format Date & Time cleanly
-    output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
-    output_table = output_table.reset_index()
-    output_table.rename(columns={'index': 'Date & Time (IST Market Hours)'}, inplace=True)
+# Testing Models
+model_rf = RandomForestClassifier(n_estimators=100, random_state=42)
+model_gb = GradientBoostingClassifier(n_estimators=100, random_state=42)
 
-    rows_to_show = st.slider("Kitni candles ek sath dekhni hain?", 10, len(output_table), len(output_table))
-    st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=550)
+model_rf.fit(X_train, y_train)
+model_gb.fit(X_train, y_train)
 
-except Exception as e:
-    st.error(f"Fatal Interrupt Bypass Active: {e}")
+# =====================================================================
+# STEP 6 & 7: BEST MODEL SELECTION & WALK-FORWARD TESTING
+# =====================================================================
+acc_rf = accuracy_score(y_train, model_rf.predict(X_train))
+acc_gb = accuracy_score(y_train, model_gb.predict(X_train))
+
+# Choosing the best model based on training accuracy
+if acc_rf > acc_gb:
+    best_model = model_rf
+    print(f"\n🏆 Best Model Selected: Random Forest (Train Acc: {acc_rf:.2%})")
+else:
+    best_model = model_gb
+    print(f"\n🏆 Best Model Selected: Gradient Boosting (Train Acc: {acc_gb:.2%})")
+
+# =====================================================================
+# STEP 8: SIGNAL GENERATION (1 Jan 2026 to Present)
+# =====================================================================
+df_out = df[test_mask].copy()
+df_out['Predicted_Signal'] = best_model.predict(X_test)
+
+# Convert 0/1 to Short/Long or Hold Signals (-1, 1)
+df_out['Signal'] = np.where(df_out['Predicted_Signal'] == 1, "BUY (Long)", "SELL (Exit/Short)")
+
+print("\n--- Out of Sample Live Trading Signals (1 Jan 2026 to Today) ---")
+print(df_out[['Close', 'Kalman_Price', 'RSI_14', 'Signal']].tail(10))
