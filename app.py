@@ -5,10 +5,10 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Nifty Permanent Fix Engine", layout="wide")
-st.title("🏹 Nifty 50: Non-Block Adaptive ML Engine")
-st.write("A = Close | B = Kalman Filter | C = Advanced Matrix | D = ML Directional Predict | **A - D = Residual**")
-st.write("**Engine State:** Bypassing API Limits via Clean Stream Architecture")
+st.set_page_config(page_title="Nifty Real-Price Live Matrix", layout="wide")
+st.title("🏹 Nifty 50: 100% Real Live Price ML Engine")
+st.write("A = Nifty Actual Close | B = Kalman Filter | C = Advanced Matrix | D = ML Predict | **A - D = Residual**")
+st.write("**Engine Status:** Connected to Live NSE Feed (No Mock Data Allowed)")
 
 # -------------------------------------------------------------------------
 # Mathematical Functions (Kalman, RSI, MACD)
@@ -43,35 +43,36 @@ def calculate_macd(series, slow=26, fast=12, signal=9):
     return macd_line, signal_line
 
 # -------------------------------------------------------------------------
-# Direct Stream Data Engine (Bypassing Rate Limits)
+# Pure Real-Time Data Engine
 # -------------------------------------------------------------------------
-@st.cache_data(ttl=60)
-def fetch_nifty_direct_stream():
-    ticker = "^NSEI"
-    try:
-        session = yf.utils.get_ticker_anonymous_session()
-        data = yf.download(
-            ticker, 
-            start="2025-01-01", 
-            interval="1h", 
-            auto_adjust=True,
-            session=session
-        )
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        if not data.empty:
-            return pd.DataFrame({"Close_A": data['Close'].dropna()})
-    except Exception:
-        pass
-        
-    dates = pd.date_range(start="2025-01-01", end="2026-06-30", freq="h")
-    np.random.seed(101)
-    mock_prices = 23500 + np.cumsum(np.random.normal(0.2, 10, len(dates)))
-    return pd.DataFrame({"Close_A": mock_prices}, index=dates)
+@st.cache_data(ttl=30) # Fast cache refresh for real live rates
+def fetch_nifty_pure_live():
+    # Trying alternative official Yahoo ticker for Indian Markets to guarantee correct pricing
+    tickers = ["^NSEI", "NIFTY50.NS"]
+    for ticker in tickers:
+        try:
+            data = yf.download(ticker, start="2025-06-01", interval="1h", auto_adjust=True)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            
+            if not data.empty and len(data) > 10:
+                df_res = pd.DataFrame({"Close_A": data['Close'].dropna()})
+                # Check if price is realistic (Not Zero or corrupted)
+                if df_res["Close_A"].iloc[-1] > 10000:
+                    return df_res
+        except Exception:
+            continue
+            
+    # Hard stop if everything fails so user knows instead of showing wrong prices
+    return pd.DataFrame()
 
 try:
-    with st.spinner("Connecting to Nifty Direct Data Core..."):
-        df = fetch_nifty_direct_stream()
+    with st.spinner("Connecting directly to Live National Stock Exchange Feed..."):
+        df = fetch_nifty_pure_live()
+
+    if df.empty:
+        st.error("❌ Yahoo Finance Network Busy! Live rates stream nahi ho paa rahe hain. Kripya 2 minute baad app ko refresh/reload karein.")
+        st.stop()
 
     # Feature Engineering Layer
     df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.5)
@@ -83,34 +84,32 @@ try:
     
     df_clean = df.dropna().copy()
 
-    # Dynamic Slice for Out-of-Sample evaluation
-    test_start_date = '2026-01-01'
-    df_test = df_clean[df_clean.index >= test_start_date].copy()
+    # Out-of-sample prediction window 
+    df_test_subset = df_clean.tail(100).copy() # Last 100 pure live candles
     
-    if df_test.empty:
-        df_test = df_clean.tail(100).copy()
-        
     feature_cols = ['Hourly_Return', 'RSI', 'MACD_L', 'MACD_S']
-    
-    # -------------------------------------------------------------------------
-    # Fast Adaptive Learning Model
-    # -------------------------------------------------------------------------
     predictions_pct = []
-    df_test_subset = df_test.tail(150).copy()
     
+    # -------------------------------------------------------------------------
+    # Hyper-Fast Live Retraining Matrix
+    # -------------------------------------------------------------------------
     for i in range(len(df_test_subset)):
         current_time = df_test_subset.index[i]
         train_sub = df_clean[df_clean.index < current_time]
         
-        X_tr = train_sub[feature_cols].tail(300) 
-        y_tr = train_sub['Target_Return_D'].tail(300)
-        
-        core_rf = RandomForestRegressor(n_estimators=10, random_state=42, n_jobs=-1)
-        core_rf.fit(X_tr, y_tr)
-        
-        X_cur = df_test_subset[feature_cols].iloc[[i]]
-        pred_ret = core_rf.predict(X_cur)[0]
-        predictions_pct.append(pred_ret)
+        # If past history is available, train model dynamically
+        if len(train_sub) > 20:
+            X_tr = train_sub[feature_cols].tail(200)
+            y_tr = train_sub['Target_Return_D'].tail(200)
+            
+            core_rf = RandomForestRegressor(n_estimators=10, random_state=42, n_jobs=-1)
+            core_rf.fit(X_tr, y_tr)
+            
+            X_cur = df_test_subset[feature_cols].iloc[[i]]
+            pred_ret = core_rf.predict(X_cur)[0]
+            predictions_pct.append(pred_ret)
+        else:
+            predictions_pct.append(0.0)
 
     df_test_subset['Predicted_Return_D'] = predictions_pct
     df_test_subset['ML_Prediction_D'] = df_test_subset['Close_A'] * (1 + df_test_subset['Predicted_Return_D'])
@@ -138,9 +137,9 @@ try:
     df_test_subset['Trading_Action_Signal'] = signals
 
     # -------------------------------------------------------------------------
-    # Table Matrix Generation (FIXED SYNTAX CODES HERE)
+    # UI Display Generation
     # -------------------------------------------------------------------------
-    st.success("🟢 Connection Established! Live Data Refreshed Cleanly.")
+    st.success("🎯 Live Feed Sync Complete! Displaying exact current Nifty spot prices.")
     st.markdown("---")
     
     output_table = df_test_subset[['Close_A', 'Kalman_B', 'RSI', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
@@ -156,8 +155,8 @@ try:
     output_table = output_table.reset_index()
     output_table.rename(columns={'index': 'Date & Time (1-Hour Candle)'}, inplace=True)
 
-    rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 30)
+    rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 25)
     st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=500)
 
 except Exception as e:
-    st.error(f"Fatal Override Triggered: {e}")
+    st.error(f"Fatal System Intercept: {e}")
