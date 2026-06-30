@@ -5,10 +5,10 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Nifty IST 2026 Timeline Engine", layout="wide")
-st.title("🏹 Nifty 50: Strict 2026 IST ML Engine")
+st.set_page_config(page_title="Nifty 2026 Optimized Engine", layout="wide")
+st.title("🏹 Nifty 50: Strict 2026 IST ML Engine (Instant Load)")
 st.write("A = Nifty Actual Close | B = Kalman Filter | C = Features | D = ML Predict | **A - D = Residual**")
-st.write("**Engine Clock:** Strictly set to Indian Standard Time (IST) | **Range:** 1 Jan 2026 onwards")
+st.write("**Engine Clock:** Indian Standard Time (IST) | **Optimization:** High-Speed Single Fit Layer")
 
 # -------------------------------------------------------------------------
 # Mathematical Functions (Kalman, RSI, MACD)
@@ -46,14 +46,13 @@ def calculate_macd(series, slow=26, fast=12, signal=9):
 # Dynamic Deep Data Stream Engine with Timezone Conversion
 # -------------------------------------------------------------------------
 @st.cache_data(ttl=60)
-def fetch_nifty_strict_2026():
+def fetch_nifty_optimized_2026():
     ticker = "^NSEI"
     try:
         session = yf.utils.get_ticker_anonymous_session()
-        # Fetching back from mid-2025 to have massive warm-up history for Jan 2026
         data = yf.download(
             ticker, 
-            start="2025-06-01", 
+            start="2025-01-01", 
             interval="1h", 
             auto_adjust=True,
             session=session
@@ -62,22 +61,20 @@ def fetch_nifty_strict_2026():
             data.columns = data.columns.get_level_values(0)
         
         if not data.empty and len(data) > 100:
-            # FIX 1: Convert international timezone to Indian Standard Time (IST)
             data.index = data.index.tz_convert('Asia/Kolkata')
-            df_res = pd.DataFrame({"Close_A": data['Close'].dropna()})
-            return df_res
+            return pd.DataFrame({"Close_A": data['Close'].dropna()})
     except Exception:
         pass
         
-    # Reliable fallback with correct timezone mapping if network core is slow
-    dates = pd.date_range(start="2025-06-01", end="2026-06-30", freq="h", tz='Asia/Kolkata')
+    # Standard fallback dataset ONLY if internet is completely disconnected
+    dates = pd.date_range(start="2025-01-01", end="2026-06-30", freq="h", tz='Asia/Kolkata')
     np.random.seed(42)
     mock_prices = 24100 + np.cumsum(np.random.normal(0.3, 14, len(dates)))
     return pd.DataFrame({"Close_A": mock_prices}, index=dates)
 
 try:
     with st.spinner("Processing Nifty Matrix in IST coordinates..."):
-        df = fetch_nifty_strict_2026()
+        df = fetch_nifty_optimized_2026()
 
     # Feature Engineering Layer
     df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.5)
@@ -89,35 +86,30 @@ try:
     
     df_clean = df.dropna().copy()
 
-    # FIX 2: Dynamic Slice strictly from 1 January 2026 onwards
+    # 1 Jan 2026 Strict Split Matrix Boundary
     timeline_start = pd.to_datetime('2026-01-01').tz_localize('Asia/Kolkata')
+    
+    df_train = df_clean[df_clean.index < timeline_start]
     df_test = df_clean[df_clean.index >= timeline_start].copy()
     
     if df_test.empty:
         df_test = df_clean.tail(200).copy()
         
     feature_cols = ['Hourly_Return', 'RSI', 'MACD_L', 'MACD_S']
-    predictions_pct = []
     
     # -------------------------------------------------------------------------
-    # Hyper-Optimized Fast Adaptive Window
+    # SPEED FIX: Single Fast Fit Engine instead of heavy loops
     # -------------------------------------------------------------------------
-    for i in range(len(df_test)):
-        current_time = df_test.index[i]
-        train_sub = df_clean[df_clean.index < current_time]
-        
-        # Last 150 candles used as instant memory to maximize calculations speed
-        X_tr = train_sub[feature_cols].tail(150)
-        y_tr = train_sub['Target_Return_D'].tail(150)
-        
-        core_rf = RandomForestRegressor(n_estimators=5, random_state=42, n_jobs=-1)
-        core_rf.fit(X_tr, y_tr)
-        
-        X_cur = df_test[feature_cols].iloc[[i]]
-        pred_ret = core_rf.predict(X_cur)[0]
-        predictions_pct.append(pred_ret)
-
-    df_test['Predicted_Return_D'] = predictions_pct
+    X_train = df_train[feature_cols]
+    y_train = df_train['Target_Return_D']
+    
+    model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
+    model.fit(X_train, y_train)
+    
+    # Predict everything in 1 millisecond
+    X_test = df_test[feature_cols]
+    df_test['Predicted_Return_D'] = model.predict(X_test)
+    
     df_test['ML_Prediction_D'] = df_test['Close_A'] * (1 + df_test['Predicted_Return_D'])
     df_test['Diff_A_minus_D'] = df_test['Close_A'] - df_test['ML_Prediction_D']
 
@@ -145,7 +137,7 @@ try:
     # -------------------------------------------------------------------------
     # UI Table Generation
     # -------------------------------------------------------------------------
-    st.success("🎯 Clock Synced! Displaying continuous 2026 candles in Indian Standard Time.")
+    st.success("🎯 App Rendered! Displaying continuous 2026 candles in Indian Standard Time (IST).")
     st.markdown("---")
     
     output_table = df_test[['Close_A', 'Kalman_B', 'RSI', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
@@ -157,7 +149,7 @@ try:
         "Trading Action Signal"
     ]
 
-    # Clean display format for Indian Market Hours
+    # Format Date & Time cleanly
     output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
     output_table = output_table.reset_index()
     output_table.rename(columns={'index': 'Date & Time (IST Market Hours)'}, inplace=True)
