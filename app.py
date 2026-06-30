@@ -105,4 +105,6 @@ signals_only = display_df[display_df['Status'] == "🎯 BUY ALERT"]
 
 if not signals_only.empty:
     st.dataframe(signals_only, use_container_width=True)
-    st.success("Step 8: Final Count Verified. Multi-date simulation rendered
+    st.success("Step 8: Final Count Verified. Multi-date simulation rendered perfectly!")
+else:
+    st.warning("Is specific time period mein standard parameters par koi institutional breakout match nahi hua.")
