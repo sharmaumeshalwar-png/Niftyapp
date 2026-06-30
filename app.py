@@ -45,15 +45,14 @@ def calculate_macd(series, slow=26, fast=12, signal=9):
 # -------------------------------------------------------------------------
 # Direct Stream Data Engine (Bypassing Rate Limits)
 # -------------------------------------------------------------------------
-@st.cache_data(ttl=60) # Fast refresh to get real data quickly
+@st.cache_data(ttl=60)
 def fetch_nifty_direct_stream():
     ticker = "^NSEI"
-    # Reducing frequency and handling headers to unblock Yahoo servers instantly
     try:
         session = yf.utils.get_ticker_anonymous_session()
         data = yf.download(
             ticker, 
-            start="2025-01-01", # Optimal depth to completely avoid Error 95 and server bans
+            start="2025-01-01", 
             interval="1h", 
             auto_adjust=True,
             session=session
@@ -65,7 +64,6 @@ def fetch_nifty_direct_stream():
     except Exception:
         pass
         
-    # Standard fallback dataset ONLY if internet is completely disconnected
     dates = pd.date_range(start="2025-01-01", end="2026-06-30", freq="h")
     np.random.seed(101)
     mock_prices = 23500 + np.cumsum(np.random.normal(0.2, 10, len(dates)))
@@ -85,7 +83,7 @@ try:
     
     df_clean = df.dropna().copy()
 
-    # Dynamic Slice for Out-of-Sample evaluation (Strict Phase 1 Rules)
+    # Dynamic Slice for Out-of-Sample evaluation
     test_start_date = '2026-01-01'
     df_test = df_clean[df_clean.index >= test_start_date].copy()
     
@@ -98,7 +96,7 @@ try:
     # Fast Adaptive Learning Model
     # -------------------------------------------------------------------------
     predictions_pct = []
-    df_test_subset = df_test.tail(150).copy() # Slice last 150 rows for lightning-fast UI response
+    df_test_subset = df_test.tail(150).copy()
     
     for i in range(len(df_test_subset)):
         current_time = df_test_subset.index[i]
@@ -107,7 +105,6 @@ try:
         X_tr = train_sub[feature_cols].tail(300) 
         y_tr = train_sub['Target_Return_D'].tail(300)
         
-        # Hyper-fast optimized model parameters
         core_rf = RandomForestRegressor(n_estimators=10, random_state=42, n_jobs=-1)
         core_rf.fit(X_tr, y_tr)
         
@@ -141,7 +138,7 @@ try:
     df_test_subset['Trading_Action_Signal'] = signals
 
     # -------------------------------------------------------------------------
-    # Table Matrix Generation
+    # Table Matrix Generation (FIXED SYNTAX CODES HERE)
     # -------------------------------------------------------------------------
     st.success("🟢 Connection Established! Live Data Refreshed Cleanly.")
     st.markdown("---")
@@ -157,4 +154,10 @@ try:
 
     output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
     output_table = output_table.reset_index()
-    output_table.rename(
+    output_table.rename(columns={'index': 'Date & Time (1-Hour Candle)'}, inplace=True)
+
+    rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 30)
+    st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=500)
+
+except Exception as e:
+    st.error(f"Fatal Override Triggered: {e}")
