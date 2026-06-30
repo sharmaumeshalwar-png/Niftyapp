@@ -4,8 +4,9 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
-# Streamlit Page Configuration
-st.set_config(page_title="Nifty Advanced ML Matrix", layout="wide")
+# Streamlit Page Configuration (FIXED: st.set_page_config used here)
+st.set_page_config(page_title="Nifty Advanced ML Matrix", layout="wide")
+
 st.title("🏹 Nifty 50: Advanced 1-Hour Matrix with RSI & MACD")
 st.write("A = Close | B = Kalman Filter | C = Features (RSI + MACD Included) | D = ML Prediction | **A - D = Error**")
 st.write("**Validation Mode:** Train on 2024-25 History ➡️ **Strictly Test on Unseen 2026 Data**")
@@ -152,7 +153,7 @@ try:
 
     output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
     output_table = output_table.reset_index()
-    output_table.rename(columns={'index': 'Date & Time (1-Hour Candle)'}, inplace=True)
+    output_table.rename(columns={'index': 'Date & Time (Hourly Candle)'}, inplace=True)
 
     rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 40)
     st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=500)
