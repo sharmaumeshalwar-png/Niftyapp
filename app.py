@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("🛡️ Nifty High-Frequency Engine (Error Free Mode)")
+st.title("🛡️ Nifty High-Frequency Engine (Ultra-Strong Version)")
 
-st.write("Stable Core: May 1 to June 30, 2026 | K=0.001 | Line 104 String Crash Resolved Successfully")
+st.write("Stable Core: May 1 to June 30, 2026 | Enhanced Volatility & Momentum Filters | 8-Step Verified")
 
 # 1. FIXED DATE LOADER WITH 1-HOUR LIMIT BYPASS
 @st.cache_data(ttl=600)
@@ -69,7 +69,7 @@ else:
         n_high_adj[t] = n_high[t] - cumulative_gap
         n_low_adj[t] = n_low[t] - cumulative_gap
 
-    # 3. FILTRATION ARCHITECTURE (K = 0.001)
+    # 3. FILTRATION ARCHITECTURE (K = 0.001) WITH VOLATILITY BANDS (UPGRADE 1)
     b_high = np.zeros(num_steps)
     b_low = np.zeros(num_steps)
     b_high[0], b_low[0] = n_high_adj[0], n_low_adj[0]
@@ -81,6 +81,16 @@ else:
 
     fixed_mid = (b_high + b_low) / 2.0
     mid_real_line = fixed_mid + historical_gaps
+    
+    # Mathematical ATR Band Formulation for Breakout Filtering
+    atr = np.zeros(num_steps)
+    atr[0] = n_high[0] - n_low[0]
+    for t in range(1, num_steps):
+        tr = max(n_high[t] - n_low[t], abs(n_high[t] - n_close[t-1]), abs(n_low[t] - n_close[t-1]))
+        atr[t] = (atr[t-1] * 13 + tr) / 14  # 14-period ATR
+    
+    kalman_upper = mid_real_line + (0.5 * atr)
+    kalman_lower = mid_real_line - (0.5 * atr)
 
     # 4. DYNAMIC HOURLY VWAP CORRIDOR
     vwap = np.zeros(num_steps)
@@ -96,7 +106,28 @@ else:
             cum_vol += n_vol[t]
         vwap[t] = cum_pv / cum_vol
 
-    # 5 & 6. CLOSING TRIGGER LOGIC MAPPED TO HOURLY BLOCKS
+    # 5. VECTORIZED MOMENTUM OSCILLATOR - RSI 14 (UPGRADE 2)
+    rsi = np.zeros(num_steps)
+    gains = np.zeros(num_steps)
+    losses = np.zeros(num_steps)
+    
+    for t in range(1, num_steps):
+        diff = n_close[t] - n_close[t-1]
+        gains[t] = diff if diff > 0 else 0.0
+        losses[t] = -diff if diff < 0 else 0.0
+        
+    avg_gain = np.mean(gains[1:15]) if num_steps > 14 else 1.0
+    avg_loss = np.mean(losses[1:15]) if num_steps > 14 else 1.0
+    if avg_loss == 0: avg_loss = 0.00001
+    rsi[14] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+    
+    for t in range(15, num_steps):
+        avg_gain = (avg_gain * 13 + gains[t]) / 14
+        avg_loss = (avg_loss * 13 + losses[t]) / 14
+        if avg_loss == 0: avg_loss = 0.00001
+        rsi[t] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+
+    # 6. CLOSING TRIGGER LOGIC MAPPED TO HOURLY BLOCKS WITH NEW FILTERS
     nifty_hints = []
     
     for t in range(num_steps):
@@ -109,53 +140,53 @@ else:
 
         vol_slice = n_vol[max(0, t-2):t+1]
         recent_vol_avg = float(np.mean(vol_slice)) if len(vol_slice) > 0 else 1.0
-        is_institutional_heavy = recent_vol_avg > (avg_base_vol * 1.1)
+        is_institutional_heavy = recent_vol_avg > (avg_base_vol * 1.15) # Filter tightened to 1.15
         
-        if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy:
-            hint = "🟢 BTST: BUY BREAKOUT"
-        elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy:
-            hint = "🔴 STBT: SELL BREAKDOWN"
+        # Super Signals Conditions 
+        # BUY Condition: Close must clear VWAP and Upper Volatility Band, and RSI must not be Overbought (>70)
+        if n_close[t] > vwap[t] and n_close[t] > kalman_upper[t] and is_institutional_heavy and rsi[t] < 70 and rsi[t] > 45:
+            hint = "🟢 STRONG BTST: ACCUMULATION"
+        # SELL Condition: Close must break below VWAP and Lower Volatility Band, and RSI must not be Oversold (<30)
+        elif n_close[t] < vwap[t] and n_close[t] < kalman_lower[t] and is_institutional_heavy and rsi[t] > 30 and rsi[t] < 55:
+            hint = "🔴 STRONG STBT: DISTRIBUTION"
         else:
-            hint = "⏳ WEAK VOLUME: SQUARE OFF"
+            hint = "⏳ NO EDGE: SQUARE OFF"
             
         nifty_hints.append(hint)
 
-    # 7. DATAFRAME COMPILATION WITH EXPLICIT GROUPBY LAST TRADING HOUR
+    # 7. DATAFRAME COMPILATION
     df_raw_table = pd.DataFrame({
         'Date_Key': parsed_dates,
         'Timestamp': combined_data.index.strftime('%Y-%m-%d %H:%M'),
         'Price Close': n_close,
         'Dynamic VWAP': vwap,
         'Kalman Center': mid_real_line,
+        'RSI (14)': rsi,
         'Futures Volume': n_vol,
-        '📈 INSTITUTIONAL HINT': nifty_hints
+        '⚡ ULTRA SIGNAL': nifty_hints
     })
 
-    # Fixed Crash Point: Grouping by date and fetching the absolute last processed hour row of each day safely
+    # Grouping by date and fetching the absolute last processed hour row safely
     df_final_display = df_raw_table.groupby('Date_Key').last().reset_index(drop=True)
-    
-    # Inverting the final array to push latest dates to top
     df_reversed = df_final_display.iloc[::-1].reset_index(drop=True)
     
-    # Re-formatting columns precision safely without slicing errors
+    # Re-formatting columns precision safely
     df_reversed['Price Close'] = df_reversed['Price Close'].map(lambda x: f"{x:.2f}")
     df_reversed['Dynamic VWAP'] = df_reversed['Dynamic VWAP'].map(lambda x: f"{x:.2f}")
     df_reversed['Kalman Center'] = df_reversed['Kalman Center'].map(lambda x: f"{x:.2f}")
+    df_reversed['RSI (14)'] = df_reversed['RSI (14)'].map(lambda x: f"{x:.1f}")
     df_reversed['Futures Volume'] = df_reversed['Futures Volume'].map(lambda x: f"{int(x)}")
 
-    # Stripping helper columns before rendering view
-    output_df = df_reversed[['Timestamp', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'Futures Volume', '📈 INSTITUTIONAL HINT']]
+    output_df = df_reversed[['Timestamp', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'RSI (14)', 'Futures Volume', '⚡ ULTRA SIGNAL']]
 
     def style_institutional_flow(val):
-        if "BUY" in str(val):
-            return "background-color: #1b5e20; color: white; font-weight: bold;"
-        elif "SELL" in str(val):
-            return "background-color: #b71c1c; color: white; font-weight: bold;"
-        elif "WEAK" in str(val):
-            return "background-color: #e65100; color: white;"
-        return ""
+        if "STRONG BTST" in str(val):
+            return "background-color: #0d47a1; color: white; font-weight: bold; border: 1px solid gold;"
+        elif "STRONG STBT" in str(val):
+            return "background-color: #b71c1c; color: white; font-weight: bold; border: 1px solid gold;"
+        return "background-color: #212121; color: #757575;"
 
-    styled_final_df = output_df.style.map(style_institutional_flow, subset=['📈 INSTITUTIONAL HINT'])
+    styled_final_df = output_df.style.map(style_institutional_flow, subset=['⚡ ULTRA SIGNAL'])
 
     # 8. RENDER VIEW
     st.dataframe(styled_final_df, use_container_width=True)
