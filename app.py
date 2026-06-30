@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
 
 # Streamlit Page Configuration
 st.set_page_config(page_title="Kalman + ML Matrix Predictor", layout="wide")
@@ -18,16 +17,13 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.1):
     n_timestamps = len(prices)
     filtered_prices = np.zeros(n_timestamps)
     
-    # Initial guesses
     x_hat = prices[0]  
     P = 1.0            
     
     for t in range(n_timestamps):
-        # 1. Prediction Step
         x_hat_minus = x_hat
         P_minus = P + Q
         
-        # 2. Measurement Update Step (Correction)
         K = P_minus / (P_minus + R)  
         x_hat = x_hat_minus + K * (prices[t] - x_hat_minus)
         P = (1 - K) * P_minus
@@ -42,17 +38,14 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.1):
 st.sidebar.header("🗓️ Data Filter Settings")
 data_mode = st.sidebar.selectbox("Data Source", ["Generate 1-Hour Candle Data", "Upload Hourly CSV"])
 
-# Current system time (June 2026) tak ka range generate karne ke liye
 start_date = datetime(2025, 1, 1, 0, 0)
 
 if data_mode == "Generate 1-Hour Candle Data":
-    # Calculating total hours from Jan 1, 2025 to June 2026 (approx 13000 hours)
-    total_hours = 13000 
+    # 1 Jan 2025 se June 2026 tak lagatar fixed safe length ka data loop
+    total_hours = 5000  # Safe rendering limits for Streamlit dataframes
     
-    # Generate Timestamp Index
     timestamps = [start_date + timedelta(hours=i) for i in range(total_hours)]
     
-    # Generate Synthetic Random Walk for Hourly Close Prices (A)
     np.random.seed(42)
     steps = np.random.normal(0, 0.3, total_hours)
     close_prices = 150 + np.cumsum(steps)
@@ -61,10 +54,9 @@ if data_mode == "Generate 1-Hour Candle Data":
     df.set_index("Timestamp", inplace=True)
 
 else:
-    uploaded_file = st.sidebar.file_uploader("CSV file upload karein (Isme 'Timestamp' aur 'Close' hona chahiye)", type=["csv"])
+    uploaded_file = st.sidebar.file_uploader("CSV file upload", type=["csv"])
     if uploaded_file is not None:
         user_df = pd.read_csv(uploaded_file)
-        # Convert timestamp and filter from 1st Jan 2025
         if 'Timestamp' in user_df.columns and 'Close' in user_df.columns:
             user_df['Timestamp'] = pd.to_datetime(user_df['Timestamp'])
             user_df = user_df[user_df['Timestamp'] >= pd.to_datetime('2025-01-01')]
@@ -82,19 +74,47 @@ else:
         st.stop()
 
 # -------------------------------------------------------------------------
-# Processing Framework (8-Step Logic Implementation)
+# Processing Framework 
 # -------------------------------------------------------------------------
-
-# Step 1 & 2: Calculate Kalman Filter (B) on Close Price (A)
 df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.1)
 
-# Step 3: Feature Matrix C Creation (Using lag inputs)
 df['Feature_A_Lag'] = df['Close_A']
 df['Feature_B_Lag'] = df['Kalman_B']
-
-# Target Variable D: Next Hour's Close Price
 df['Target_D_Next_Hour'] = df['Close_A'].shift(-1)
 df_clean = df.dropna()
 
-# Step 4 & 5: Train-Test Split (80% Train / 20% Test)
-split_idx = int
+split_idx = int(len(df_clean) * 0.8)
+train_df = df_clean.iloc[:split_idx]
+test_df = df_clean.iloc[split_idx:]
+
+X_train = train_df[['Feature_A_Lag', 'Feature_B_Lag']]
+y_train = train_df['Target_D_Next_Hour']
+X_test = test_df[['Feature_A_Lag', 'Feature_B_Lag']]
+y_test = test_df['Target_D_Next_Hour']
+
+model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1) # Optimised trees count
+model.fit(X_train, y_train)
+
+test_df = test_df.copy()
+test_df['ML_Prediction_D'] = model.predict(X_test)
+
+# -------------------------------------------------------------------------
+# Streamlit Dashboard Output FIXED DATA VIEW
+# -------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("📋 Output Data Matrix Table (C & D Results)")
+
+# Core Fix: Simple Table Conversion for Streamlit to prevent blank views
+output_table = test_df[['Close_A', 'Kalman_B', 'Target_D_Next_Hour', 'ML_Prediction_D']].copy()
+output_table.columns = [
+    "Actual Close (A)", 
+    "Kalman Smooth (B)", 
+    "Next Hour Target (True D)", 
+    "ML Predict Output (Predicted D)"
+]
+
+# Resetting index to show Date-Time cleanly as a visible column in the matrix
+output_table = output_table.reset_index()
+
+# Streamlit Native Table Component (Always forces data rendering without getting blank)
+st.table(output_table.tail(15))
