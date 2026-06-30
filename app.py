@@ -1,62 +1,108 @@
 import streamlit as st
-from datetime import time
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, time
 
-# Streamlit Setup
-st.set_page_config(page_title="Institutional Tracker", layout="wide")
-st.title("🎯 Institutional Big Trader Footprint Tracker")
-st.subheader("5-Minute Candle Analysis (9:15-10:30 AM & 1:00-2:30 PM)")
+# Streamlit Page Configuration
+st.set_page_config(page_title="Historical Candle Tracker", layout="wide")
+st.title("📊 Every-Candle Institutional Tracker (Historical Loop)")
+st.subheader("5-Minute Candle Matrix From 1st May 2026 onwards")
 
 st.write("---")
 st.write("### 8-Step Verification Progress:")
 
-# STEP 1: Time Windows Set
-def check_window(hour, minute):
-    if (9 == hour and 15 <= minute) or (10 == hour and minute <= 30):
+# STEP 1: Institutional Window Definition
+def check_window(timestamp):
+    t = timestamp.time()
+    if (time(9, 15) <= t <= time(10, 30)):
         return "Morning_Momentum"
-    elif (13 == hour) or (14 == hour and minute <= 30):
+    elif (time(13, 0) <= t <= time(14, 30)):
         return "European_Absorption"
     return "No_Zone"
 
 st.success("Step 1: Institutional Time Zones Locked.")
-st.success("Step 2: Local Price/Volume Data Array Prepared.")
-st.success("Step 3: VWAP Line Computed.")
-st.success("Step 4: Volume Benchmark Set.")
-st.success("Step 5 & 6: Multi-Layer Filtering Done.")
-st.success("Step 7: Verifying Footprints...")
 
-# STEP 2 to 7: Clean Data Array (No Dataframe Indexing Errors)
-market_data = [
-    {"time": "09:20", "hour": 9, "minute": 20, "close": 23805.0, "vwap": 23802.0, "vol": 8500, "avg_vol": 9000},
-    {"time": "09:35", "hour": 9, "minute": 35, "close": 23810.0, "vwap": 23805.0, "vol": 11000, "avg_vol": 9500},
-    {"time": "09:45", "hour": 9, "minute": 45, "close": 23850.0, "vwap": 23812.0, "vol": 95000, "avg_vol": 12000}, # <-- SIGNAL
-    {"time": "11:15", "hour": 11, "minute": 15, "close": 23842.0, "vwap": 23825.0, "vol": 6000, "avg_vol": 11000},
-    {"time": "13:15", "hour": 13, "minute": 15, "close": 23910.0, "vwap": 23840.0, "vol": 120000, "avg_vol": 14000}, # <-- SIGNAL
-    {"time": "15:10", "hour": 15, "minute": 10, "close": 23900.0, "vwap": 23860.0, "vol": 15000, "avg_vol": 15000}
-]
+# STEP 2: Fetch Multi-Date Data (All Possible Outcome Dates starting 2026-05-01)
+@st.cache_data # Data baar-baar download na ho aur crash na kare, isliye caching lagayi hai
+def fetch_historical_data():
+    ticker = "^NSEI" # Nifty 50 Index (Aap RELIANCE.NS bhi likh sakte hain)
+    start_date = "2026-05-01"
+    # Fetching 5-minute data
+    data = yf.download(ticker, start=start_date, interval="5m", progress=False)
+    return data
 
-# STEP 8: Final Verified Output Display
+try:
+    raw_data = fetch_historical_data()
+    if raw_data.empty:
+        st.error("Data empty mila. Market holidays check karein.")
+        st.stop()
+        
+    # Multi-level columns fix (Error 87 permanent solution)
+    if isinstance(raw_data.columns, pd.MultiIndex):
+        raw_data.columns = raw_data.columns.get_level_values(0)
+        
+    df = raw_data.copy()
+    st.success("Step 2: Historical Data Fetched successfully from 1st May 2026.")
+except Exception as e:
+    st.error(f"Data fetch error: {e}")
+    st.stop()
+
+# STEP 3: Intraday VWAP Calculation (Day-wise Reset Loop)
+df['Date'] = df.index.date
+df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+df['TP_Vol'] = df['Typical_Price'] * df['Volume']
+df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
+df['Cum_Vol'] = df.groupby('Date')['Volume'].cumsum()
+df['VWAP'] = df['Cum_TP_Vol'] / df['Cum_Vol']
+st.success("Step 3: Day-wise Resetted VWAP Line Computed.")
+
+# STEP 4: Volume Moving Average (15-period rolling)
+df['Vol_MA'] = df['Volume'].rolling(window=15, min_periods=1).mean()
+st.success("Step 4: Moving Volume Benchmark Activated.")
+
+# STEP 5: Apply Institutional Rules
+df['Is_Heavy_Volume'] = df['Volume'] > (df['Vol_MA'] * 3.0) # 3x Volume rule
+df['Candle_Spread'] = df['High'] - df['Low']
+df['Spread_MA'] = df['Candle_Spread'].rolling(window=15, min_periods=1).mean()
+df['Is_Big_Spread'] = df['Candle_Spread'] > (df['Spread_MA'] * 1.8) # Volatility spread
+st.success("Step 5: 3x Vol + 1.8x Spread Formulas Synced.")
+
+# STEP 6: Time-Zone Alignment
+df['Zone'] = [check_window(idx) for idx in df.index]
+df['Valid_Zone'] = df['Zone'] != "No_Zone"
+st.success("Step 6: Off-Market Noise Filtered.")
+
+# STEP 7: Signal Compile
+df['Signal'] = df['Is_Heavy_Volume'] & df['Is_Big_Spread'] & df['Valid_Zone'] & (df['Close'] > df['VWAP'])
+st.success("Step 7: Multi-Layer Matrix Ready.")
+
+# STEP 8: Render Every Candle Wise Display
 st.write("---")
-st.header("📋 8-STEP BIG TRADER REPORT OUTPUT")
+st.header("📋 8-STEP HISTORICAL CANDLE-WISE MATRIX")
 
-# Filter signals
-valid_signals = []
-for row in market_data:
-    zone = check_window(row["hour"], row["minute"])
-    if (row["vol"] > row["avg_vol"] * 3) and (row["close"] > row["vwap"]) and (zone != "No_Zone"):
-        row["zone"] = zone
-        valid_signals.append(row)
+# Re-formatting dataframe for clean presentation
+display_df = pd.DataFrame(index=df.index)
+display_df['Date/Time'] = df.index.strftime('%Y-%m-%d %H:%M')
+display_df['Zone'] = df['Zone']
+display_df['Close Price'] = df['Close'].round(2)
+display_df['VWAP'] = df['VWAP'].round(2)
+display_df['Volume'] = df['Volume'].astype(int)
+display_df['Avg Vol'] = df['Vol_MA'].astype(int)
+display_df['Status'] = ["🎯 BUY ALERT" if s else "❌ No Action" for s in df['Signal']]
 
-st.metric(label="Total Institutional Trades Intercepted", value=len(valid_signals))
+# Filter signals count
+total_signals = int(df['Signal'].sum())
+st.metric(label="Total Institutional Breaks Verified (Since May 1)", value=total_signals)
 
-if len(valid_signals) > 0:
-    for sig in valid_signals:
-        with st.expander(f"🎯 TRAP DETECTED AT {sig['time']} ({sig['zone']})", expanded=True):
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Close Price", f"₹{sig['close']:.2f}")
-            col2.metric("VWAP Price", f"₹{sig['vwap']:.2f}")
-            col3.metric("Volume Spike", f"{sig['vol']} (Avg: {sig['avg_vol']})")
-            st.info("💡 **Verdict:** Institutional Aggressive Buying Confirmed via 3x Volume + VWAP Support.")
-else:
-    st.warning("Koi institutional breakout nahi mila.")
+# Every Candle Grid
+st.write("### Every Candle Breakdown (Scroll Down to View All rows):")
+st.dataframe(display_df, use_container_width=True)
 
-st.success("Step 8: Final Count Verified. Error 87 Resolved!")
+# Separate Summary for Instant Entry Check
+st.write("---")
+st.subheader("⚡ Only Institutional Breakout Candles Summary:")
+signals_only = display_df[display_df['Status'] == "🎯 BUY ALERT"]
+
+if not signals_only.empty:
+    st.dataframe(signals_only, use_container_width=True)
+    st.success("Step 8: Final Count Verified. Multi-date simulation rendered
