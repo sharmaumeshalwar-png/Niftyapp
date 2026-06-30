@@ -4,17 +4,17 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("🛡️ Nifty Day-Wise 3:20 PM Institutional Matrix")
+st.title("🛡️ Nifty Dual-Timeframe 3:20 PM Institutional Engine")
 
-st.write("Pure Mode: June 1 to June 30, 2026 | Day-Wise 5-Min Consolidation | K=0.001 | 0.001x Matrix")
+st.write("Dual Engine: June 1 to June 30, 2026 | 5-Min Micro-Ticks + 1-Day Trend Frame | K=0.001 | 0.001x Matrix")
 
-# 1. FIXED DATE LOADER (5-MINUTE INTERVAL FOR JUNE ONLY)
+# 1. FIXED DATE DATA LOADER (PURE JUNE BLOCK)
 @st.cache_data(ttl=300)
-def load_june_daywise_data():
+def load_dual_timeframe_data():
     start_date = "2026-06-01"
     end_date = "2026-07-01"
     
-    st.info("Streaming high-frequency 5-Minute ticks for Day-Wise Extraction...")
+    st.info("Streaming high-frequency 5-Minute ticks to build internal 1-Day matrices...")
     nifty_raw = yf.download('^NSEI', start=start_date, end=end_date, interval='5m')
     
     if nifty_raw.empty or len(nifty_raw) == 0:
@@ -37,12 +37,12 @@ def load_june_daywise_data():
     return df.dropna()
 
 # Execute data pipe
-combined_data = load_june_daywise_data()
+combined_data = load_dual_timeframe_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Severe Error: Cannot stream 5-min intervals. Clear Streamlit cache and reload.")
+    st.error("Severe Error: Cannot stream dataset. Clear Streamlit cache and reload.")
 else:
-    st.success(f"Successfully processed June institutional 5-min tick database mapping.")
+    st.success(f"Successfully processed dual timeframe structural mapping layers.")
     
     # Pure Linear Arrays
     n_high = combined_data['High'].to_numpy(dtype=float)
@@ -97,15 +97,22 @@ else:
             cum_vol += n_vol[t]
         vwap[t] = cum_pv / cum_vol
 
-    # 5 & 6. TARGETED 3:15 PM - 3:25 PM CLOSING SCANNER
+    # 5. GENERATING INTERNAL 1-DAY MATRICES FOR THE DAY-WISE TREND FILTER
+    # Grouping by date keys to extract absolute Day Open, Day High, Day Low for macro checks
+    day_groups = combined_data.groupby(combined_data.index.date)
+    day_open_map = day_groups['Open'].first().to_dict()
+    day_high_map = day_groups['High'].max().to_dict()
+    day_low_map = day_groups['Low'].min().to_dict()
+
+    # 6 & 7. ENHANCED MULTI-TIMEFRAME WINDOW SCANNER (3:20 PM WINDOW TARGET)
     nifty_hints = []
     
     for t in range(num_steps):
         current_time = combined_data.index[t]
         hour = current_time.hour
         minute = current_time.minute
-        
         current_day = parsed_dates[t]
+        
         day_indices = np.where(parsed_dates == current_day)[0]
         day_indices_before_3pm = [idx for idx in day_indices if combined_data.index[idx].hour < 15 and idx <= t]
         
@@ -115,52 +122,66 @@ else:
         if hour == 15 and (15 <= minute <= 25):
             vol_slice = n_vol[max(0, t-4):t+1]
             recent_vol_avg = float(np.mean(vol_slice)) if len(vol_slice) > 0 else 1.0
-            
             is_institutional_heavy = recent_vol_avg > (avg_base_vol * 1.1)
             
-            if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy:
-                hint = "🟢 BTST: BUY BREAKOUT"
-            elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy:
-                hint = "🔴 STBT: SELL BREAKDOWN"
+            # Extract Macro Day Candle boundaries for this timestamp's day
+            d_high = day_high_map.get(current_day, n_high[t])
+            d_low = day_low_map.get(current_day, n_low[t])
+            day_range = max(1.0, d_high - d_low)
+            
+            # Strong Trend Guardrail Check: Ensure close is sitting at the outer margins of the daily candle range
+            is_day_candle_bullish = n_close[t] > (d_high - (day_range * 0.15))
+            is_day_candle_bearish = n_close[t] < (d_low + (day_range * 0.15))
+            
+            if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy and is_day_candle_bullish:
+                hint = "🟢 BTST: BUY (5M & DAY CONFIRMED)"
+            elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy and is_day_candle_bearish:
+                hint = "🔴 STBT: SELL (5M & DAY CONFIRMED)"
             else:
-                hint = "⏳ WEAK VOLUME: SQUARE OFF"
+                hint = "⏳ WEAK TREND / FILTER REJECTED"
         elif hour == 15 and minute > 25:
-            hint = nifty_hints[-1] if len(nifty_hints) > 0 else "⏳ HOLD STATE"
+            hint = nifty_hints[-1] if len(nifty_hints) > 0 else "⏳ HOLD"
         else:
             hint = "⏳ INTRADAY TRACKING"
             
         nifty_hints.append(hint)
 
-    # 7. DATAFRAME COMPILATION
+    # 8. DATA GRID MATRIX COMPILATION
     df_table = pd.DataFrame({
         'Date_Key': parsed_dates,
         'Timestamp': list(timestamps_formatted),
-        'Price Close': [f"{x:.2f}" for x in n_close],
-        'Dynamic VWAP': [f"{x:.2f}" for x in vwap],
-        'Kalman Center': [f"{x:.2f}" for x in mid_real_line],
-        'June Futures Vol': [f"{int(x)}" for x in n_vol],
-        '📈 INSTITUTIONAL HINT': nifty_hints
+        'Price Close': n_close,
+        'Dynamic VWAP': vwap,
+        'Kalman Center': mid_real_line,
+        'June Futures Vol': n_vol,
+        '🎯 DUAL HINT': nifty_hints
     })
 
-    # Hard-Lock exactly to the target 3:20 PM candle for each single day
+    # Hard-locking precisely to the 3:20 PM candle snapshot row for each day
     df_daywise = df_table[df_table["Timestamp"].str.contains(" 15:20")].reset_index(drop=True)
-
-    # Inverting rows to keep recent trading days on top
     df_reversed = df_daywise.iloc[::-1].reset_index(drop=True)
     
-    # Cleaning columns formatting before UI mapping
-    output_df = df_reversed[['Timestamp', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'June Futures Vol', '📈 INSTITUTIONAL HINT']]
+    # Appending Day High/Low indicators to table dynamically for manual cross-audits
+    df_reversed['Day Open'] = df_reversed['Date_Key'].map(lambda d: f"{day_open_map.get(d, 0.0):.2f}")
+    df_reversed['Day High'] = df_reversed['Date_Key'].map(lambda d: f"{day_high_map.get(d, 0.0):.2f}")
+    df_reversed['Day Low'] = df_reversed['Date_Key'].map(lambda d: f"{day_low_map.get(d, 0.0):.2f}")
+    
+    # Formats cleanup
+    df_reversed['Price Close'] = df_reversed['Price Close'].map(lambda x: f"{x:.2f}")
+    df_reversed['Dynamic VWAP'] = df_reversed['Dynamic VWAP'].map(lambda x: f"{x:.2f}")
+    df_reversed['Kalman Center'] = df_reversed['Kalman Center'].map(lambda x: f"{x:.2f}")
+    df_reversed['June Futures Vol'] = df_reversed['June Futures Vol'].map(lambda x: f"{int(x)}")
 
-    def style_institutional_flow(val):
+    output_df = df_reversed[['Timestamp', 'Day Open', 'Day High', 'Day Low', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'June Futures Vol', '🎯 DUAL HINT']]
+
+    def style_dual_flow(val):
         if "BUY" in str(val):
             return "background-color: #1b5e20; color: white; font-weight: bold;"
         elif "SELL" in str(val):
             return "background-color: #b71c1c; color: white; font-weight: bold;"
-        elif "WEAK" in str(val):
-            return "background-color: #e65100; color: white;"
+        elif "REJECTED" in str(val):
+            return "background-color: #37474f; color: #b0bec5; font-style: italic;"
         return ""
 
-    styled_final_df = output_df.style.map(style_institutional_flow, subset=['📈 INSTITUTIONAL HINT'])
-
-    # 8. RENDER SECURE INTERFACE VIEW
+    styled_final_df = output_df.style.map(style_dual_flow, subset=['🎯 DUAL HINT'])
     st.dataframe(styled_final_df, use_container_width=True)
