@@ -5,13 +5,13 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Nifty 1-Hour Error Matrix", layout="wide")
-st.title("🏹 Nifty 50: 1-Hour Pure Signal Matrix Engine")
-st.write("A = Nifty Close | B = Kalman Filter (Q=0.0001) | D = ML Prediction | **A - D = Prediction Difference**")
-st.write("**Train Window:** 01 July 2024 ➡️ 01 July 2025 (Hourly) | **Test Window:** 01 July 2025 ➡️ Aaj Tak")
+st.set_page_config(page_title="Nifty Real Test Matrix", layout="wide")
+st.title("🛡️ Nifty 50: Pure Out-of-Sample Signal Matrix Engine")
+st.write("A = Nifty Close | B = Kalman Filter (Q=0.0001) | C = Features | D = ML Prediction (No Data Leakage)")
+st.write("**Validation Mode:** Train on 2025 Data ➡️ **Strictly Test on 2026 Data (Live Simulation)**")
 
 # -------------------------------------------------------------------------
-# Kalman Filter Function (Q = 0.0001 as specified)
+# Kalman Filter Function
 # -------------------------------------------------------------------------
 def apply_kalman_filter(prices, Q=0.0001, R=0.5):
     n_timestamps = len(prices)
@@ -31,12 +31,13 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.5):
     return filtered_prices
 
 # -------------------------------------------------------------------------
-# Data Engine: 1-Hour Candles from 1 July 2024 to Present
+# Data Engine
 # -------------------------------------------------------------------------
 @st.cache_data
-def fetch_hourly_nifty_data():
+def fetch_complete_nifty_data():
     ticker = "^NSEI"
-    data = yf.download(ticker, start="2024-07-01", interval="1h")
+    # 1 Jan 2025 se lekar abhi (June 2026) tak ka data pull
+    data = yf.download(ticker, start="2025-01-01", interval="1h")
     
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
@@ -48,11 +49,11 @@ def fetch_hourly_nifty_data():
     return df_res
 
 try:
-    with st.spinner("Yahoo Finance se Nifty ka 1-Hour data download ho raha hai..."):
-        df = fetch_hourly_nifty_data()
+    with st.spinner("Yahoo Finance se data fetch ho raha hai..."):
+        df = fetch_complete_nifty_data()
 
     if df.empty:
-        st.error("Data load nahi ho paya! Internet check karein.")
+        st.error("Data load nahi ho paya!")
         st.stop()
 
     # Apply Kalman Filter (B)
@@ -66,36 +67,35 @@ try:
     df_clean = df.dropna().copy()
 
     # -------------------------------------------------------------------------
-    # STRICT TIMEFRAME SPLIT (User Instructions)
+    # STRICT TIME-SPLIT (Phase 1 Logic)
     # -------------------------------------------------------------------------
-    train_mask = (df_clean.index >= '2024-07-01') & (df_clean.index < '2025-07-01')
-    test_mask = df_clean.index >= '2025-07-01'
+    # 2025 ke end tak ka data sirf training ke liye
+    train_mask = df_clean.index < '2026-01-01'
+    # 2026 ka poora data test/prediction ke liye (Jise model ne training mein nahi dekha)
+    test_mask = df_clean.index >= '2026-01-01'
 
     df_train = df_clean[train_mask]
     df_test = df_clean[test_mask].copy()
 
-    if df_train.empty or df_test.empty:
-        st.error("Time boundaries ke hisab se data split fail ho gaya. Yahoo Finance par pichla 1-hour data limited ho sakta hai.")
-        st.stop()
+    if df_test.empty:
+        st.warning("2026 ka data abhi processed nahi hai, default last 20% data par split lagaya ja raha hai.")
+        split_idx = int(len(df_clean) * 0.8)
+        df_train = df_clean.iloc[:split_idx]
+        df_test = df_clean.iloc[split_idx:].copy()
 
-    # Train Model strictly on 2024-2025 Hourly history
+    # Train Model ONLY on 2025 Data
     X_train = df_train[['Feature_A_Lag', 'Feature_B_Lag']]
     y_train = df_train['Target_D_Next_Hour']
 
     model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
     model.fit(X_train, y_train)
 
-    # Predict blindly on 2025-2026 1-Hour data
+    # Predict ONLY on 2026 Data (Pure Blind Test)
     X_test = df_test[['Feature_A_Lag', 'Feature_B_Lag']]
     df_test['ML_Prediction_D'] = model.predict(X_test)
 
     # -------------------------------------------------------------------------
-    # Calculation: A - D (Actual Close - ML Prediction)
-    # -------------------------------------------------------------------------
-    df_test['Diff_A_minus_D'] = df_test['Close_A'] - df_test['ML_Prediction_D']
-
-    # -------------------------------------------------------------------------
-    # Trading Signal Engine (1-Hour Candle Rules)
+    # Trading Signal Engine (Based on Blind Test predictions)
     # -------------------------------------------------------------------------
     signals = []
     for idx, row in df_test.iterrows():
@@ -113,29 +113,27 @@ try:
     df_test['Trading_Action_Signal'] = signals
 
     # -------------------------------------------------------------------------
-    # UI Output Matrix Table with A-D Column
+    # UI Output Matrix Table (Showing ONLY Un-Biased 2026 Results)
     # -------------------------------------------------------------------------
-    st.success(f"Model successfully trained. Displaying {len(df_test)} Clean Candles from 01 July 2025 onwards!")
+    st.success(f"Model trained on 2025 history. Displaying {len(df_test)} pure blind-test rows from 2026!")
     
     st.markdown("---")
-    st.subheader("📋 1-Hour Interval Signal & Error Matrix Table")
+    st.subheader("📋 2026 Asli Trading Signal Matrix Table (No Leakage)")
 
-    # Table Formatting (Added Difference Column)
-    output_table = df_test[['Close_A', 'Kalman_B', 'ML_Prediction_D', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
+    # Formatting Table
+    output_table = df_test[['Close_A', 'Kalman_B', 'ML_Prediction_D', 'Trading_Action_Signal']].copy()
     output_table.columns = [
         "Nifty Actual Close (A)", 
         "Kalman Smooth (B)", 
         "ML Next-Hour Predict (D)", 
-        "Difference (A - D)",
         "Trading Action Signal"
     ]
 
     output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
     output_table = output_table.reset_index()
-    output_table.rename(columns={'index': 'Date & Time (1-Hour Candle)'}, inplace=True)
+    output_table.rename(columns={'index': 'Date & Time (Hourly Candle)'}, inplace=True)
 
-    # Dynamic Slider to view rows
-    rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 50)
+    rows_to_show = st.slider("2026 ki pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 50)
     
     st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=500)
 
