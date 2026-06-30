@@ -5,13 +5,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("⚡ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Live-Session Injection Mode")
+st.title("🛡️ Nifty 5-Minute High-Frequency Engine")
+st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Live Crash Protection Mode")
 
 # 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH EMPTY FALLBACK
-@st.cache_data(ttl=60)  # Reduced to 60 seconds for active live session updating
+@st.cache_data(ttl=60)  
 def load_5min_engine_data():
-    # Today is June 30, 2026. Setting dynamic bounds safely inside 60 days
     end_date = datetime(2026, 7, 1)
     start_date = end_date - timedelta(days=50)
     
@@ -21,8 +20,7 @@ def load_5min_engine_data():
     st.info(f"Streaming high-density 5-minute vectors from {start_str} to {end_str}...")
     nifty_raw = yf.download('^NSEI', start=start_str, end=end_str, interval='5m')
     
-    if nifty_raw.empty or len(nifty_raw) < 5:
-        # Fallback to safely fetch past context if current session is under-buffered
+    if nifty_raw.empty or len(nifty_raw) < 25:
         start_date_fb = end_date - timedelta(days=55)
         nifty_raw = yf.download('^NSEI', start=start_date_fb.strftime('%Y-%m-%d'), end=end_str, interval='5m')
         
@@ -64,10 +62,10 @@ else:
     parsed_dates = combined_data.index.date
     timestamps = combined_data.index
 
-    # 2. CONTINUOUS INTRADAY GAP CALCULATOR (Adapted for M5 boundaries)
+    # 2. CONTINUOUS INTRADAY GAP CALCULATOR 
     n_high_adj = np.copy(n_high)
     n_low_adj = np.copy(n_low)
-    historical_gaps = np.zeros(num_steps)
+    historical_gaps = np.zeros(num_steps, dtype=float)
     cumulative_gap = 0.0
 
     for t in range(1, num_steps):
@@ -80,8 +78,8 @@ else:
         n_low_adj[t] = n_low[t] - cumulative_gap
 
     # 3. HIGH-FREQUENCY KALMAN FILTRATION ENGINE 
-    b_high = np.zeros(num_steps)
-    b_low = np.zeros(num_steps)
+    b_high = np.zeros(num_steps, dtype=float)
+    b_low = np.zeros(num_steps, dtype=float)
     b_high[0], b_low[0] = n_high_adj[0], n_low_adj[0]
     K_factor = 0.005 
 
@@ -93,7 +91,7 @@ else:
     mid_real_line = fixed_mid + historical_gaps
     
     # 5-Min True Range (ATR 20) Volatility Envelope
-    atr = np.zeros(num_steps)
+    atr = np.zeros(num_steps, dtype=float)
     atr[0] = n_high[0] - n_low[0]
     for t in range(1, num_steps):
         tr = max(n_high[t] - n_low[t], abs(n_high[t] - n_close[t-1]), abs(n_low[t] - n_close[t-1]))
@@ -103,4 +101,23 @@ else:
     kalman_lower = mid_real_line - (0.75 * atr)
 
     # 4. INTRADAY SESSION CUMULATIVE VWAP 
-    vwap =
+    vwap = np.zeros(num_steps, dtype=float)
+    cum_pv = 0.0
+    cum_vol = 0.0
+    
+    for t in range(num_steps):
+        if t == 0 or parsed_dates[t] != parsed_dates[t-1]:
+            cum_pv = ((n_high[t] + n_low[t] + n_close[t]) / 3.0) * n_vol[t]
+            cum_vol = n_vol[t] if n_vol[t] > 0 else 1.0
+        else:
+            cum_pv += ((n_high[t] + n_low[t] + n_close[t]) / 3.0) * n_vol[t]
+            cum_vol += n_vol[t]
+        vwap[t] = cum_pv / cum_vol
+
+    # 5. FAST MOMENTUM TRACKER - RSI 14 (With Nan/Empty Vector Protection)
+    rsi = np.full(num_steps, 50.0, dtype=float) # Default stable initialization to 50
+    if num_steps > 15:
+        gains = np.zeros(num_steps, dtype=float)
+        losses = np.zeros(num_steps, dtype=float)
+        
+        for t in range(1, num
