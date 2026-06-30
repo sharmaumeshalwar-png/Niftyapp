@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
 st.title("🛡️ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Live Crash Protection Mode")
+st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.1")
 
 # 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH EMPTY FALLBACK
 @st.cache_data(ttl=60)  
@@ -114,10 +114,10 @@ else:
             cum_vol += n_vol[t]
         vwap[t] = cum_pv / cum_vol
 
-    # 5. FAST MOMENTUM TRACKER - RSI 14 (With Nan/Empty Vector Protection)
-    rsi = np.full(num_steps, 50.0, dtype=float) # Default stable initialization to 50
+    # 5. FAST MOMENTUM TRACKER - RSI 14 
+    rsi = np.full(num_steps, 50.0, dtype=float) 
     if num_steps > 15:
         gains = np.zeros(num_steps, dtype=float)
         losses = np.zeros(num_steps, dtype=float)
         
-        for t in range(1, num
+        for t in range(1, num_steps):
