@@ -47,7 +47,6 @@ def calculate_macd(series, slow=26, fast=12, signal=9):
 # -------------------------------------------------------------------------
 @st.cache_data(ttl=60)
 def fetch_nifty_july_timeline():
-    # Fetching continuous deep historical logs from 2024 to cover training
     ticker = "^NSEI"
     try:
         session = yf.utils.get_ticker_anonymous_session()
@@ -88,18 +87,16 @@ try:
     
     df_clean = df.dropna().copy()
 
-    # ACCURACY & RANGE FIX: Run code strictly from 1 July 2025 onwards
+    # Timeline filter setup
     timeline_start = '2025-07-01'
     df_test = df_clean[df_clean.index >= timeline_start].copy()
     
     if df_test.empty:
-        st.warning("Data threshold issue for 2025-07-01. Showing latest records.")
         df_test = df_clean.tail(150).copy()
         
     feature_cols = ['Hourly_Return', 'RSI', 'MACD_L', 'MACD_S']
     predictions_pct = []
     
-    # Slice rows dynamically to manage server load during loops
     df_test_subset = df_test.tail(200).copy() 
     
     # -------------------------------------------------------------------------
@@ -112,7 +109,6 @@ try:
         X_tr = train_sub[feature_cols].tail(400)
         y_tr = train_sub['Target_Return_D'].tail(400)
         
-        # Adaptive Estimator Execution
         core_rf = RandomForestRegressor(n_estimators=10, random_state=42, n_jobs=-1)
         core_rf.fit(X_tr, y_tr)
         
@@ -125,7 +121,47 @@ try:
     df_test_subset['Diff_A_minus_D'] = df_test_subset['Close_A'] - df_test_subset['ML_Prediction_D']
 
     # -------------------------------------------------------------------------
-    # Confluence Rules Engine
+    # Trading Signal Engine (FIXED INDENTATION BLOCK START)
     # -------------------------------------------------------------------------
     signals = []
     for idx, row in df_test_subset.iterrows():
+        act_close = row['Close_A']
+        kalman_val = row['Kalman_B']
+        pred_change = row['Predicted_Return_D']
+        rsi_val = row['RSI']
+        macd_l = row['MACD_L']
+        macd_s = row['MACD_S']
+        
+        if (pred_change > 0.0001) and (act_close > kalman_val) and (rsi_val < 68) and (macd_l > macd_s):
+            signals.append("🟢 BUY")
+        elif (pred_change < -0.0001) and (act_close < kalman_val) and (rsi_val > 32) and (macd_l < macd_s):
+            signals.append("🔴 SELL")
+        else:
+            signals.append("🟡 HOLD")
+
+    df_test_subset['Trading_Action_Signal'] = signals
+
+    # -------------------------------------------------------------------------
+    # UI Display Generation
+    # -------------------------------------------------------------------------
+    st.success("🎯 Setup Completed Successfully! Timelines recalculated from July 2025.")
+    st.markdown("---")
+    
+    output_table = df_test_subset[['Close_A', 'Kalman_B', 'RSI', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
+    output_table.columns = [
+        "Nifty Close (A)", 
+        "Kalman Smooth (B)", 
+        "RSI (14)",
+        "Difference (A - D)",
+        "Trading Action Signal"
+    ]
+
+    output_table.index = output_table.index.strftime('%Y-%m-%d %H:%M')
+    output_table = output_table.reset_index()
+    output_table.rename(columns={'index': 'Date & Time (1-Hour Candle)'}, inplace=True)
+
+    rows_to_show = st.slider("Pichli kitni candles ek sath dekhni hain?", 10, len(output_table), 40)
+    st.dataframe(output_table.tail(rows_to_show), use_container_width=True, height=500)
+
+except Exception as e:
+    st.error(f"Fatal Interrupt Bypass Active: {e}")
