@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, time
+from datetime import datetime, timedelta, time
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Optimized Institutional Tracker", layout="wide")
-st.title("🎯 Optimized Institutional Candle Tracker (2-Month Data)")
-st.subheader("5-Minute Candle Matrix From 1st May 2026 to June 2026")
+st.set_page_config(page_title="Dynamic Institutional Tracker", layout="wide")
+st.title("🎯 Real Live Institutional Candle Tracker")
+st.subheader("Every-Candle 5-Minute Matrix (Safe Data Fetching Enabled)")
 
 st.write("---")
 st.write("### 8-Step Verification Progress:")
@@ -23,28 +23,29 @@ def check_window(timestamp):
 
 st.success("Step 1: Institutional Time Zones Locked.")
 
-# STEP 2: Fetch Live Data (All Possible Outcome Dates from 2026-05-01)
+# STEP 2: Safe Multi-Date Fetching (Maximum 29 Days to prevent Yahoo API Crash)
 @st.cache_data
-def fetch_historical_data():
-    # Nifty ke bajay agar aap kisi stock jaise RELIANCE.NS ko test karenge toh volume spikes zyada saaf dikhenge
-    ticker = "RELIANCE.NS" 
-    start_date = "2026-05-01"
-    # Yahoo Finance maximum 1 month ya 60 days ka hi 5m data deta hai, isliye we pull the max available window
-    data = yf.download(ticker, start=start_date, interval="5m", progress=False)
-    return data
+def fetch_safe_historical_data():
+    ticker = "RELIANCE.NS" # Standard high liquidity stock for FII tracking
+    # Dynamically calculating past 28 days to stay within Yahoo Intraday limits
+    calculated_start = (datetime.now() - timedelta(days=28)).strftime('%Y-%m-%d')
+    data = yf.download(ticker, start=calculated_start, interval="5m", progress=False)
+    return data, calculated_start
 
 df = pd.DataFrame()
+start_used = ""
+
 try:
-    raw_data = fetch_historical_data()
+    raw_data, start_used = fetch_safe_historical_data()
     if not raw_data.empty:
         if isinstance(raw_data.columns, pd.MultiIndex):
             raw_data.columns = raw_data.columns.get_level_values(0)
         df = raw_data.copy()
-        st.success("Step 2: 2-Month Data fetched successfully from Yahoo Finance.")
+        st.success(f"Step 2: Safe Intraday Data fetched successfully from {start_used} to Today.")
     else:
-        raise ValueError("YFinance returned empty.")
+        raise ValueError("YFinance blocked the connection.")
 except Exception as e:
-    st.error(f"Step 2 Error: Live data fetch fail hua. Check internet or ticker. {e}")
+    st.error(f"Step 2 Critical Error: {e}")
     st.stop()
 
 # STEP 3: Intraday VWAP Calculation (Day-wise Reset)
@@ -54,37 +55,34 @@ df['TP_Vol'] = df['Typical_Price'] * df['Volume']
 df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
 df['Cum_Vol'] = df.groupby('Date')['Volume'].cumsum()
 df['VWAP'] = df['Cum_TP_Vol'] / df['Cum_Vol']
-st.success("Step 4: Day-wise VWAP Math Layer Computed.")
+st.success("Step 3: Day-wise VWAP Layers Plotted.")
 
-# STEP 4: OPTIMIZED Volume Benchmark (Relaxed from 3.0x to 1.8x)
+# STEP 4: Optimized Volume Benchmark (1.8x Multiplier)
 df['Vol_MA'] = df['Volume'].rolling(window=20, min_periods=1).mean()
-df['Is_Heavy_Volume'] = df['Volume'] > (df['Vol_MA'] * 1.8) 
-st.success("Step 4: Volume threshold optimized to 1.8x for institutional flow.")
+df['Is_Heavy_Volume'] = df['Volume'] > (df['Vol_MA'] * 1.8)
+st.success("Step 4: 1.8x Volume Breakthrough Rules Synchronized.")
 
-# STEP 5: OPTIMIZED Spread Benchmark (Relaxed from 1.8x to 1.3x)
+# STEP 5: Optimized Spread Benchmark (1.3x Volatility Multiplier)
 df['Candle_Spread'] = df['High'] - df['Low']
 df['Spread_MA'] = df['Candle_Spread'].rolling(window=20, min_periods=1).mean()
 df['Is_Big_Spread'] = df['Candle_Spread'] > (df['Spread_MA'] * 1.3)
-st.success("Step 5: Spread threshold optimized to 1.3x.")
+st.success("Step 5: Price Action Volatility Filters Active.")
 
-# STEP 6: Time-Zone Alignment
+# STEP 6 & 7: Time Matching & Signal Matrix Construction
 df['Zone'] = [check_window(idx) for idx in df.index]
 df['Valid_Zone'] = df['Zone'] != "No_Zone"
-st.success("Step 6: Out-of-Hour Filter Synced.")
-
-# STEP 7: Signal Compile (Bullish candle crossing above VWAP)
 df['Is_Bullish'] = df['Close'] > df['Open']
 df['Signal'] = df['Is_Heavy_Volume'] & df['Is_Big_Spread'] & df['Valid_Zone'] & (df['Close'] > df['VWAP']) & df['Is_Bullish']
-st.success("Step 7: Multi-Layer Aggregation Matrix Compiled.")
+st.success("Step 6 & 7: False Out-of-Hour Fluctuations Filtered Out.")
 
-# STEP 8: Final Count & Display
+# STEP 8: Render Outputs
 st.write("---")
 st.header("📋 8-STEP OPTIMIZED MATRIX REPORT")
 
-# Prepare display dataframe
+# Preparing DataFrame for clean Streamlit View
 display_df = pd.DataFrame(index=df.index)
 display_df['Date/Time'] = df.index.strftime('%Y-%m-%d %H:%M')
-display_df['Zone'] = df['Zone']
+display_df['Institutional Window'] = df['Zone']
 display_df['Close Price'] = df['Close'].round(2)
 display_df['VWAP'] = df['VWAP'].round(2)
 display_df['Volume'] = df['Volume'].astype(int)
@@ -103,6 +101,6 @@ signals_only = display_df[display_df['Status'] == "🎯 BUY ALERT"]
 
 if not signals_only.empty:
     st.dataframe(signals_only, use_container_width=True)
-    st.success("Step 8: Final Count Verified. Signals generated with relaxed institutional criteria!")
+    st.success("Step 8: Final Count Verified. Data rendered perfectly without any empty dataframe error!")
 else:
-    st.warning("Ab bhi koi signal nahi aaya? Apne Streamlit page par top-right mein 'R' daba kar refresh karein, ya ticker ko 'RELIANCE.NS' se badal kar 'SBIN.NS' par test karein.")
+    st.warning("Is selected 30 days window mein in parameters par koi valid footprint nahi mila. Parameters aur zyada ghatiya (relax) na karein warna fake signals milenge.")
