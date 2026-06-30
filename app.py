@@ -1,30 +1,26 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Kalman + ML Hybrid Predictor", layout="wide")
-st.title("📈 Kalman Filter & Machine Learning Hybrid Model")
-st.write("A = Close Price ➡️ B = Kalman Filter (Q=0.0001) ➡️ C = Features (A & B) ➡️ D = ML Prediction")
+st.set_page_config(page_title="Kalman + ML Matrix Predictor", layout="wide")
+st.title("📊 Kalman Filter & Machine Learning Hybrid Matrix Table")
+st.write("A = Close Price | B = Kalman Filter (Q=0.0001) | C = Features Combination | D = ML Target Prediction")
+st.write("**Data Structure:** 1-Hour Candles | **Start Date:** 01 January 2025")
 
 # -------------------------------------------------------------------------
 # Helper Function: 1D Kalman Filter Implementation
 # -------------------------------------------------------------------------
 def apply_kalman_filter(prices, Q=0.0001, R=0.1):
-    """
-    Applies a simple 1D Kalman Filter to a series of prices.
-    Q: Process variance (given as 0.0001 by user)
-    R: Measurement variance (assumed noise in market data)
-    """
     n_timestamps = len(prices)
     filtered_prices = np.zeros(n_timestamps)
     
     # Initial guesses
-    x_hat = prices[0]  # initial state estimate
-    P = 1.0            # initial error covariance
+    x_hat = prices[0]  
+    P = 1.0            
     
     for t in range(n_timestamps):
         # 1. Prediction Step
@@ -32,7 +28,7 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.1):
         P_minus = P + Q
         
         # 2. Measurement Update Step (Correction)
-        K = P_minus / (P_minus + R)  # Kalman Gain
+        K = P_minus / (P_minus + R)  
         x_hat = x_hat_minus + K * (prices[t] - x_hat_minus)
         P = (1 - K) * P_minus
         
@@ -41,105 +37,64 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.1):
     return filtered_prices
 
 # -------------------------------------------------------------------------
-# Sidebar: Data Input Setup
+# Data Setup: 1-Hour Candles starting from 1st Jan 2025
 # -------------------------------------------------------------------------
-st.sidebar.header("📊 Data & Parameter Settings")
-data_option = st.sidebar.selectbox("Data Source Select Karein", ["Generate Synthetic Data", "Upload CSV"])
+st.sidebar.header("🗓️ Data Filter Settings")
+data_mode = st.sidebar.selectbox("Data Source", ["Generate 1-Hour Candle Data", "Upload Hourly CSV"])
 
-if data_option == "Generate Synthetic Data":
-    st.sidebar.subheader("Synthetic Data Parameters")
-    n_days = st.sidebar.slider("Kitne din ka data?", 100, 1000, 5000)
+# Current system time (June 2026) tak ka range generate karne ke liye
+start_date = datetime(2025, 1, 1, 0, 0)
+
+if data_mode == "Generate 1-Hour Candle Data":
+    # Calculating total hours from Jan 1, 2025 to June 2026 (approx 13000 hours)
+    total_hours = 13000 
     
-    # Generate random-walk style close prices (A)
+    # Generate Timestamp Index
+    timestamps = [start_date + timedelta(hours=i) for i in range(total_hours)]
+    
+    # Generate Synthetic Random Walk for Hourly Close Prices (A)
     np.random.seed(42)
-    steps = np.random.normal(0, 0.5, n_days)
-    close_prices = 100 + np.cumsum(steps)
-    # Adding some noise
-    close_prices += np.random.normal(0, 0.2, n_days)
+    steps = np.random.normal(0, 0.3, total_hours)
+    close_prices = 150 + np.cumsum(steps)
     
-    df = pd.DataFrame({"Close_A": close_prices})
+    df = pd.DataFrame({"Timestamp": timestamps, "Close_A": close_prices})
+    df.set_index("Timestamp", inplace=True)
+
 else:
-    uploaded_file = st.sidebar.file_uploader("CSV file upload karein (Isme 'Close' column hona chahiye)", type=["csv"])
+    uploaded_file = st.sidebar.file_uploader("CSV file upload karein (Isme 'Timestamp' aur 'Close' hona chahiye)", type=["csv"])
     if uploaded_file is not None:
         user_df = pd.read_csv(uploaded_file)
-        if 'Close' in user_df.columns:
-            df = pd.DataFrame({"Close_A": user_df['Close'].values})
+        # Convert timestamp and filter from 1st Jan 2025
+        if 'Timestamp' in user_df.columns and 'Close' in user_df.columns:
+            user_df['Timestamp'] = pd.to_datetime(user_df['Timestamp'])
+            user_df = user_df[user_df['Timestamp'] >= pd.to_datetime('2025-01-01')]
+            
+            df = pd.DataFrame({
+                "Timestamp": user_df['Timestamp'].values,
+                "Close_A": user_df['Close'].values
+            })
+            df.set_index("Timestamp", inplace=True)
         else:
-            st.error("Error: CSV file mein 'Close' naam ka column nahi mila!")
+            st.error("CSV mein 'Timestamp' aur 'Close' columns zaroori hain!")
             st.stop()
     else:
-        st.info("Aapki kisi CSV file ka intezar hai. Tab tak dummy data dekhne ke liye sidebar se 'Generate Synthetic Data' chunein.")
+        st.info("Hourly CSV upload karein ya fir default 'Generate' option chunein.")
         st.stop()
 
 # -------------------------------------------------------------------------
-# Step-by-Step Processing Framework (8-Step Logic Integration)
+# Processing Framework (8-Step Logic Implementation)
 # -------------------------------------------------------------------------
 
-# Step 1 & 2: Get A and Compute B (Kalman Filter)
+# Step 1 & 2: Calculate Kalman Filter (B) on Close Price (A)
 df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.1)
 
-# Step 3: Combine into C (Features) and Shift for Next-Day Target Prediction
+# Step 3: Feature Matrix C Creation (Using lag inputs)
 df['Feature_A_Lag'] = df['Close_A']
 df['Feature_B_Lag'] = df['Kalman_B']
-# Target Variable D: Next day's close price
-df['Target_D'] = df['Close_A'].shift(-1) 
 
-# Drop the last row because it won't have a target value
-df = df.dropna()
+# Target Variable D: Next Hour's Close Price
+df['Target_D_Next_Hour'] = df['Close_A'].shift(-1)
+df_clean = df.dropna()
 
-# Step 4 & 5: Train-Test Split (80% Train, 20% Test for validation)
-split_idx = int(len(df) * 0.8)
-train_df = df.iloc[:split_idx]
-test_df = df.iloc[split_idx:]
-
-X_train = train_df[['Feature_A_Lag', 'Feature_B_Lag']]
-y_train = train_df['Target_D']
-X_test = test_df[['Feature_A_Lag', 'Feature_B_Lag']]
-y_test = test_df['Target_D']
-
-# Step 6: Machine Learning (D) Model Training
-model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-# Step 7: Prediction Phase
-test_df = test_df.copy()
-test_df['Predicted_D'] = model.predict(X_test)
-
-# Step 8: Evaluation Metrics
-rmse = np.sqrt(mean_squared_error(y_test, test_df['Predicted_D']))
-r2 = r2_score(y_test, test_df['Predicted_D'])
-
-# -------------------------------------------------------------------------
-# Streamlit UI Dashboard Elements
-# -------------------------------------------------------------------------
-col1, col2 = st.columns(2)
-with col1:
-    st.metric(label="📊 Test Data RMSE (Error)", value=f"{rmse:.4f}")
-with col2:
-    st.metric(label="🎯 Model R² Score (Accuracy)", value=f"{r2*100:.2f}%")
-
-st.markdown("---")
-st.subheader("📈 Visualization Dashboard")
-
-# Plotting the Results
-fig, ax = plt.subplots(figsize=(14, 7))
-
-# Plotting a subset of test data for clear visibility
-plot_len = min(150, len(test_df))
-plot_df = test_df.tail(plot_len).reset_index()
-
-ax.plot(plot_df['Close_A'], label="A: Actual Close Price", color="black", alpha=0.4, linestyle="--")
-ax.plot(plot_df['Kalman_B'], label="B: Kalman Filtered (Q=0.0001)", color="blue", linewidth=1.5)
-ax.plot(plot_df['Predicted_D'], label="D: ML Hybrid Prediction (Next Step)", color="red", linewidth=2)
-
-ax.set_title(f"Last {plot_len} Timestamps Comparison")
-ax.set_xlabel("Timestamps")
-ax.set_ylabel("Price")
-ax.legend()
-ax.grid(True, alpha=0.3)
-
-st.pyplot(fig)
-
-# Show raw processed dataset matrix C
-st.subheader("📋 Processed Data Matrix (C)")
-st.dataframe(df[['Close_A', 'Kalman_B', 'Target_D']].tail(10))
+# Step 4 & 5: Train-Test Split (80% Train / 20% Test)
+split_idx = int
