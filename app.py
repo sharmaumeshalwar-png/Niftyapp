@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Nifty 1-Hour Strategy Matrix", layout="wide")
+st.set_page_config(page_title="Nifty 1-Hour Error Matrix", layout="wide")
 st.title("🏹 Nifty 50: 1-Hour Pure Signal Matrix Engine")
-st.write("A = Nifty Close (1-Hr) | B = Kalman Filter (Q=0.0001) | C = Features | D = ML Prediction")
+st.write("A = Nifty Close | B = Kalman Filter (Q=0.0001) | D = ML Prediction | **A - D = Prediction Difference**")
 st.write("**Train Window:** 01 July 2024 ➡️ 01 July 2025 (Hourly) | **Test Window:** 01 July 2025 ➡️ Aaj Tak")
 
 # -------------------------------------------------------------------------
@@ -36,7 +36,6 @@ def apply_kalman_filter(prices, Q=0.0001, R=0.5):
 @st.cache_data
 def fetch_hourly_nifty_data():
     ticker = "^NSEI"
-    # 1 July 2024 se aaj tak ka Hourly (1h) data fetch karna
     data = yf.download(ticker, start="2024-07-01", interval="1h")
     
     if isinstance(data.columns, pd.MultiIndex):
@@ -67,11 +66,9 @@ try:
     df_clean = df.dropna().copy()
 
     # -------------------------------------------------------------------------
-    # STRICT TIMEFRAME SPLIT
+    # STRICT TIMEFRAME SPLIT (User Instructions)
     # -------------------------------------------------------------------------
-    # 1 July 2024 se 1 July 2025 tak sirf Training
     train_mask = (df_clean.index >= '2024-07-01') & (df_clean.index < '2025-07-01')
-    # 1 July 2025 se Aaj tak (June 2026) sirf Testing / Predictions
     test_mask = df_clean.index >= '2025-07-01'
 
     df_train = df_clean[train_mask]
@@ -93,6 +90,11 @@ try:
     df_test['ML_Prediction_D'] = model.predict(X_test)
 
     # -------------------------------------------------------------------------
+    # Calculation: A - D (Actual Close - ML Prediction)
+    # -------------------------------------------------------------------------
+    df_test['Diff_A_minus_D'] = df_test['Close_A'] - df_test['ML_Prediction_D']
+
+    # -------------------------------------------------------------------------
     # Trading Signal Engine (1-Hour Candle Rules)
     # -------------------------------------------------------------------------
     signals = []
@@ -111,19 +113,20 @@ try:
     df_test['Trading_Action_Signal'] = signals
 
     # -------------------------------------------------------------------------
-    # UI Output Matrix Table (Showing 1 July 2025 to Present Results)
+    # UI Output Matrix Table with A-D Column
     # -------------------------------------------------------------------------
-    st.success(f"Model successfully trained on 1-Year Hourly history. Displaying {len(df_test)} Clean Blind-Test 1-Hour candles from 01 July 2025 onwards!")
+    st.success(f"Model successfully trained. Displaying {len(df_test)} Clean Candles from 01 July 2025 onwards!")
     
     st.markdown("---")
-    st.subheader("📋 1-Hour Interval Signal Matrix Table (Un-Biased Actual Test)")
+    st.subheader("📋 1-Hour Interval Signal & Error Matrix Table")
 
-    # Table Formatting
-    output_table = df_test[['Close_A', 'Kalman_B', 'ML_Prediction_D', 'Trading_Action_Signal']].copy()
+    # Table Formatting (Added Difference Column)
+    output_table = df_test[['Close_A', 'Kalman_B', 'ML_Prediction_D', 'Diff_A_minus_D', 'Trading_Action_Signal']].copy()
     output_table.columns = [
         "Nifty Actual Close (A)", 
         "Kalman Smooth (B)", 
         "ML Next-Hour Predict (D)", 
+        "Difference (A - D)",
         "Trading Action Signal"
     ]
 
