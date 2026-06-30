@@ -69,11 +69,8 @@ def calculate_indicators(df):
 # =====================================================================
 # NO-CACHE LIVE DATA FETCHING
 # =====================================================================
-with st.spinner("Fetching live data directly from exchange... Please wait."):
-    # Aaj tak ka fresh data lane ke liye current date calculate ki
+with st.spinner("Fetching Nifty BeES data and training models..."):
     today_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # 2025 se lekar aaj tak ka poora data bina kisi block ke load hoga
     df = yf.download("NIFTYBEES.NS", start="2025-01-01", end=today_date, interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex):
@@ -84,12 +81,12 @@ with st.spinner("Fetching live data directly from exchange... Please wait."):
     df.dropna(inplace=True)
     df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
 
-# Features List
+# Features List for ML Engine
 features = ['Volume', 'VWAP', 'Kalman_Price', 'MACD_12_26_9', 'RSI_14', 'ATRe_14', 'DMP_14', 'DMN_14']
 X = df[features]
 y = df['Target']
 
-# Split Data (Learning: 2025 | Prediction: 2026 - Today)
+# Split Data
 train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
 test_mask = (df.index >= '2026-01-01')
 
@@ -124,27 +121,38 @@ st.sidebar.metric(label="Gradient Boosting Accuracy", value=f"{acc_gb:.2%}")
 st.sidebar.success(f"Best Model: **{winner_name}**")
 
 # =====================================================================
-# OUTPUT SIGNALS (1 Jan 2026 - Present)
+# OUTPUT SIGNALS WITH ALL COLUMNS (1 Jan 2026 - Present)
 # =====================================================================
 df_signals = df[test_mask].copy()
 df_signals['Predicted_Dir'] = best_model.predict(X_test)
 df_signals['Signal'] = np.where(df_signals['Predicted_Dir'] == 1, "🟢 BUY (Long)", "🔴 SELL (Exit)")
 
-# Table display settings
-display_df = df_signals[['Close', 'Kalman_Price', 'RSI_14', 'Signal']].copy()
+# Ab aapke saare indicators display dataframe me add ho chuke hain
+display_columns = [
+    'Close', 'Kalman_Price', 'Volume', 'VWAP', 
+    'MACD_12_26_9', 'RSI_14', 'ATRe_14', 'DMP_14', 'DMN_14', 'Signal'
+]
+display_df = df_signals[display_columns].copy()
+
+# Formatting decimals to look clean on Web UI
+for col in display_df.columns:
+    if col != 'Signal' and col != 'Volume':
+        display_df[col] = display_df[col].round(2)
+
+# Date column formatting
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-# Main Screen Layout (CHART HATA DIYA HAI)
-st.subheader(f"📋 Signals from 1 Jan 2026 to Today (Total: {len(display_df)} Hourly Candles)")
+# Main Screen Layout
+st.subheader(f"📋 Full Strategy Parameters & Signals (Total: {len(display_df)} Hourly Candles)")
 
-# Ye table ab poora 2026 se lekar aaj tak ka data scroll format me dikhayega
-st.dataframe(display_df, use_container_width=True, height=700)
+# Detailed Table Display
+st.dataframe(display_df, use_container_width=True, height=750)
 
-# Download Section
+# Download Button
 csv = display_df.to_csv().encode('utf-8')
 st.download_button(
-    label="📥 Download Full Signal History (CSV)",
+    label="📥 Download Complete Indicator & Signal Dataset (CSV)",
     data=csv,
-    file_name='nifty_bees_2026_full_signals.csv',
+    file_name='nifty_bees_2026_complete_metrics.csv',
     mime='text/csv',
 )
