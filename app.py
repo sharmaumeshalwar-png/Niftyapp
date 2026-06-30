@@ -6,10 +6,10 @@ from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
 st.title("🛡️ Nifty 5-Minute High-Frequency Engine")
-st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.2")
+st.write("Dynamic 5-Min Multi-Vector Analytics Engine | Production Safe v2.3 (Data Locked)")
 
-# 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH EMPTY FALLBACK
-@st.cache_data(ttl=60)  
+# 1. DYNAMIC ROLLING 5-MIN DATA LOADER WITH IMMUTABLE CACHE (FREEZE MODE)
+@st.cache_data(ttl=86400)  # Locked Data Vector for 24 Hours to freeze arrays completely
 def load_5min_engine_data():
     end_date = datetime(2026, 7, 1)
     start_date = end_date - timedelta(days=50)
@@ -123,4 +123,82 @@ else:
         for t in range(1, num_steps):
             diff = n_close[t] - n_close[t-1]
             gains[t] = diff if diff > 0 else 0.0
-            losses[t] = -diff if diff
+            losses[t] = -diff if diff < 0 else 0.0
+            
+        avg_gain = np.mean(gains[1:15])
+        avg_loss = np.mean(losses[1:15])
+        if avg_loss == 0: avg_loss = 0.00001
+        rsi[14] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+        
+        for t in range(15, num_steps):
+            avg_gain = (avg_gain * 13 + gains[t]) / 14
+            avg_loss = (avg_loss * 13 + losses[t]) / 14
+            if avg_loss == 0: avg_loss = 0.00001
+            rsi[t] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+
+    # 6. INTRADAY SCALPING & BTST LOGIC WITH 5-MIN GRANULARITY
+    nifty_signals = []
+    
+    for t in range(num_steps):
+        vol_slice = n_vol[max(0, t-4):t+1] 
+        recent_vol_avg = float(np.mean(vol_slice)) if len(vol_slice) > 0 else 1.0
+        
+        current_day = parsed_dates[t]
+        day_indices = np.where(parsed_dates == current_day)[0]
+        day_indices_prior = [idx for idx in day_indices if idx <= t]
+        day_base_vol = np.mean(n_vol[day_indices_prior]) if len(day_indices_prior) > 0 else 1.0
+        
+        is_vol_spiking = recent_vol_avg > (day_base_vol * 1.25) 
+        current_hour = timestamps[t].hour
+        current_minute = timestamps[t].minute
+        
+        if n_close[t] > vwap[t] and n_close[t] > kalman_upper[t] and is_vol_spiking and (40 < rsi[t] < 68):
+            if current_hour == 15 and current_minute >= 15:
+                signal = "🟢 POWER BTST: BUY ACCUMULATION"
+            else:
+                signal = "🚀 SCALP: LONG BREAKOUT"
+        elif n_close[t] < vwap[t] and n_close[t] < kalman_lower[t] and is_vol_spiking and (32 < rsi[t] < 58):
+            if current_hour == 15 and current_minute >= 15:
+                signal = "🔴 POWER STBT: SELL DISTRIBUTION"
+            else:
+                signal = "📉 SCALP: SHORT BREAKDOWN"
+        else:
+            signal = "⏳ CHOPPY: NO TRADE ZONE"
+            
+        nifty_signals.append(signal)
+
+    # 7. HIGH-FREQUENCY DATAFRAME COMPILATION
+    df_raw_table = pd.DataFrame({
+        'Date_Key': parsed_dates,
+        'Timestamp': timestamps.strftime('%Y-%m-%d %H:%M'),
+        'Price Close': n_close,
+        'Dynamic VWAP': vwap,
+        'Kalman Center': mid_real_line,
+        'RSI (14)': rsi,
+        'Futures Volume': n_vol,
+        '🎯 FREQUENCY ACTION': nifty_signals
+    })
+
+    df_reversed = df_raw_table.iloc[::-1].reset_index(drop=True).head(50)
+    
+    # Precision Formatting Safely with structural type enforcement
+    df_reversed['Price Close'] = df_reversed['Price Close'].astype(float).map(lambda x: f"{x:.2f}")
+    df_reversed['Dynamic VWAP'] = df_reversed['Dynamic VWAP'].astype(float).map(lambda x: f"{x:.2f}")
+    df_reversed['Kalman Center'] = df_reversed['Kalman Center'].astype(float).map(lambda x: f"{x:.2f}")
+    df_reversed['RSI (14)'] = df_reversed['RSI (14)'].astype(float).map(lambda x: f"{x:.1f}")
+    df_reversed['Futures Volume'] = df_reversed['Futures Volume'].astype(float).map(lambda x: f"{x:.0f}")
+
+    output_df = df_reversed[['Timestamp', 'Price Close', 'Dynamic VWAP', 'Kalman Center', 'RSI (14)', 'Futures Volume', '🎯 FREQUENCY ACTION']]
+
+    def style_scalp_flow(val):
+        if "LONG" in str(val) or "BTST" in str(val):
+            return "background-color: #0d47a1; color: white; font-weight: bold;"
+        elif "SHORT" in str(val) or "STBT" in str(val):
+            return "background-color: #b71c1c; color: white; font-weight: bold;"
+        return "color: #757575;"
+
+    styled_final_df = output_df.style.map(style_scalp_flow, subset=['🎯 FREQUENCY ACTION'])
+
+    # 8. RENDER LIVE VIEW
+    st.subheader("🎯 Real-Time 5-Minute Execution Stream (Latest Candles)")
+    st.dataframe(styled_final_df, use_container_width=True)
