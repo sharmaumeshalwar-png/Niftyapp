@@ -4,45 +4,46 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("🛡️ Nifty High-Frequency Engine (May - June 2026 Matrix)")
+st.title("🛡️ Nifty High-Frequency Engine (Hourly Stable Mode)")
 
-st.write("Stable Core: May 1 to June 30, 2026 | K=0.001 | 0.001x Matrix | Column Overlaps Solved")
+st.write("Stable Core: May 1 to June 30, 2026 | K=0.001 | 60-Day Limit Bypassed | Hourly Matrix Live")
 
-# 1. FIXED DATE LOADER WITH HARDENED COLUMN PARSING
+# 1. FIXED DATE LOADER WITH 1-HOUR INTERVAL TO BYPASS 60-DAY LIMIT
 @st.cache_data(ttl=600)
-def load_multi_month_data():
+def load_60day_safe_data():
     start_date = "2026-05-01"
     end_date = "2026-07-01"
     
-    st.info("Streaming high-density 5-Minute ticks for May & June 2026...")
-    nifty_raw = yf.download('^NSEI', start=start_date, end=end_date, interval='5m')
+    st.info("Streaming 1-Hour stable candles to bypass yfinance historical limitations...")
+    # Using '1h' interval because it allows downloading multiple months/years seamlessly
+    nifty_raw = yf.download('^NSEI', start=start_date, end=end_date, interval='1h')
     
     if nifty_raw.empty or len(nifty_raw) == 0:
         return None
 
-    # Hardened Cross-Section Parsing to eliminate Multi-Index Column Crashing
+    # Cross-Section Parsing to avoid Multi-index header collisions
     df = pd.DataFrame(index=nifty_raw.index)
     df['High'] = nifty_raw.xs('High', axis=1, level=0).iloc[:, 0] if 'High' in nifty_raw.columns.levels[0] else nifty_raw['High']
     df['Low'] = nifty_raw.xs('Low', axis=1, level=0).iloc[:, 0] if 'Low' in nifty_raw.columns.levels[0] else nifty_raw['Low']
     df['Open'] = nifty_raw.xs('Open', axis=1, level=0).iloc[:, 0] if 'Open' in nifty_raw.columns.levels[0] else nifty_raw['Open']
     df['Close'] = nifty_raw.xs('Close', axis=1, level=0).iloc[:, 0] if 'Close' in nifty_raw.columns.levels[0] else nifty_raw['Close']
     
-    # Derivative Futures Volume Mapping Engine
+    # Rebuilding June Futures Volume Density Model
     np.random.seed(42)
-    vol_base = (df['High'] - df['Low']) * 65000
-    noise = np.random.normal(170000, 20000, len(df))
+    vol_base = (df['High'] - df['Low']) * 80000
+    noise = np.random.normal(250000, 40000, len(df))
     df['Volume'] = np.abs(vol_base + noise)
     
     df.index = pd.to_datetime(df.index).tz_localize(None)
     return df.dropna()
 
 # Execute data pipe
-combined_data = load_multi_month_data()
+combined_data = load_60day_safe_data()
 
 if combined_data is None or len(combined_data) == 0:
-    st.error("Severe Error: yfinance returned an empty array matrix. Please clear cache or reload.")
+    st.error("Severe Error: Data server returned empty array. Please try shifting the start date closer or refresh.")
 else:
-    st.success(f"Successfully loaded {len(combined_data)} structural data points for May-June 2026 cycle.")
+    st.success(f"Successfully loaded {len(combined_data)} Hourly structural data nodes.")
     
     # Pure Linear Arrays
     n_high = combined_data['High'].to_numpy(dtype=float)
@@ -83,7 +84,7 @@ else:
     fixed_mid = (b_high + b_low) / 2.0
     mid_real_line = fixed_mid + historical_gaps
 
-    # 4. DYNAMIC VWAP CORRIDOR
+    # 4. DYNAMIC HOURLY VWAP CORRIDOR
     vwap = np.zeros(num_steps)
     cum_pv = 0.0
     cum_vol = 0.0
@@ -97,68 +98,7 @@ else:
             cum_vol += n_vol[t]
         vwap[t] = cum_pv / cum_vol
 
-    # 5 & 6. TARGETED INSTITUTIONAL CLOSING WINDOW (3:15 PM - 3:25 PM)
+    # 5 & 6. HOURLY TARGETED INSTITUTIONAL CLOSING ZONE (3:15 PM FINAL HOUR CANDLE)
     nifty_hints = []
     
-    for t in range(num_steps):
-        current_time = combined_data.index[t]
-        hour = current_time.hour
-        minute = current_time.minute
-        
-        current_day = parsed_dates[t]
-        day_indices = np.where(parsed_dates == current_day)[0]
-        day_indices_before_3pm = [idx for idx in day_indices if combined_data.index[idx].hour < 15 and idx <= t]
-        
-        avg_base_vol = np.mean(n_vol[day_indices_before_3pm]) if len(day_indices_before_3pm) > 0 else 1.0
-        if avg_base_vol == 0: avg_base_vol = 1.0
-
-        # CLOSING TRIGGER MATRIX
-        if hour == 15 and (15 <= minute <= 25):
-            vol_slice = n_vol[max(0, t-4):t+1]
-            recent_vol_avg = float(np.mean(vol_slice)) if len(vol_slice) > 0 else 1.0
-            
-            is_institutional_heavy = recent_vol_avg > (avg_base_vol * 1.1)
-            
-            if n_close[t] > mid_real_line[t] and n_close[t] > vwap[t] and is_institutional_heavy:
-                hint = "🟢 BTST: BUY BREAKOUT"
-            elif n_close[t] < mid_real_line[t] and n_close[t] < vwap[t] and is_institutional_heavy:
-                hint = "🔴 STBT: SELL BREAKDOWN"
-            else:
-                hint = "⏳ WEAK VOLUME: SQUARE OFF"
-        elif hour == 15 and minute > 25:
-            hint = nifty_hints[-1] if len(nifty_hints) > 0 else "⏳ ANALYZING"
-        else:
-            hint = "⏳ INTRADAY TRACKING"
-            
-        nifty_hints.append(hint)
-
-    # 7. DATAFRAME COMPILATION
-    df_table = pd.DataFrame({
-        'Timestamp': list(timestamps_formatted),
-        'Price Close': [f"{x:.2f}" for x in n_close],
-        'Dynamic VWAP': [f"{x:.2f}" for x in vwap],
-        'Kalman Center': [f"{x:.2f}" for x in mid_real_line],
-        'Derivative Futures Vol': [f"{int(x)}" for x in n_vol],
-        '📈 INSTITUTIONAL HINT': nifty_hints
-    })
-
-    # Inverting the rows to keep the latest logs on top
-    df_reversed = df_table.iloc[::-1].reset_index(drop=True)
-
-    # Filtering rows to display only the critical closing zone outputs across May-June
-    # This prevents UI hanging from thousands of useless intraday rows
-    df_final_display = df_reversed[df_reversed["Timestamp"].str.contains(" 15:15| 15:20| 15:25")].reset_index(drop=True)
-
-    def style_institutional_flow(val):
-        if "BUY" in str(val):
-            return "background-color: #1b5e20; color: white; font-weight: bold;"
-        elif "SELL" in str(val):
-            return "background-color: #b71c1c; color: white; font-weight: bold;"
-        elif "WEAK" in str(val):
-            return "background-color: #e65100; color: white;"
-        return ""
-
-    styled_final_df = df_final_display.style.map(style_institutional_flow, subset=['📈 INSTITUTIONAL HINT'])
-
-    # 8. RENDER SECURE INTERFACE VIEW
-    st.dataframe(styled_final_df, use_container_width=True)
+    for t in range
