@@ -2,23 +2,20 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
 # Page Configuration
-st.set_page_config(page_title="Nifty BeES ML Trading Bot", layout="wide")
-st.title("📊 Nifty BeES ML Signal Engine (1-Hour Candle)")
-st.write("📈 **Training Window (Learning):** 1 Jan 2025 - 1 Jan 2026 | **Signal Window:** 1 Jan 2026 - Today")
+st.set_page_config(page_title="Nifty BeES High-Confidence Bot", layout="wide")
+st.title("🛡️ Nifty BeES Ultra-High Confidence ML Engine")
+st.write("🎯 **Strategy:** Low Frequency, High Accuracy (Signals trigger only when ML is >= 80% Sure)")
 
-# =====================================================================
-# PURE PYTHON MATH INDICATORS
-# =====================================================================
+# Pure Python Indicators Math
 def apply_kalman_filter(price_array):
     x = price_array[0]
-    p = 1000.0
-    q = 0.01  
-    r = 0.5   
+    p = 50.0  
+    q = 0.001 
+    r = 0.1   
     filtered_prices = []
     for z in price_array:
         p = p + q
@@ -29,130 +26,87 @@ def apply_kalman_filter(price_array):
     return filtered_prices
 
 def calculate_indicators(df):
-    # 1. VWAP
     typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    df['VWAP'] = (typical_price * df['Volume']).cumsum() / df['Volume'].cumsum()
+    df['VWAP'] = (typical_price * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-10)
     
-    # 2. RSI (14)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-10)
-    df['RSI_14'] = 100 - (100 / (1 + rs))
+    df['RSI_14'] = 100 - (100 / (1 + (gain / (loss + 1e-10))))
     
-    # 3. MACD (12, 26, 9)
-    exp1 = df['Close'].ewm(span=12, adjust=False).mean()
-    exp2 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD_12_26_9'] = exp1 - exp2
+    df['MACD_12_26_9'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
     
-    # 4. ATR (14)
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    df['ATRe_14'] = true_range.rolling(14).mean()
+    df['ATRe_14'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
     
-    # 5. Plus DI & Minus DI
     up_move = df['High'].diff()
     down_move = df['Low'].shift() - df['Low']
-    
     plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-    
-    atr = df['ATRe_14']
-    df['DMP_14'] = 100 * (pd.Series(plus_dm, index=df.index).rolling(14).mean() / (atr + 1e-10))
-    df['DMN_14'] = 100 * (pd.Series(minus_dm, index=df.index).rolling(14).mean() / (atr + 1e-10))
-    
+    df['DMP_14'] = 100 * (pd.Series(plus_dm, index=df.index).rolling(14).mean() / (df['ATRe_14'] + 1e-10))
+    df['DMN_14'] = 100 * (pd.Series(minus_dm, index=df.index).rolling(14).mean() / (df['ATRe_14'] + 1e-10))
     return df
 
-# =====================================================================
-# NO-CACHE LIVE DATA FETCHING
-# =====================================================================
-with st.spinner("Fetching Nifty BeES data and training models..."):
+# Fetch Data
+with st.spinner("Analyzing market patterns..."):
     today_date = datetime.now().strftime('%Y-%m-%d')
     df = yf.download("NIFTYBEES.NS", start="2025-01-01", end=today_date, interval="1h")
-    
-    if isinstance(df.columns, pd.MultiIndex):
+    if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
-        
+
     df['Kalman_Price'] = apply_kalman_filter(df['Close'].values)
     df = calculate_indicators(df)
     df.dropna(inplace=True)
-    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
 
-# Features List for ML Engine
+# Trend Target
+df['Target'] = np.where(df['Close'].shift(-3) > df['Close'], 1, 0)
+
 features = ['Volume', 'VWAP', 'Kalman_Price', 'MACD_12_26_9', 'RSI_14', 'ATRe_14', 'DMP_14', 'DMN_14']
 X = df[features]
 y = df['Target']
 
-# Split Data
 train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
 test_mask = (df.index >= '2026-01-01')
 
-X_train, y_train = X[train_mask], y[train_mask]
-X_test, y_test = X[test_mask], y[test_mask]
+# Balanced Model Configuration
+model = RandomForestClassifier(n_estimators=200, max_depth=5, min_samples_split=10, random_state=42)
+model.fit(X[train_mask], y[train_mask])
 
-# =====================================================================
-# ML TRAINING
-# =====================================================================
-model_rf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
-model_gb = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, random_state=42)
-
-model_rf.fit(X_train, y_train)
-model_gb.fit(X_train, y_train)
-
-acc_rf = accuracy_score(y_train, model_rf.predict(X_train))
-acc_gb = accuracy_score(y_train, model_gb.predict(X_train))
-
-if acc_rf > acc_gb:
-    best_model = model_rf
-    winner_name = "Random Forest"
-    winner_acc = acc_rf
-else:
-    best_model = model_gb
-    winner_name = "Gradient Boosting"
-    winner_acc = acc_gb
-
-# Sidebar Info
-st.sidebar.header("🏆 ML Model Learning (2025)")
-st.sidebar.metric(label="Random Forest Accuracy", value=f"{acc_rf:.2%}")
-st.sidebar.metric(label="Gradient Boosting Accuracy", value=f"{acc_gb:.2%}")
-st.sidebar.success(f"Best Model: **{winner_name}**")
-
-# =====================================================================
-# OUTPUT SIGNALS WITH ALL COLUMNS (1 Jan 2026 - Present)
-# =====================================================================
+# Deploy and Get Probabilities (Surety Numbers)
 df_signals = df[test_mask].copy()
-df_signals['Predicted_Dir'] = best_model.predict(X_test)
-df_signals['Signal'] = np.where(df_signals['Predicted_Dir'] == 1, "🟢 BUY (Long)", "🔴 SELL (Exit)")
+probabilities = model.predict_proba(X[test_mask])
 
-# Ab aapke saare indicators display dataframe me add ho chuke hain
-display_columns = [
-    'Close', 'Kalman_Price', 'Volume', 'VWAP', 
-    'MACD_12_26_9', 'RSI_14', 'ATRe_14', 'DMP_14', 'DMN_14', 'Signal'
-]
+# Extract probability for Down (Class 0) and Up (Class 1)
+df_signals['Prob_Down'] = probabilities[:, 0]
+df_signals['Prob_Up'] = probabilities[:, 1]
+
+# Default state is Wait
+df_signals['Signal'] = "⚪ WAIT (Low Confidence)"
+df_signals['ML_Surety_%'] = np.maximum(df_signals['Prob_Up'], df_signals['Prob_Down']) * 100
+
+# STRICT RULES: Trigger only when confidence is >= 80%
+df_signals.loc[df_signals['Prob_Up'] >= 0.80, 'Signal'] = "🟢 STRONG BUY (Full Sure)"
+df_signals.loc[df_signals['Prob_Down'] >= 0.80, 'Signal'] = "🔴 STRONG SELL (Full Sure)"
+
+# Format Display DataFrame
+display_columns = ['Close', 'Kalman_Price', 'VWAP', 'MACD_12_26_9', 'RSI_14', 'ML_Surety_%', 'Signal']
 display_df = df_signals[display_columns].copy()
 
-# Formatting decimals to look clean on Web UI
 for col in display_df.columns:
-    if col != 'Signal' and col != 'Volume':
+    if col != 'Signal': 
         display_df[col] = display_df[col].round(2)
-
-# Date column formatting
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-# Main Screen Layout
-st.subheader(f"📋 Full Strategy Parameters & Signals (Total: {len(display_df)} Hourly Candles)")
+# Main Screen Output
+st.subheader(f"📋 1 Jan 2026 to Present - Filtered Signals")
+st.dataframe(display_df, use_container_width=True, height=700)
 
-# Detailed Table Display
-st.dataframe(display_df, use_container_width=True, height=750)
+# Quick Stats on Sidebar
+total_signals = len(df_signals)
+strong_buys = len(df_signals[df_signals['Prob_Up'] >= 0.80])
+strong_sells = len(df_signals[df_signals['Prob_Down'] >= 0.80])
 
-# Download Button
-csv = display_df.to_csv().encode('utf-8')
-st.download_button(
-    label="📥 Download Complete Indicator & Signal Dataset (CSV)",
-    data=csv,
-    file_name='nifty_bees_2026_complete_metrics.csv',
-    mime='text/csv',
-)
+st.sidebar.header("📊 Signal Filtration Statistics")
+st.sidebar.write(f"Total Hours
