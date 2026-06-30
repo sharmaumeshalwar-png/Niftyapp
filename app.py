@@ -1,108 +1,145 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import yfinance as yf
-from datetime import datetime
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
 
 # Streamlit Page Configuration
-st.set_page_config(page_title="Normal Market Kalman Tracker", layout="wide")
-st.title("📊 Normal Market Kalman & VWAP Engine")
-st.subheader("Every-Candle 1-Hour Matrix From 1st Jan 2025 (All Market Hours)")
+st.set_page_config(page_title="Kalman + ML Hybrid Predictor", layout="wide")
+st.title("📈 Kalman Filter & Machine Learning Hybrid Model")
+st.write("A = Close Price ➡️ B = Kalman Filter (Q=0.0001) ➡️ C = Features (A & B) ➡️ D = ML Prediction")
 
-st.write("---")
-st.write("### 8-Step Verification Progress:")
-
-st.success("Step 1: Institutional Time Windows Removed. All Market Candles Allowed.")
-
-# STEP 2: Fetch Long-Term Data (1st Jan 2025 onwards)
-@st.cache_data
-def fetch_hourly_bees_data():
-    ticker = "NIFTYBEES.NS"
-    start_date = "2025-01-01"
-    # Fetching 1-Hour Interval Data
-    data = yf.download(ticker, start=start_date, interval="1h", progress=False)
-    return data
-
-df = pd.DataFrame()
-try:
-    raw_data = fetch_hourly_bees_data()
-    if not raw_data.empty:
-        if isinstance(raw_data.columns, pd.MultiIndex):
-            raw_data.columns = raw_data.columns.get_level_values(0)
-        df = raw_data.copy()
-        st.success(f"Step 2: Hourly data parsed successfully from 1st January 2025 ({len(df)} rows loaded).")
-    else:
-        raise ValueError("Dataframe completely empty.")
-except Exception as e:
-    st.error(f"Step 2 Fetch Error: {e}")
-    st.stop()
-
-# STEP 3: Variable Assignments (A = Close, B = VWAP with Day-wise Reset)
-df['Date'] = df.index.date
-df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
-df['TP_Vol'] = df['Typical_Price'] * df['Volume']
-df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
-df['Cum_Vol'] = df.groupby('Date')['Volume'].cumsum()
-
-df['A'] = df['Close']                      # Variable A = Close
-df['B'] = df['Cum_TP_Vol'] / df['Cum_Vol'] # Variable B = VWAP
-st.success("Step 3: Variable A (Close) and Variable B (VWAP) Assigned.")
-
-# STEP 4: Variable C Formulation (A > B for All Candles)
-# C is the raw state where Close is above VWAP
-df['C'] = (df['A'] > df['B']).astype(float)
-st.success("Step 4: Variable C State Vector Formulated (True when A > B).")
-
-# STEP 5: Kalman Filter Layer Implementation (D = Kalman of 0.0001 of C)
-def apply_kalman_filter(series, noise_q=0.0001):
-    kalman_values = []
-    x_hat = 0.0  # Estimated state
-    p = 1.0      # Error covariance
-    r = 0.1      # Measurement noise covariance
+# -------------------------------------------------------------------------
+# Helper Function: 1D Kalman Filter Implementation
+# -------------------------------------------------------------------------
+def apply_kalman_filter(prices, Q=0.0001, R=0.1):
+    """
+    Applies a simple 1D Kalman Filter to a series of prices.
+    Q: Process variance (given as 0.0001 by user)
+    R: Measurement variance (assumed noise in market data)
+    """
+    n_timestamps = len(prices)
+    filtered_prices = np.zeros(n_timestamps)
     
-    for val in series:
-        # Prediction update
-        p = p + noise_q
-        # Measurement update (Gain calculation)
-        k_gain = p / (p + r)
-        x_hat = x_hat + k_gain * (val - x_hat)
-        p = (1 - k_gain) * p
-        kalman_values.append(x_hat)
-    return kalman_values
+    # Initial guesses
+    x_hat = prices[0]  # initial state estimate
+    P = 1.0            # initial error covariance
+    
+    for t in range(n_timestamps):
+        # 1. Prediction Step
+        x_hat_minus = x_hat
+        P_minus = P + Q
+        
+        # 2. Measurement Update Step (Correction)
+        K = P_minus / (P_minus + R)  # Kalman Gain
+        x_hat = x_hat_minus + K * (prices[t] - x_hat_minus)
+        P = (1 - K) * P_minus
+        
+        filtered_prices[t] = x_hat
+        
+    return filtered_prices
 
-df['D'] = apply_kalman_filter(df['C'], noise_q=0.0001)
-st.success("Step 5: Kalman Filter Model D Generated with Noise Q = 0.0001.")
+# -------------------------------------------------------------------------
+# Sidebar: Data Input Setup
+# -------------------------------------------------------------------------
+st.sidebar.header("📊 Data & Parameter Settings")
+data_option = st.sidebar.selectbox("Data Source Select Karein", ["Generate Synthetic Data", "Upload CSV"])
 
-# STEP 6 & 7: Signal E Formulation (E Trigger Logic)
-# Signal E triggers when the filtered trend baseline D crosses a stable state threshold (e.g., > 0.5) and A > B
-df['E_Signal'] = (df['D'] > 0.5) & (df['A'] > df['B'])
-st.success("Step 6 & 7: Core Mathematical Logic Matrix Compiled.")
-
-# STEP 8: Final Count & Interactive Render
-st.write("---")
-st.header("📋 8-STEP NORMAL MARKET MATRIX REPORT")
-
-# Preparing DataFrame for Streamlit View
-display_df = pd.DataFrame(index=df.index)
-display_df['Date/Time'] = df.index.strftime('%Y-%m-%d %H:%M')
-display_df['A (Close)'] = df['A'].round(2)
-display_df['B (VWAP)'] = df['B'].round(2)
-display_df['C (State Vector)'] = df['C'].astype(int)
-display_df['D (Kalman Value)'] = df['D'].round(5)
-display_df['E Signal Status'] = ["🎯 BUY ALERT" if s else "❌ No Action" for s in df['E_Signal']]
-
-total_signals = int(df['E_Signal'].sum())
-st.metric(label="Total Signal E Breakouts Captured", value=total_signals)
-
-st.write("### Every 1-Hour Candle Mathematical Matrix (All Trading Hours):")
-st.dataframe(display_df, use_container_width=True)
-
-st.write("---")
-st.subheader("⚡ Signal E Active Execution Rows:")
-signals_only = display_df[display_df['E Signal Status'] == "🎯 BUY ALERT"]
-
-if not signals_only.empty:
-    st.dataframe(signals_only, use_container_width=True)
-    st.success("Step 8: Final Count Verified. Normal market matrix generated perfectly!")
+if data_option == "Generate Synthetic Data":
+    st.sidebar.subheader("Synthetic Data Parameters")
+    n_days = st.sidebar.slider("Kitne din ka data?", 100, 1000, 5000)
+    
+    # Generate random-walk style close prices (A)
+    np.random.seed(42)
+    steps = np.random.normal(0, 0.5, n_days)
+    close_prices = 100 + np.cumsum(steps)
+    # Adding some noise
+    close_prices += np.random.normal(0, 0.2, n_days)
+    
+    df = pd.DataFrame({"Close_A": close_prices})
 else:
-    st.warning("Diye gaye time frame mein in parameters par koi active Signal E pass nahi hua.")
+    uploaded_file = st.sidebar.file_uploader("CSV file upload karein (Isme 'Close' column hona chahiye)", type=["csv"])
+    if uploaded_file is not None:
+        user_df = pd.read_csv(uploaded_file)
+        if 'Close' in user_df.columns:
+            df = pd.DataFrame({"Close_A": user_df['Close'].values})
+        else:
+            st.error("Error: CSV file mein 'Close' naam ka column nahi mila!")
+            st.stop()
+    else:
+        st.info("Aapki kisi CSV file ka intezar hai. Tab tak dummy data dekhne ke liye sidebar se 'Generate Synthetic Data' chunein.")
+        st.stop()
+
+# -------------------------------------------------------------------------
+# Step-by-Step Processing Framework (8-Step Logic Integration)
+# -------------------------------------------------------------------------
+
+# Step 1 & 2: Get A and Compute B (Kalman Filter)
+df['Kalman_B'] = apply_kalman_filter(df['Close_A'].values, Q=0.0001, R=0.1)
+
+# Step 3: Combine into C (Features) and Shift for Next-Day Target Prediction
+df['Feature_A_Lag'] = df['Close_A']
+df['Feature_B_Lag'] = df['Kalman_B']
+# Target Variable D: Next day's close price
+df['Target_D'] = df['Close_A'].shift(-1) 
+
+# Drop the last row because it won't have a target value
+df = df.dropna()
+
+# Step 4 & 5: Train-Test Split (80% Train, 20% Test for validation)
+split_idx = int(len(df) * 0.8)
+train_df = df.iloc[:split_idx]
+test_df = df.iloc[split_idx:]
+
+X_train = train_df[['Feature_A_Lag', 'Feature_B_Lag']]
+y_train = train_df['Target_D']
+X_test = test_df[['Feature_A_Lag', 'Feature_B_Lag']]
+y_test = test_df['Target_D']
+
+# Step 6: Machine Learning (D) Model Training
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Step 7: Prediction Phase
+test_df = test_df.copy()
+test_df['Predicted_D'] = model.predict(X_test)
+
+# Step 8: Evaluation Metrics
+rmse = np.sqrt(mean_squared_error(y_test, test_df['Predicted_D']))
+r2 = r2_score(y_test, test_df['Predicted_D'])
+
+# -------------------------------------------------------------------------
+# Streamlit UI Dashboard Elements
+# -------------------------------------------------------------------------
+col1, col2 = st.columns(2)
+with col1:
+    st.metric(label="📊 Test Data RMSE (Error)", value=f"{rmse:.4f}")
+with col2:
+    st.metric(label="🎯 Model R² Score (Accuracy)", value=f"{r2*100:.2f}%")
+
+st.markdown("---")
+st.subheader("📈 Visualization Dashboard")
+
+# Plotting the Results
+fig, ax = plt.subplots(figsize=(14, 7))
+
+# Plotting a subset of test data for clear visibility
+plot_len = min(150, len(test_df))
+plot_df = test_df.tail(plot_len).reset_index()
+
+ax.plot(plot_df['Close_A'], label="A: Actual Close Price", color="black", alpha=0.4, linestyle="--")
+ax.plot(plot_df['Kalman_B'], label="B: Kalman Filtered (Q=0.0001)", color="blue", linewidth=1.5)
+ax.plot(plot_df['Predicted_D'], label="D: ML Hybrid Prediction (Next Step)", color="red", linewidth=2)
+
+ax.set_title(f"Last {plot_len} Timestamps Comparison")
+ax.set_xlabel("Timestamps")
+ax.set_ylabel("Price")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+st.pyplot(fig)
+
+# Show raw processed dataset matrix C
+st.subheader("📋 Processed Data Matrix (C)")
+st.dataframe(df[['Close_A', 'Kalman_B', 'Target_D']].tail(10))
