@@ -6,9 +6,21 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty BeES High-Confidence Bot", layout="wide")
-st.title("🛡️ Nifty BeES Ultra-High Confidence ML Engine")
-st.write("🎯 **Strategy:** Low Frequency, High Accuracy (Signals trigger only when ML is >= 80% Sure)")
+st.set_page_config(page_title="Nifty BeES Pro Bot", layout="wide")
+st.title("🛡️ Nifty BeES Smart ML Engine (With Confidence Control)")
+
+# Sidebar Configuration for Surety Control
+st.sidebar.header("🎯 Target Control Panel")
+confidence_level = st.sidebar.slider(
+    "Minimum ML Surety (%)", 
+    min_value=55, 
+    max_value=85, 
+    value=65,  # Default set to 65% for optimal signals
+    step=5,
+    help="Surety jitni kam hogi, signals utne zyada aayenge. 65%-70% sabse best aur accurate hota hai."
+)
+
+st.write(f"📊 Showing signals where Machine Learning Model is at least **{confidence_level}%** Sure.")
 
 # Pure Python Indicators Math
 def apply_kalman_filter(price_array):
@@ -51,21 +63,16 @@ def calculate_indicators(df):
 
 # Fetch Data
 with st.spinner("Analyzing market patterns..."):
-    # Target shift balance karne ke liye kal tak ka data pull karte hain
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     df = yf.download("NIFTYBEES.NS", start="2025-01-01", end=end_date, interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
-    # Process metrics
     df['Kalman_Price'] = apply_kalman_filter(df['Close'].values)
     df = calculate_indicators(df)
     
-    # 3-Hour trend shift target
     df['Target'] = np.where(df['Close'].shift(-3) > df['Close'], 1, 0)
-    
-    # CRITICAL FIX: Slicing aur shifting se jo NaNs bane unhe saaf kiya
     df.dropna(subset=['VWAP', 'RSI_14', 'MACD_12_26_9', 'ATRe_14', 'Target'], inplace=True)
 
 # Features Matrix Setup
@@ -73,34 +80,34 @@ features = ['Volume', 'VWAP', 'Kalman_Price', 'MACD_12_26_9', 'RSI_14', 'ATRe_14
 X = df[features]
 y = df['Target']
 
-# Splitting Mask
 train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
 test_mask = (df.index >= '2026-01-01')
 
-# Extract exact matrices to stop mismatch
 X_train, y_train = X[train_mask], y[train_mask]
 X_test = X[test_mask]
 
 if len(X_train) == 0 or len(X_test) == 0:
-    st.error("Error: Data range short hai ya data correctly fetch nahi hua. Re-triggering app...")
+    st.error("Data range issue. Re-triggering...")
 else:
-    # Model configuration
+    # Model
     model = RandomForestClassifier(n_estimators=150, max_depth=5, min_samples_split=10, random_state=42)
     model.fit(X_train, y_train)
 
-    # SECURE PROBABILITY CALCULATION (Fixes Line 112)
+    # Probabilities
     probabilities = model.predict_proba(X_test)
-
     df_signals = df[test_mask].copy()
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
-    # Signal Threshold Filtering
+    # Convert Slider value to decimal decimal threshold
+    threshold = confidence_level / 100.0
+
+    # Dynamic Filtering Rules
     df_signals['Signal'] = "⚪ WAIT (Low Confidence)"
     df_signals['ML_Surety_%'] = np.maximum(df_signals['Prob_Up'], df_signals['Prob_Down']) * 100
 
-    df_signals.loc[df_signals['Prob_Up'] >= 0.80, 'Signal'] = "🟢 STRONG BUY (Full Sure)"
-    df_signals.loc[df_signals['Prob_Down'] >= 0.80, 'Signal'] = "🔴 STRONG SELL (Full Sure)"
+    df_signals.loc[df_signals['Prob_Up'] >= threshold, 'Signal'] = "🟢 STRONG BUY (Full Sure)"
+    df_signals.loc[df_signals['Prob_Down'] >= threshold, 'Signal'] = "🔴 STRONG SELL (Full Sure)"
 
     # Formating Outputs
     display_columns = ['Close', 'Kalman_Price', 'VWAP', 'MACD_12_26_9', 'RSI_14', 'ML_Surety_%', 'Signal']
@@ -111,12 +118,13 @@ else:
             display_df[col] = display_df[col].round(2)
     display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-    # Render Table
-    st.subheader(f"📋 Signals from 1 Jan 2026 to Present (Total: {len(display_df)} Rows)")
+    # Render Data
     st.dataframe(display_df, use_container_width=True, height=700)
 
-    # Metrics Layout
-    st.sidebar.header("📊 Filter Stats")
-    st.sidebar.write(f"Total Test Data: **{len(df_signals)} Hours**")
-    st.sidebar.write(f"🟢 Buys: **{len(df_signals[df_signals['Prob_Up'] >= 0.80])}**")
-    st.sidebar.write(f"🔴 Sells: **{len(df_signals[df_signals['Prob_Down'] >= 0.80])}**")
+    # Sidebar Filter Stats
+    active_buys = len(df_signals[df_signals['Prob_Up'] >= threshold])
+    active_sells = len(df_signals[df_signals['Prob_Down'] >= threshold])
+    
+    st.sidebar.subheader("📊 Live Signal Counter")
+    st.sidebar.write(f"🟢 Active Buys: **{active_buys}**")
+    st.sidebar.write(f"🔴 Active Sells: **{active_sells}**")
