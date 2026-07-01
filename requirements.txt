@@ -1,4 +1,4 @@
-kiteconnect
+streamlit
 yfinance
 scikit-learn
 numpy
