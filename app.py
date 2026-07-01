@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="Umesh Search Engine - 5m", layout="wide")
 st.title("🦅 Umesh Search: Institutional Order-Flow Engine (5-Min Scalper)")
-st.write("🎯 **Refined Core Logic:** 5-Minute Candles ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ Since **1 May 2026**")
+st.write("🎯 **Refined Core Logic:** 5-Minute Candles ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ Zero-Crash Fallback Active")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -32,8 +32,8 @@ def apply_kalman_filter_strict(price_array):
 # Fetch Data automatically from free rolling source (Max 60 days allowed for 5m)
 with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    # 5m limit is strictly constrained by Yahoo Finance server limits to 60 days
-    start_date = (datetime.now() - timedelta(days=58)).strftime('%Y-%m-%d')
+    # Fetching safety margin for maximum data depth allowed by server
+    start_date = (datetime.now() - timedelta(days=59)).strftime('%Y-%m-%d')
     
     df = yf.download("^NSEI", start=start_date, end=end_date, interval="5m")
     
@@ -56,18 +56,14 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
     # =====================================================================
     # REFINED MICROSTRUCTURE FEATURES (Same Method, Better Accuracy)
     # =====================================================================
-    # 1. Original Order Imbalance (Close location inside high-low)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
-    # 2. Real Body Imbalance (Open vs Close location inside the entire high-low range)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
-    # 3. Volatility Normalized Gap (Filters out sideways flat noise)
     rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     
-    # 4. Flow Velocity
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     # Target Setup (3 Candles Look-ahead -> 15 Minutes Future Vision)
@@ -77,23 +73,32 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
 # Extended Feature Matrix using the same method's data points
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# STRICT SEPARATION OF TIME LOGIC (Train Before May, Predict from 1 May 2026 Live)
+# DYNAMIC ZERO-CRASH SEPARATION ENGINE
 train_mask = (df.index < '2026-05-01')
 predict_mask = (df.index >= '2026-05-01')
 
-X_train = df.loc[train_mask, features_matrix]
-y_train = df.loc[train_mask, 'Target']
-X_predict = df.loc[predict_mask, features_matrix]
+# Fallback activation checking if historical window is cut-off by server limits
+if len(df.loc[train_mask]) < 50:
+    st.sidebar.info("🔄 Server limit hit: Auto-stabilizing with 40/60 dynamic data split.")
+    split_point = int(len(df) * 0.40)
+    X_train = df[features_matrix].iloc[:split_point]
+    y_train = df['Target'].iloc[:split_point]
+    X_predict = df[features_matrix].iloc[split_point:]
+    df_signals = df.iloc[split_point:].copy()
+else:
+    X_train = df.loc[train_mask, features_matrix]
+    y_train = df.loc[train_mask, 'Target']
+    X_predict = df.loc[predict_mask, features_matrix]
+    df_signals = df[predict_mask].copy()
 
-if len(X_predict) == 0:
-    st.error("Prediction timeline tracking error. No data found after 1 May 2026.")
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error("Data pipeline mismatch. Insufficient rows for execution matrix.")
 else:
     # Model Setup with higher stabilization to improve hint accuracy
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -119,7 +124,7 @@ else:
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
     # Main Grid Data Presentation - "Umesh Search" UI Display
-    st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | 1 May 2026 - Present)")
+    st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | May 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Filter Counter Metrics
