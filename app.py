@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty High-Accuracy Engine", layout="wide")
-st.title("🦅 Nifty 50 Ultra-Accurate Institutional Order-Flow Engine")
-st.write("🎯 **Refined Core Logic:** Same Method ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ No Data Leakage")
+st.set_page_config(page_title="Umesh Search Engine - 5m", layout="wide")
+st.title("🦅 Umesh Search: Institutional Order-Flow Engine (5-Min Scalper)")
+st.write("🎯 **Refined Core Logic:** 5-Minute Candles ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ Since **1 May 2026**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -29,18 +29,19 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data automatically from free rolling source
-with st.spinner("Refining microstructure matrices for ultra-accuracy..."):
+# Fetch Data automatically from free rolling source (Max 60 days allowed for 5m)
+with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
+    # 5m limit is strictly constrained by Yahoo Finance server limits to 60 days
+    start_date = (datetime.now() - timedelta(days=58)).strftime('%Y-%m-%d')
     
-    df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
+    df = yf.download("^NSEI", start=start_date, end=end_date, interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("Data source timeout. Please click Reboot App on the dashboard.")
+        st.error("Data source timeout or 60-day maximum limit breached. Please click Reboot App.")
         st.stop()
 
     # Base Matrix Definition
@@ -55,7 +56,7 @@ with st.spinner("Refining microstructure matrices for ultra-accuracy..."):
     # =====================================================================
     # REFINED MICROSTRUCTURE FEATURES (Same Method, Better Accuracy)
     # =====================================================================
-    # 1. Original Order Imbalance (Close location)
+    # 1. Original Order Imbalance (Close location inside high-low)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
     # 2. Real Body Imbalance (Open vs Close location inside the entire high-low range)
@@ -69,30 +70,30 @@ with st.spinner("Refining microstructure matrices for ultra-accuracy..."):
     # 4. Flow Velocity
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Setup (3 Hours Look-ahead)
+    # Target Setup (3 Candles Look-ahead -> 15 Minutes Future Vision)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Target'], inplace=True)
 
 # Extended Feature Matrix using the same method's data points
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# STRICT SEPARATION OF TIME LOGIC (Train 2025, Predict 2026 Live)
-train_2025_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
-predict_2026_mask = (df.index >= '2026-01-01')
+# STRICT SEPARATION OF TIME LOGIC (Train Before May, Predict from 1 May 2026 Live)
+train_mask = (df.index < '2026-05-01')
+predict_mask = (df.index >= '2026-05-01')
 
-X_train = df.loc[train_2025_mask, features_matrix]
-y_train = df.loc[train_2025_mask, 'Target']
-X_predict = df.loc[predict_2026_mask, features_matrix]
+X_train = df.loc[train_mask, features_matrix]
+y_train = df.loc[train_mask, 'Target']
+X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("Prediction timeline tracking error. Reboot recommended.")
+    st.error("Prediction timeline tracking error. No data found after 1 May 2026.")
 else:
     # Model Setup with higher stabilization to improve hint accuracy
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_2026_mask].copy()
+    df_signals = df[predict_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -117,8 +118,8 @@ else:
     display_df['c_Combined'] = display_df['c_Combined'].round(4)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    # Main Grid Data Presentation
-    st.subheader(f"📋 Live Refined Nifty 50 Execution Matrix (1 Jan 2026 - Present)")
+    # Main Grid Data Presentation - "Umesh Search" UI Display
+    st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | 1 May 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Filter Counter Metrics
@@ -127,7 +128,7 @@ else:
     inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
     traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
 
-    st.sidebar.header("📊 Refined Audit (2026 Live)")
+    st.sidebar.header("📊 Umesh Search Audit (5m Live)")
     st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
     st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
     st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
