@@ -6,17 +6,17 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Anti-ZigZag Bot", layout="wide")
-st.title("🛡️ Nifty 50 Anti-ZigZag VIX ML Engine")
-st.write("🎯 **Core Logic:** Detect 'c' Sign Change ➡️ Measure VIX Zig-Zag (Stability) ➡️ Lock Real Trends & Kill Noise")
+st.set_page_config(page_title="Nifty Supertrend ML Bot", layout="wide")
+st.title("⚡ Nifty 50 Super-Fast Supertrend ML Engine")
+st.write("🎯 **Core Logic:** Trigger on 'c' Sign Flip ➡️ Cross-match with Highly Sensitive Supertrend (5, 1) ➡️ Early Signal Capture")
 
 # =====================================================================
-# MATHEMATICAL SMOOTHING (b = Kalman Filter 0.001)
+# MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
 # =====================================================================
 def apply_kalman_filter_strict(price_array):
     x = price_array[0]
     p = 50.0  
-    q = 0.001  # Exact parameter
+    q = 0.001  
     r = 0.1    
     filtered_prices = []
     for z in price_array:
@@ -27,45 +27,93 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Data Engine Pipeline
-with st.spinner("ML is scanning VIX Zig-Zag dynamics and stability matrix..."):
-    end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+# HIGHLY SENSITIVE SUPERTREND LOGIC (Setting: Period=5, Multiplier=1 for Fastest Hint)
+def calculate_fast_supertrend(df, period=5, multiplier=1):
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
     
-    df_nifty = yf.download("^NSEI", start="2025-01-01", end=end_date, interval="1h")
-    df_vix = yf.download("^INDIAVIX", start="2025-01-01", end=end_date, interval="1h")
+    # ATR Calculation
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(window=period).mean()
     
-    if isinstance(df_nifty.columns, pd.MultiIndex): df_nifty.columns = df_nifty.columns.get_level_values(0)
-    if isinstance(df_vix.columns, pd.MultiIndex): df_vix.columns = df_vix.columns.get_level_values(0)
+    # Basic Bands
+    hl2 = (high + low) / 2
+    basic_ub = hl2 + (multiplier * atr)
+    basic_lb = hl2 - (multiplier * atr)
+    
+    # Final Bands Initialization
+    final_ub = np.zeros(len(df))
+    final_lb = np.zeros(len(df))
+    supertrend = np.zeros(len(df))
+    direction = np.zeros(len(df)) # 1 for Up, -1 for Down
+    
+    for i in range(1, len(df)):
+        # Upper Band
+        if basic_ub.iloc[i] < final_ub[i-1] or close.iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = basic_ub.iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+            
+        # Lower Band
+        if basic_lb.iloc[i] > final_lb[i-1] or close.iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = basic_lb.iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+            
+        # Direction & Supertrend Line
+        if supertrend[i-1] == final_ub[i-1]:
+            direction[i] = 1 if close.iloc[i] > final_ub[i] else -1
+        else:
+            direction[i] = -1 if close.iloc[i] < final_lb[i] else 1
+            
+        supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+        
+    df['ST_Line'] = supertrend
+    df['ST_Direction'] = direction
+    return df
 
-    # Align Data
-    df = df_nifty[['High', 'Low', 'Close']].copy()
-    df['a_Close'] = df['Close']
-    df['VIX_Close'] = df_vix['Close']
-    df.ffill(inplace=True)
+# Fetch Data for NIFTY 50 Index
+with st.spinner("Initializing Fast Supertrend (5,1) & Matrix Engine..."):
+    end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    df = yf.download("^NSEI", start="2025-01-01", end=end_date, interval="1h")
     
-    # Base Kalman Math
+    if isinstance(df.columns, pd.MultiIndex): 
+        df.columns = df.columns.get_level_values(0)
+
+    # a = Close Price
+    df['a_Close'] = df['Close']
+    
+    # b = Kalman Filter (0.001)
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
+    
+    # c = Combined Matrix Gap
     df['c_Combined'] = df['a_Close'] - df['b_Kalman']
     
-    # HARD LOCK: Track sign flip points
+    # Sign Flip Lock
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # THE ZIG-ZAG TRACKER (Pichle 5 ghante me VIX kitna uchla-kooda)
-    df['VIX_Velocity'] = df['VIX_Close'].diff(1)
-    df['VIX_ZigZag'] = df['VIX_Velocity'].rolling(window=5).std()  # High = Bad/Noise, Low = Solid Trend
+    # Inject Fast Supertrend
+    df = calculate_fast_supertrend(df, period=5, multiplier=1)
     
-    # Target (3 Hours Forward Look-ahead)
+    # Vector Distance from Supertrend to see early shifts
+    df['ST_Distance'] = df['a_Close'] - df['ST_Line']
+    
+    # Target Setup (3 Hours Look-ahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-    df.dropna(subset=['VIX_ZigZag', 'VIX_Velocity', 'Target'], inplace=True)
+    df.dropna(subset=['ST_Line', 'ST_Distance', 'Target'], inplace=True)
 
-# Feature matrix strictly monitoring the VIX Zig-Zag stability
-features_matrix = ['c_Combined', 'VIX_Close', 'VIX_Velocity', 'VIX_ZigZag']
+# Clean Feature Grid focusing on 'c' and Supertrend Action
+features_matrix = ['c_Combined', 'ST_Line', 'ST_Direction', 'ST_Distance']
 
 train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
 test_mask = (df.index >= '2026-01-01')
 
-# Train ONLY on crossover hours to capture VIX behavior during flips
+# Train ONLY on crossover points to see Supertrend impact
 train_sign_moments = train_mask & (df['Sign_Change'] == 1)
 
 X_train = df.loc[train_sign_moments, features_matrix]
@@ -73,10 +121,10 @@ y_train = df.loc[train_sign_moments, 'Target']
 X_test_all = df.loc[test_mask, features_matrix]
 
 if len(X_train) == 0:
-    st.error("Historical matrix initialization failed. Please reboot app.")
+    st.error("Supertrend alignment mismatch. Please restart application.")
 else:
-    # Stable classifier to detect stability patterns
-    model_d = RandomForestClassifier(n_estimators=250, max_depth=4, random_state=42)
+    # Model Setup
+    model_d = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42)
     model_d.fit(X_train, y_train)
 
     probabilities = model_d.predict_proba(X_test_all)
@@ -85,42 +133,42 @@ else:
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
-    # Initialize Signals
+    # Initialize Signals Block
     df_signals['d_ML_Signal'] = "⚪ HOLD"
     crossover_mask = df_signals['Sign_Change'] == 1
     
-    # Standard 62% threshold + automatic evaluation of low VIX ZigZag by ML
-    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.62), 'd_ML_Signal'] = "🟢 TREND UP (Smooth VIX)"
-    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.62), 'd_ML_Signal'] = "🔴 TREND DOWN (Smooth VIX)"
+    # 60% standard sensitive threshold matching
+    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.60) & (df_signals['ST_Direction'] == 1), 'd_ML_Signal'] = "🟢 FAST TREND UP (Early Hint)"
+    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.60) & (df_signals['ST_Direction'] == -1), 'd_ML_Signal'] = "🔴 FAST TREND DOWN (Early Hint)"
     
-    # Catching high zig-zag noise and marking it fake
-    df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ ZIG-ZAG NOISE (Avoid Fake)"
+    # Conflict filter (If sign change says UP but Supertrend says DOWN, it's a trap)
+    df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ CONFLICT NOISE (Avoid Fake)"
     
-    # Absolute hold when no sign change occurs
+    # Lock when no sign change happens
     df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
 
-    # Clean display subset
+    # Clean display frame extraction
     clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
 
-    # Formatting numbers
+    # Formating outputs
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
     display_df['c_Combined'] = display_df['c_Combined'].round(4)
     display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-    # UI Grid Render
-    st.subheader(f"📋 Live Nifty VIX Stability Table (1 Jan 2026 - Present)")
+    # Main Grid Data Presentation
+    st.subheader(f"📋 Nifty 50 Supertrend Alignment Matrix (1 Jan 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
-    # Sidebar Counter Metrics
+    # Sidebar Filter Counter Metrics
     total_flips = len(df_signals[df_signals['Sign_Change'] == 1])
-    smooth_up = len(df_signals[df_signals['d_ML_Signal'] == "🟢 TREND UP (Smooth VIX)"])
-    smooth_dn = len(df_signals[df_signals['d_ML_Signal'] == "🔴 TREND DOWN (Smooth VIX)"])
-    fakes_blocked = len(df_signals[df_signals['d_ML_Signal'] == "⚪ ZIG-ZAG NOISE (Avoid Fake)"])
+    fast_buys = len(df_signals[df_signals['d_ML_Signal'] == "🟢 FAST TREND UP (Early Hint)"])
+    fast_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 FAST TREND DOWN (Early Hint)"])
+    blocked_fakes = len(df_signals[df_signals['d_ML_Signal'] == "⚪ CONFLICT NOISE (Avoid Fake)"])
 
-    st.sidebar.header("📊 VIX Anti-Noise Stats")
-    st.sidebar.write(f"Total Flips Scanned: **{total_flips}**")
-    st.sidebar.write(f"🟢 Real Up Trends: **{smooth_up}**")
-    st.sidebar.write(f"🔴 Real Down Trends: **{smooth_dn}**")
-    st.sidebar.warning(f"⚪ Zig-Zag Fakes Blocked: **{fakes_blocked}**")
+    st.sidebar.header("📊 Fast Supertrend Analytics")
+    st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
+    st.sidebar.write(f"🟢 Early Validated Buys: **{fast_buys}**")
+    st.sidebar.write(f"🔴 Early Validated Sells: **{fast_sells}**")
+    st.sidebar.warning(f"⚪ Mismatched traps Filtered: **{blocked_fakes}**")
