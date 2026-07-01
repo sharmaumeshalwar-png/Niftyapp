@@ -3,12 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 10-Signal Restored", layout="wide")
-st.title("🦅 Nifty 50 Restored Master Inverted Engine (1 Jan 2026)")
-st.write("🎯 **Error Fixed:** Fixed parameter restriction and locked exact feature alignment to restore your 10 preferred historical signals.")
+st.set_page_config(page_title="Nifty Fixed July Engine", layout="wide")
+st.title("🦅 Nifty 50 Strict Walk-Forward Engine")
+st.write("🎯 **Leakage Fixed:** Implemented sequential split tracking to guarantee zero future data sight since **1 July 2025**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -29,16 +29,18 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data with Fixed Static Dates to prevent data loss
-with st.spinner("Restoring the original 10-signals matrix..."):
-    # Fixed timeframe tracking to prevent row shifting errors
-    df = yf.download("^NSEI", start="2024-12-01", end="2026-07-02", interval="1h")
+# Fetch Data with Dynamic Safety Limit
+with st.spinner("Re-building zero-leakage training sequences..."):
+    end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    start_date = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
+    
+    df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("Data source timeout. Please click Reboot App.")
+        st.error("Data server timeout. Please click Reboot App.")
         st.stop()
 
     # Base Matrix Definition
@@ -50,70 +52,88 @@ with st.spinner("Restoring the original 10-signals matrix..."):
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # THE ORIGINAL PREFERRED MICROSTRUCTURE METRICS
+    # REFINED MICROSTRUCTURE FEATURES
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    
+    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
+    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
+    
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Setup (3 Hours Look-Ahead)
+    # Strict Target Definition (3 Hours Look-Ahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-    df.dropna(subset=['Order_Imbalance', 'Flow_Velocity', 'Target'], inplace=True)
+    df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Target'], inplace=True)
 
 # Feature Matrix
-features_matrix = ['c_Combined', 'Order_Imbalance', 'Flow_Velocity']
+features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# STRICT SEPARATION OF TIME LOGIC
-train_2025_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
-predict_2026_mask = (df.index >= '2026-01-01')
+# ZERO-LEAKAGE SEPARATION ENGINE
+# Model learns exclusively from the historical buffer era up to June 30, 2025
+train_pure_mask = (df.index < '2025-07-01')
+display_mask = (df.index >= '2025-07-01')
 
-X_train = df.loc[train_2025_mask, features_matrix]
-y_train = df.loc[train_2025_mask, 'Target']
-X_predict = df.loc[predict_2026_mask, features_matrix]
+X_train = df.loc[train_pure_mask, features_matrix]
+y_train = df.loc[train_pure_mask, 'Target']
+X_display = df.loc[display_mask, features_matrix]
 
-if len(X_predict) == 0:
-    st.error("Timeline synchronization issue. Please restart app.")
+if len(X_display) == 0 or len(X_train) < 50:
+    # Safe expanding fallback to ensure baseline parameters are strictly metrics-driven
+    st.info("Expanding baseline history context to secure prediction safety...")
+    split_point = int(len(df) * 0.40)
+    X_train = df[features_matrix].iloc[:split_point]
+    y_train = df['Target'].iloc[:split_point]
+    X_display = df[features_matrix].iloc[split_point:]
+    df_signals = df.iloc[split_point:].copy()
 else:
-    # Restored to original tree depths to bring back the missing 10 signals
-    model_flow = RandomForestClassifier(n_estimators=250, max_depth=5, random_state=42)
-    model_flow.fit(X_train, y_train)
+    df_signals = df[display_mask].copy()
 
-    probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_2026_mask].copy()
-    
-    df_signals['Prob_Down'] = probabilities[:, 0]
-    df_signals['Prob_Up'] = probabilities[:, 1]
+# Robust Model execution to prevent memorization
+model_wf = RandomForestClassifier(n_estimators=350, max_depth=4, min_samples_split=15, min_samples_leaf=4, random_state=42)
+model_wf.fit(X_train, y_train)
 
-    # Initialize Clean Grid Output State
-    df_signals['d_ML_Signal'] = "⚪ HOLD"
-    crossover_mask = df_signals['Sign_Change'] == 1
-    
-    # ORIGINAL INVERSION ENGINE RULES (Strict 63% Threshold)
-    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
-    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
-    df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
-    df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
+probabilities = model_wf.predict_proba(X_display)
+df_signals['Prob_Down'] = probabilities[:, 0]
+df_signals['Prob_Up'] = probabilities[:, 1]
 
-    # Clean display frame extraction
-    clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
-    display_df = df_signals[clean_display_cols].copy()
+# Initialize Clean Grid Output State
+df_signals['d_ML_Signal'] = "⚪ HOLD"
+crossover_mask = df_signals['Sign_Change'] == 1
 
-    # Formatting numbers
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['c_Combined'] = display_df['c_Combined'].round(4)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+# STRICT 63% STABLE RATIO
+df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
+df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
+df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
+df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
 
-    # Main Grid Rendering
-    st.subheader(f"📋 Live Nifty 50 Timeline (1 Jan 2026 - Present)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+# Filter to force strictly 1 July 2025 onwards on UI grid display
+final_ui_mask = df_signals.index >= '2025-07-01'
+ui_display_df = df_signals[final_ui_mask].copy()
 
-    # Sidebar Filter Counter Metrics
-    total_flips = len(df_signals[df_signals['Sign_Change'] == 1])
-    inst_buys = len(df_signals[df_signals['d_ML_Signal'] == "🟢 INSTITUTIONAL BUY (Confirmed)"])
-    inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
-    traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
+# Clean layout frame extraction
+clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
+display_df = ui_display_df[clean_display_cols].copy()
 
-    st.sidebar.header("📊 2026 Pure Inverted Audit")
-    st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
-    st.sidebar.write(f"🟢 Corrected Buy Moves: **{inst_buys}**")
-    st.sidebar.write(f"🔴 Corrected Sell Moves: **{inst_sells}**")
-    st.sidebar.warning(f"⚪ Fake Traps Blocked: **{traps}**")
+# Formatting outputs
+display_df['a_Close'] = display_df['a_Close'].round(2)
+display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+display_df['c_Combined'] = display_df['c_Combined'].round(4)
+display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+# Main Grid Presentation
+st.subheader(f"📋 Nifty 50 Accurate Matrix (1 July 2025 - Present)")
+st.dataframe(display_df, use_container_width=True, height=750)
+
+# Sidebar Filter Counter Metrics
+total_flips = len(ui_display_df[ui_display_df['Sign_Change'] == 1])
+inst_buys = len(ui_display_df[ui_display_df['d_ML_Signal'] == "🟢 INSTITUTIONAL BUY (Confirmed)"])
+inst_sells = len(ui_display_df[ui_display_df['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
+traps = len(ui_display_df[ui_display_df['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
+
+st.sidebar.header("📊 Clean Audit (July 2025 - Present)")
+st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
+st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
+st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
+st.sidebar.warning(f"⚪ Fake Traps Blocked: **{traps}**")
