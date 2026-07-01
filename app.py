@@ -6,16 +6,14 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Order-Flow Engine", layout="wide")
-st.title("🦅 Nifty 50 Institutional Order-Flow ML Engine")
-st.write("🎯 **Core Logic:** Restored to your favorite setting — Trigger on 'c' Sign Flip ➡️ 63% Probability Filter ➡️ Institutional Imbalance Simulation")
+st.set_page_config(page_title="Nifty Free ML Bot", layout="wide")
+st.title("🛡️ Nifty 50 Free Tokenless ML Engine")
+st.write("Target Core: Trigger on 'c' Sign Flip ➡️ Analyze Simulated Microstructure Imbalance (No Token Required)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
 # =====================================================================
 def apply_kalman_filter_strict(price_array):
-    if len(price_array) == 0:
-        return []
     x = price_array[0]
     p = 50.0  
     q = 0.001  # Your exact strict constraint
@@ -30,29 +28,27 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 # Fetch Data automatically from free source
-with st.spinner("Loading your preferred institutional order flow matrix..."):
+with st.spinner("Connecting to Free Data Engine and tracking microstructure..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
-    
-    df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
+    df = yf.download("^NSEI", start="2025-01-01", end=end_date, interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
-    if len(df) == 0:
-        st.error("Data source timeout. Please click Reboot App on the dashboard.")
-        st.stop()
-
-    # Base Matrix Definition
+    # a = Close Price
     df['a_Close'] = df['Close']
+    
+    # b = Kalman Filter (0.001)
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
+    
+    # c = Combined Matrix Gap
     df['c_Combined'] = df['a_Close'] - df['b_Kalman']
     
     # Sign Flip Lock
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # YOUR PREFERRED ADVANCED MICROSTRUCTURE PROXY
+    # ADVANCED MICROSTRUCTURE PROXY (Decodes institutional order flow fields)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
@@ -63,23 +59,25 @@ with st.spinner("Loading your preferred institutional order flow matrix..."):
 # Clean Feature Matrix
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Flow_Velocity']
 
-# STRICT SEPARATION OF TIME LOGIC (Train on 2025, Predict on 2026 Live)
-train_2025_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
-predict_2026_mask = (df.index >= '2026-01-01')
+train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
+test_mask = (df.index >= '2026-01-01')
 
-X_train = df.loc[train_2025_mask, features_matrix]
-y_train = df.loc[train_2025_mask, 'Target']
-X_predict = df.loc[predict_2026_mask, features_matrix]
+# Train ONLY on exact crossover hours
+train_sign_moments = train_mask & (df['Sign_Change'] == 1)
 
-if len(X_predict) == 0:
-    st.error("Prediction matrix alignment issue. Please verify timeframe.")
+X_train = df.loc[train_sign_moments, features_matrix]
+y_train = df.loc[train_sign_moments, 'Target']
+X_test_all = df.loc[test_mask, features_matrix]
+
+if len(X_train) == 0:
+    st.error("Historical dataset compression failed. Please restart.")
 else:
     # Model Setup
-    model_flow = RandomForestClassifier(n_estimators=250, max_depth=4, random_state=42)
-    model_flow.fit(X_train, y_train)
+    model_d = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42)
+    model_d.fit(X_train, y_train)
 
-    probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_2026_mask].copy()
+    probabilities = model_d.predict_proba(X_test_all)
+    df_signals = df[test_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -88,7 +86,7 @@ else:
     df_signals['d_ML_Signal'] = "⚪ HOLD"
     crossover_mask = df_signals['Sign_Change'] == 1
     
-    # RESTORED TO EXPLICIT 63% STABLE THRESHOLD
+    # Stable 63% threshold for confirmation
     df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
     df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
     
@@ -109,7 +107,7 @@ else:
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
     # Main Grid Data Presentation
-    st.subheader(f"📋 Live Nifty 50 Execution Matrix (1 Jan 2026 - Present)")
+    st.subheader(f"📋 Nifty 50 Free Execution Matrix (1 Jan 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Filter Counter Metrics
@@ -118,7 +116,7 @@ else:
     inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
     traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
 
-    st.sidebar.header("📊 Microstructure Stats (2026 Live)")
+    st.sidebar.header("📊 Microstructure Stats")
     st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
     st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
     st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
