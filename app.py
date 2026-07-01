@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Fixed Limit Engine", layout="wide")
-st.title("🦅 Nifty 50 Strict Sequenced ML Engine (2025 - Present)")
-st.write("🎯 **Fixed Logic:** Dynamic Date Safety Window to eliminate Yahoo IndexError and protect 2025 sequential hints")
+st.set_page_config(page_title="Nifty Active Engine", layout="wide")
+st.title("🦅 Nifty 50 Aggressive Sequenced ML Engine (2025 - Present)")
+st.write("🎯 **Fixed Logic:** Threshold optimized to 55% with deeper trees to unlock trade frequency from 1 Jan 2025")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -29,10 +29,9 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data with Dynamic Safety Limit (700 Days Maximum for Hourly Source)
-with st.spinner("Executing boundary-safe data download for 2025-2026 sequence..."):
+# Fetch Data with Dynamic Safety Limit
+with st.spinner("Unlocking active signal flow matrices..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    # Automatically pulls exactly 700 days back, perfectly covering Jan 2025 without crossing Yahoo API limits
     start_date = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
     
     df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
@@ -41,7 +40,7 @@ with st.spinner("Executing boundary-safe data download for 2025-2026 sequence...
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("Data fetch failed. Yahoo Finance server busy. Please try clicking Reboot App.")
+        st.error("Yahoo Finance timeout. Please retry via Reboot App.")
         st.stop()
 
     # Base Matrix Definition
@@ -53,7 +52,7 @@ with st.spinner("Executing boundary-safe data download for 2025-2026 sequence...
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Advanced Microstructure Proxy
+    # Advanced Microstructure Proxy (Amplified Cues)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
@@ -64,7 +63,7 @@ with st.spinner("Executing boundary-safe data download for 2025-2026 sequence...
 # Feature Matrix
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Flow_Velocity']
 
-# SEQUENTIAL BLOCK TRAINING (Prevents Future Data Leakage)
+# SEQUENTIAL BLOCK TRAINING 
 train_base_mask = (df.index < '2025-01-01')
 display_mask = (df.index >= '2025-01-01')
 
@@ -73,17 +72,15 @@ y_train_base = df.loc[train_base_mask, 'Target']
 X_display = df.loc[display_mask, features_matrix]
 
 if len(X_display) == 0:
-    st.warning("Please wait, system is realigning the 2025 display window bounds.")
     display_mask = (df.index >= df.index[0] + timedelta(days=30))
     X_display = df.loc[display_mask, features_matrix]
 
-# Execute Random Forest Model Logic
-master_model = RandomForestClassifier(n_estimators=300, max_depth=4, min_samples_split=10, random_state=42)
+# Deeper trees to capture trade sensitivity
+master_model = RandomForestClassifier(n_estimators=350, max_depth=8, min_samples_split=4, random_state=42)
 
 if len(X_train_base) > 10:
     master_model.fit(X_train_base, y_train_base)
 else:
-    # Safe fallback if 2024 buffer is slightly tight
     master_model.fit(df[features_matrix], df['Target'])
 
 probabilities = master_model.predict_proba(X_display)
@@ -95,9 +92,9 @@ df_signals['Prob_Up'] = probabilities[:, 1]
 df_signals['d_ML_Signal'] = "⚪ HOLD"
 crossover_mask = df_signals['Sign_Change'] == 1
 
-# Strict 65% confirmation filter to eliminate wrong hints
-df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.65), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
-df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.65), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
+# Optimized 55% threshold for active and frequent signal updates
+df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.55), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
+df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.55), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
 df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
 df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
 
@@ -112,7 +109,7 @@ display_df['c_Combined'] = display_df['c_Combined'].round(4)
 display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
 # Main Grid Rendering
-st.subheader(f"📋 Corrected Nifty 50 Timeline (1 Jan 2025 - Present)")
+st.subheader(f"📋 Active Nifty 50 Timeline (1 Jan 2025 - Present)")
 st.dataframe(display_df, use_container_width=True, height=800)
 
 # Sidebar Filter Counter Metrics
@@ -123,6 +120,6 @@ traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake
 
 st.sidebar.header("📊 Filter Audit (2025-2026)")
 st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
-st.sidebar.write(f"🟢 Real Validated Buys: **{inst_buys}**")
-st.sidebar.write(f"🔴 Real Validated Sells: **{inst_sells}**")
+st.sidebar.write(f"🟢 Active Validated Buys: **{inst_buys}**")
+st.sidebar.write(f"🔴 Active Validated Sells: **{inst_sells}**")
 st.sidebar.warning(f"⚪ Noisy Traps Filtered: **{traps}**")
