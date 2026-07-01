@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Umesh Search Engine - 5m", layout="wide")
+st.set_page_config(page_title="Umesh Search Engine - 5m April", layout="wide")
 st.title("🦅 Umesh Search: Institutional Order-Flow Engine (5-Min Scalper)")
-st.write("🎯 **Refined Core Logic:** 5-Minute Candles ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ Zero-Crash Fallback Active")
+st.write("🎯 **Refined Core Logic:** 5-Minute Candles ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter ➡️ Since **1 April 2026**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -32,7 +32,7 @@ def apply_kalman_filter_strict(price_array):
 # Fetch Data automatically from free rolling source (Max 60 days allowed for 5m)
 with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    # Fetching safety margin for maximum data depth allowed by server
+    # Fetching maximum allowed data depth by server limits
     start_date = (datetime.now() - timedelta(days=59)).strftime('%Y-%m-%d')
     
     df = yf.download("^NSEI", start=start_date, end=end_date, interval="5m")
@@ -41,7 +41,7 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("Data source timeout or 60-day maximum limit breached. Please click Reboot App.")
+        st.error("Data source timeout. Please click Reboot App.")
         st.stop()
 
     # Base Matrix Definition
@@ -74,10 +74,10 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # DYNAMIC ZERO-CRASH SEPARATION ENGINE
-train_mask = (df.index < '2026-05-01')
-predict_mask = (df.index >= '2026-05-01')
+train_mask = (df.index < '2026-04-01')
+predict_mask = (df.index >= '2026-04-01')
 
-# Fallback activation checking if historical window is cut-off by server limits
+# Fallback checking if 1 April data window is clipped by server limits
 if len(df.loc[train_mask]) < 50:
     st.sidebar.info("🔄 Server limit hit: Auto-stabilizing with 40/60 dynamic data split.")
     split_point = int(len(df) * 0.40)
@@ -124,7 +124,7 @@ else:
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
     # Main Grid Data Presentation - "Umesh Search" UI Display
-    st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | May 2026 - Present)")
+    st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | April 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Filter Counter Metrics
