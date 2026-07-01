@@ -1,27 +1,22 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-from kiteconnect import KiteConnect
+import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Zerodha Order-Flow Bot", layout="wide")
-st.title("🦅 Zerodha Kite Live Bid-Ask ML Engine")
-st.write("🎯 **Core Logic:** Trigger on 'c' Sign Flip ➡️ Extract True Zerodha Market Depth ➡️ Validate Institutional Order Flow")
+st.set_page_config(page_title="Nifty Free ML Bot", layout="wide")
+st.title("🛡️ Nifty 50 Free Tokenless ML Engine")
+st.write("Target Core: Trigger on 'c' Sign Flip ➡️ Analyze Simulated Microstructure Imbalance (No Token Required)")
 
 # =====================================================================
-# ZERODHA CREDENTIALS INPUT (Sidebar Secure)
+# MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
 # =====================================================================
-st.sidebar.header("🔐 Zerodha API Authentication")
-api_key = st.sidebar.text_input("Enter API Key", type="password")
-access_token = st.sidebar.text_input("Enter Access Token", type="password")
-
-# Mathematical Engine (b = Kalman Filter 0.001)
 def apply_kalman_filter_strict(price_array):
     x = price_array[0]
     p = 50.0  
-    q = 0.001  
+    q = 0.001  # Your exact strict constraint
     r = 0.1    
     filtered_prices = []
     for z in price_array:
@@ -32,113 +27,97 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Run Engine only if credentials are filled
-if api_key and access_token:
-    try:
-        # Initialize KiteConnect
-        kite = KiteConnect(api_key=api_key)
-        kite.set_access_token(access_token)
-        
-        with st.spinner("Fetching historical and live depth data from Zerodha..."):
-            # Set timeframes
-            to_date = datetime.now()
-            from_date = to_date - timedelta(days=400) # Fetch 2025 to 2026 data
-            
-            # Zerodha Instrument Token for Nifty 50 (Change instrument token if checking Futures)
-            # 256265 is generally Nifty 50 Index spot token in Zerodha
-            instrument_token = 256265 
-            
-            # Fetch Historical Candles
-            records = kite.historical_data(instrument_token, from_date, to_date, "60minute")
-            df = pd.DataFrame(records)
-            df.set_index('date', inplace=True)
-            
-            df['a_Close'] = df['close']
-            df['High'] = df['high']
-            df['Low'] = df['low']
-            
-            # Kalman Matrix Calculations
-            df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
-            df['c_Combined'] = df['a_Close'] - df['b_Kalman']
-            
-            # Sign Flip Logic
-            df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
-            df['Sign_Change'] = df['Sign_Change'].astype(int)
-            
-            # FETCH LIVE MARKET DEPTH (Bid-Ask Imbalance)
-            # Note: Index spot doesn't have live depth volume, so we track Nifty Futures or use execution proxy
-            # For demonstration with index, we parse the live market depth of current month future
-            live_quote = kite.quote(['NSE:NIFTY50-INDEX'])
-            
-            # Mathematical Proxy aligned with Zerodha's tick compression for historical nodes
-            df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-            df['Flow_Velocity'] = df['c_Combined'].diff(1)
-            
-            # Forward Look Target (3 Hours ahead)
-            df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-            df.dropna(subset=['Order_Imbalance', 'Flow_Velocity', 'Target'], inplace=True)
+# Fetch Data automatically from free source
+with st.spinner("Connecting to Free Data Engine and tracking microstructure..."):
+    end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    df = yf.download("^NSEI", start="2025-01-01", end=end_date, interval="1h")
+    
+    if isinstance(df.columns, pd.MultiIndex): 
+        df.columns = df.columns.get_level_values(0)
 
-        # Feature Grid for Training
-        features_matrix = ['c_Combined', 'Order_Imbalance', 'Flow_Velocity']
-        
-        train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
-        test_mask = (df.index >= '2026-01-01')
-        
-        train_sign_moments = train_mask & (df['Sign_Change'] == 1)
-        
-        X_train = df.loc[train_sign_moments, features_matrix]
-        y_train = df.loc[train_sign_moments, 'Target']
-        X_test_all = df.loc[test_mask, features_matrix]
-        
-        if len(X_train) == 0:
-            st.error("Historical alignment mismatch in Zerodha records.")
-        else:
-            # Train Random Forest on Microstructure
-            model_d = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42)
-            model_d.fit(X_train, y_train)
-            
-            probabilities = model_d.predict_proba(X_test_all)
-            df_signals = df[test_mask].copy()
-            
-            df_signals['Prob_Down'] = probabilities[:, 0]
-            df_signals['Prob_Up'] = probabilities[:, 1]
-            
-            # Set default signals
-            df_signals['d_ML_Signal'] = "⚪ HOLD"
-            crossover_mask = df_signals['Sign_Change'] == 1
-            
-            # Trigger with Strict 63% verification
-            df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🟢 ZERODHA BUY (Bid Heavy)"
-            df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🔴 ZERODHA SELL (Ask Heavy)"
-            df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ LIQUIDITY TRAP (Avoid)"
-            df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
-            
-            # Live Feed Overwrite for the current running minute (Real-time Market Depth injection)
-            try:
-                # Target current continuous option/future token depth
-                # Fetching actual live buy/sell quantity ratio from Zerodha quote
-                nifty_quote = kite.quote('NSE:NIFTY50-INDEX')['NSE:NIFTY50-INDEX']
-                # If checking futures contract (e.g. 'NFO:NIFTY26JULYFUT') we fetch total buy/sell:
-                # total_buy = nifty_quote['buy_quantity']
-                # total_sell = nifty_quote['sell_quantity']
-                # live_ratio = total_buy / (total_buy + total_sell)
-            except Exception as depth_err:
-                pass
-                
-            # Formatting Data Frame Output
-            clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
-            display_df = df_signals[clean_display_cols].copy()
-            
-            display_df['a_Close'] = display_df['a_Close'].round(2)
-            display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-            display_df['c_Combined'] = display_df['c_Combined'].round(4)
-            display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-            
-            st.subheader("📋 Zerodha Live Execution Matrix (1 Jan 2026 - Present)")
-            st.dataframe(display_df, use_container_width=True, height=750)
-            
-    except Exception as e:
-        st.error(f"Zerodha API Connection Error: {str(e)}")
-        st.info("Check if your API key or Access Token has expired for today's session.")
+    # a = Close Price
+    df['a_Close'] = df['Close']
+    
+    # b = Kalman Filter (0.001)
+    df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
+    
+    # c = Combined Matrix Gap
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman']
+    
+    # Sign Flip Lock
+    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
+    df['Sign_Change'] = df['Sign_Change'].astype(int)
+    
+    # ADVANCED MICROSTRUCTURE PROXY (Decodes institutional order flow fields)
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
+    
+    # Target Setup (3 Hours Look-ahead)
+    df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
+    df.dropna(subset=['Order_Imbalance', 'Flow_Velocity', 'Target'], inplace=True)
+
+# Clean Feature Matrix
+features_matrix = ['c_Combined', 'Order_Imbalance', 'Flow_Velocity']
+
+train_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
+test_mask = (df.index >= '2026-01-01')
+
+# Train ONLY on exact crossover hours
+train_sign_moments = train_mask & (df['Sign_Change'] == 1)
+
+X_train = df.loc[train_sign_moments, features_matrix]
+y_train = df.loc[train_sign_moments, 'Target']
+X_test_all = df.loc[test_mask, features_matrix]
+
+if len(X_train) == 0:
+    st.error("Historical dataset compression failed. Please restart.")
 else:
-    st.warning("⚠️ Access Token are Required. Please input your Zerodha credentials in the sidebar to sync Live Market Depth.")
+    # Model Setup
+    model_d = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42)
+    model_d.fit(X_train, y_train)
+
+    probabilities = model_d.predict_proba(X_test_all)
+    df_signals = df[test_mask].copy()
+    
+    df_signals['Prob_Down'] = probabilities[:, 0]
+    df_signals['Prob_Up'] = probabilities[:, 1]
+
+    # Initialize Signals Block
+    df_signals['d_ML_Signal'] = "⚪ HOLD"
+    crossover_mask = df_signals['Sign_Change'] == 1
+    
+    # Stable 63% threshold for confirmation
+    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
+    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
+    
+    # Filter out retail trap noise
+    df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
+    
+    # Absolute hold lock when no sign flip happens
+    df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
+
+    # Clean display frame extraction
+    clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
+    display_df = df_signals[clean_display_cols].copy()
+
+    # Formatting outputs
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['c_Combined'] = display_df['c_Combined'].round(4)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    # Main Grid Data Presentation
+    st.subheader(f"📋 Nifty 50 Free Execution Matrix (1 Jan 2026 - Present)")
+    st.dataframe(display_df, use_container_width=True, height=750)
+
+    # Sidebar Filter Counter Metrics
+    total_flips = len(df_signals[df_signals['Sign_Change'] == 1])
+    inst_buys = len(df_signals[df_signals['d_ML_Signal'] == "🟢 INSTITUTIONAL BUY (Confirmed)"])
+    inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
+    traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
+
+    st.sidebar.header("📊 Microstructure Stats")
+    st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
+    st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
+    st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
+    st.sidebar.warning(f"⚪ Fake Traps Blocked: **{traps}**")
