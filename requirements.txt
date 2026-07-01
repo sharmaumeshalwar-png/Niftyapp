@@ -1,3 +1,5 @@
+kiteconnect
 yfinance
-pandas
 scikit-learn
+numpy
+pandas
