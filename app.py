@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Fixed July Engine", layout="wide")
+st.set_page_config(page_title="Nifty Fixed January Engine", layout="wide")
 st.title("🦅 Nifty 50 Strict Walk-Forward Engine")
-st.write("🎯 **Leakage Fixed:** Implemented sequential split tracking to guarantee zero future data sight since **1 July 2025**")
+st.write("🎯 **Leakage Fixed:** Implemented sequential split tracking to guarantee zero future data sight since **1 January 2026**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -71,9 +71,9 @@ with st.spinner("Re-building zero-leakage training sequences..."):
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # ZERO-LEAKAGE SEPARATION ENGINE
-# Model learns exclusively from the historical buffer era up to June 30, 2025
-train_pure_mask = (df.index < '2025-07-01')
-display_mask = (df.index >= '2025-07-01')
+# Model learns exclusively from the historical buffer era up to December 31, 2025
+train_pure_mask = (df.index < '2026-01-01')
+display_mask = (df.index >= '2026-01-01')
 
 X_train = df.loc[train_pure_mask, features_matrix]
 y_train = df.loc[train_pure_mask, 'Target']
@@ -108,8 +108,8 @@ df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'
 df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
 df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
 
-# Filter to force strictly 1 July 2025 onwards on UI grid display
-final_ui_mask = df_signals.index >= '2025-07-01'
+# Filter to force strictly 1 January 2026 onwards on UI grid display
+final_ui_mask = df_signals.index >= '2026-01-01'
 ui_display_df = df_signals[final_ui_mask].copy()
 
 # Clean layout frame extraction
@@ -123,7 +123,7 @@ display_df['c_Combined'] = display_df['c_Combined'].round(4)
 display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
 # Main Grid Presentation
-st.subheader(f"📋 Nifty 50 Accurate Matrix (1 July 2025 - Present)")
+st.subheader(f"📋 Nifty 50 Accurate Matrix (1 January 2026 - Present)")
 st.dataframe(display_df, use_container_width=True, height=750)
 
 # Sidebar Filter Counter Metrics
@@ -132,7 +132,7 @@ inst_buys = len(ui_display_df[ui_display_df['d_ML_Signal'] == "🟢 INSTITUTIONA
 inst_sells = len(ui_display_df[ui_display_df['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
 traps = len(ui_display_df[ui_display_df['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
 
-st.sidebar.header("📊 Clean Audit (July 2025 - Present)")
+st.sidebar.header("📊 Clean Audit (January 2026 - Present)")
 st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
 st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
 st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
