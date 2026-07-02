@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine (1M)", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Minute Ultra-Responsive Engine")
-st.write("🎯 **Aapki Perfect Setting:** 1-Minute Candle Tracking + Fixed June 15 Target with Auto-API Fallback")
+st.write("🎯 **Aapki Perfect Setting:** 1-Minute Candle Tracking + Fixed June 15 Target with Tz-Safe Fallback")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,7 +29,7 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning 1-Minute Crypto Microstructure Matrices..."):
-    # 🔴 yFinance 1m data maximum last 7 days ka deta hai. period="7d" is safe zone.
+    # yFinance 1m data maximum last 7 days ka deta hai. period="7d" is safe zone.
     df = yf.download("BTC-USD", period="7d", interval="1m")
     
     if isinstance(df.columns, pd.MultiIndex): 
@@ -64,21 +64,23 @@ with st.spinner("Aligning 1-Minute Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 🛡️ AUTOMATIC FALLBACK API LAYER 
-# Agar data availability 15 June ke baad ki hai toh target strictly shift ho jaye auto-pilot par.
+# 🛡️ TIMEZONE-SAFE API FALLBACK LAYER
 requested_date = pd.to_datetime('2026-06-15')
-earliest_available_date = df.index.min()
+# Index ke timestamps se timezone details strip karne ke liye tz_localize(None) lagaya hai
+earliest_available_date = df.index.min().tz_localize(None)
 
 if earliest_available_date > requested_date:
     # Split training on 30% data point of the fetched bucket
     split_idx = int(len(df) * 0.3)
-    split_date = df.index[split_idx]
+    split_date = df.index[split_idx].tz_localize(None)
     st.warning(f"⚠️ **yFinance API Limit Warning:** 1-Minute data for June 15 is archived by API. Streaming live metrics using active buffer from {earliest_available_date.strftime('%Y-%m-%d')} onwards.")
 else:
     split_date = requested_date
 
-train_mask = df.index < split_date
-predict_mask = df.index >= split_date
+# Feature masking indexes safe verification
+naive_index = df.index.tz_localize(None)
+train_mask = naive_index < split_date
+predict_mask = naive_index >= split_date
 
 df_train = df[train_mask].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
