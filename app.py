@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Umesh Search Engine", layout="wide")
-st.title("🦅 Umesh Search: Institutional Order-Flow Engine")
-st.write("🎯 **Refined Core Logic:** Balanced Random Forest ➡️ 1-Hour Candles ➡️ Strict 63% Filter ➡️ No Data Leakage")
+st.set_page_config(page_title="Nifty High-Accuracy Engine", layout="wide")
+st.title("🦅 Nifty 50 Ultra-Accurate Institutional Order-Flow Engine")
+st.write("🎯 **Refined Core Logic:** Fixed Live-Drop Bug ➡️ Enhanced Microstructure Features ➡️ Strict 63% Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (b = Kalman Filter 0.001)
@@ -53,51 +53,49 @@ with st.spinner("Refining microstructure matrices for ultra-accuracy..."):
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
     # =====================================================================
-    # REFINED MICROSTRUCTURE FEATURES (Same Method, Better Accuracy)
+    # REFINED MICROSTRUCTURE FEATURES
     # =====================================================================
+    # 1. Original Order Imbalance
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
+    # 2. Real Body Imbalance
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
+    # 3. Volatility Normalized Gap
     rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     
+    # 4. Flow Velocity
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     # Target Setup (3 Hours Look-ahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
-    # CRITICAL FIX: Drop features dependencies globally, but NOT the Target NaNs.
-    # This keeps the live 3-hour candle edge alive for real-time predictions.
-    feature_dependencies = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=feature_dependencies, inplace=True)
+    # FIX: Sirf live features ke missing values drop honge, Target ke nahi!
+    # Isse live market ki running candles delete nahi hongi.
+    df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
-# Extended Feature Matrix using the same method's data points
+# Extended Feature Matrix 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# STRICT SEPARATION OF TIME LOGIC (Train 2025, Predict 2026 Live)
+# STRICT SEPARATION OF TIME LOGIC
 train_2025_mask = (df.index >= '2025-01-01') & (df.index < '2026-01-01')
 predict_2026_mask = (df.index >= '2026-01-01')
 
-# CRITICAL FIX: Target NaNs strictly dropped inside the training subset mask ONLY
-train_subset = df.loc[train_2025_mask].dropna(subset=['Target'])
-X_train = train_subset[features_matrix]
-y_train = train_subset['Target']
+# Train set me se Target ke NaN drop karenge (Taki training perfect ho)
+df_train = df[train_2025_mask].dropna(subset=['Target'])
+X_train = df_train[features_matrix]
+y_train = df_train['Target']
 
+# Predict set me koi target drop nahi hoga (Live data completely safe hai)
 X_predict = df.loc[predict_2026_mask, features_matrix]
 
-if len(X_predict) == 0 or len(X_train) == 0:
-    st.error("Prediction timeline tracking or training split error. Reboot recommended.")
+if len(X_predict) == 0:
+    st.error("Prediction timeline tracking error. Reboot recommended.")
 else:
-    # CRITICAL FIX: Added balanced class weights and increased samples per leaf to eliminate fake biases
-    model_flow = RandomForestClassifier(
-        n_estimators=300, 
-        max_depth=5, 
-        min_samples_leaf=5, 
-        class_weight='balanced_subsample', 
-        random_state=42
-    )
+    # Model Setup
+    model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
@@ -124,13 +122,13 @@ else:
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
     display_df['c_Combined'] = display_df['c_Combined'].round(4)
+    
+    # Sorting to show latest live candles on top
+    display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    # OPTIMIZATION: Reverse order to pin the absolute latest hour data at the top of the grid
-    display_df = display_df.iloc[::-1]
-
-    # Main Grid Data Presentation - "Umesh Search" UI Display
-    st.subheader(f"📋 Live Refined Umesh Search Matrix (1 Jan 2026 - Present)")
+    # Main Grid Data Presentation
+    st.subheader(f"📋 Live Refined Nifty 50 Execution Matrix (1 Jan 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Filter Counter Metrics
@@ -139,8 +137,6 @@ else:
     inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
     traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
 
-    st.sidebar.header("📊 Umesh Search Audit (2026 Live)")
+    st.sidebar.header("📊 Refined Audit (2026 Live)")
     st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
-    st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
-    st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
-    st.sidebar.warning(f"⚪ Fake Traps Filtered: **{traps}**")
+    st
