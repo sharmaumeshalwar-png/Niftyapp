@@ -3,12 +3,11 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin Anti-Trap 5M Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Ultra-Accurate Anti-Trap 5-Min Engine")
-st.write("🎯 **Anti-Trap Logic:** Block Consecutive Multi-Buy/Sell Filters ➡️ 75% Win Optimization ➡️ Strict 63% Boundary")
+st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Correction Matrix:** Lowered Parameters for Instant Reversals + Automatic DOWN Drop System")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,8 +28,7 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data for 5-Minute Timeframe
-with st.spinner("Fetching and aligning Bitcoin 5-Minute Microstructure Matrices..."):
+with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
@@ -47,7 +45,6 @@ with st.spinner("Fetching and aligning Bitcoin 5-Minute Microstructure Matrices.
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman']
     
-    # Sign Flip Lock
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
@@ -60,13 +57,12 @@ with st.spinner("Fetching and aligning Bitcoin 5-Minute Microstructure Matrices.
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # 5-Min Look-ahead Target (15 Mins)
+    # Target Configuration
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# Time Separation
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
@@ -78,7 +74,14 @@ X_predict = df.loc[predict_mask, features_matrix]
 if len(X_predict) == 0:
     st.error("No data found from May 27, 2026 onwards.")
 else:
-    model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
+    # 🔴 SETTING LOWERED FOR FAST DIFFERENTIATION
+    # max_depth aur leaf size chota kiya hai taaki market turn hote hi model achanak react kare
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        max_depth=3,            # Strict low depth for instant shift detection
+        min_samples_leaf=1,     # Aggressive response to edge changes
+        random_state=42
+    )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
@@ -87,63 +90,66 @@ else:
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
-    # Raw Signal Allocation
-    df_signals['Raw_Signal'] = "HOLD"
-    crossover_mask = df_signals['Sign_Change'] == 1
-    
-    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'Raw_Signal'] = "BUY"
-    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'Raw_Signal'] = "SELL"
-    df_signals.loc[crossover_mask & (df_signals['Raw_Signal'] == "HOLD"), 'Raw_Signal'] = "TRAP"
-    df_signals.loc[df_signals['Sign_Change'] == 0, 'Raw_Signal'] = "HOLD"
-
     # =====================================================================
-    # CRITICAL CORRECTION: ANTI-CONSECUTIVE SIGNAL LOCK 🛡️
+    # CRITICAL AUTO-FLIP DETECTION SETTING 🛡️
     # =====================================================================
-    # Is logic se agar pichla active signal same hai, toh agla block ho jayega.
     final_signals = []
-    last_active_signal = "HOLD"
+    current_state = "HOLD"
 
-    for current_sig in df_signals['Raw_Signal'].values:
-        if current_sig in ["BUY", "SELL"]:
-            if current_sig == last_active_signal:
-                # Agar lagatar doosra buying aaya, toh use block kar do
-                final_signals.append("⚪ MOMENTUM EXHAUSTED (Avoid)")
+    # Array values for iteration
+    sign_changes = df_signals['Sign_Change'].values
+    prob_ups = df_signals['Prob_Up'].values
+    prob_downs = df_signals['Prob_Down'].values
+
+    for i in range(len(df_signals)):
+        sc = sign_changes[i]
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+
+        # 1. Fresh Signal Rule
+        if sc == 1:
+            if p_up >= 0.60:  # Bound thoda ease kiya taaki signal miss na ho
+                current_state = "BUY"
+                final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
+            elif p_down >= 0.60:
+                current_state = "SELL"
+                final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
             else:
-                if current_sig == "BUY":
-                    final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
-                else:
-                    final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
-                last_active_signal = current_sig  # State update
-        elif current_sig == "TRAP":
-            final_signals.append("⚪ RETAIL TRAP (Avoid Fake)")
-            # Agar market trend change ka trap dikhata hai, toh logic reset kar sakte hain
-            last_active_signal = "HOLD" 
+                current_state = "HOLD"
+                final_signals.append("⚪ HOLD")
+        
+        # 2. Continuous Monitoring (No Signal Remain Hidden Rule)
         else:
-            final_signals.append("⚪ HOLD")
+            if current_state == "BUY":
+                # Agar state BUY thi par ab DOWN ka chance badh raha hai (UP probability drop hui)
+                # Toh parameters differentiated hain - system turant auto-flip karke SELL dikhayega
+                if p_down > 0.52 or p_up < 0.50:
+                    current_state = "SELL"
+                    final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
+                else:
+                    final_signals.append("🟢 HOLD BUY TREND")
             
+            elif current_state == "SELL":
+                if p_up > 0.52 or p_down < 0.50:
+                    current_state = "BUY"
+                    final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
+                else:
+                    final_signals.append("🔴 HOLD SELL TREND")
+            else:
+                final_signals.append("⚪ HOLD")
+
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Formatting
-    clean_display_cols = ['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']
+    # Display Configuration
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['c_Combined'] = display_df['c_Combined'].round(4)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Anti-Trap Bitcoin Matrix (27 May 2026 - Present)")
+    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (Anti-Fail Configuration)")
     st.dataframe(display_df, use_container_width=True, height=750)
-
-    # Sidebar Metrics
-    inst_buys = len(df_signals[df_signals['d_ML_Signal'] == "🟢 INSTITUTIONAL BUY (Confirmed)"])
-    inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
-    exhausted = len(df_signals[df_signals['d_ML_Signal'] == "⚪ MOMENTUM EXHAUSTED (Avoid)"])
-    traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
-
-    st.sidebar.header("📊 Filter Audit Status")
-    st.sidebar.write(f"🟢 Fresh Confirmed Buys: **{inst_buys}**")
-    st.sidebar.write(f"🔴 Fresh Confirmed Sells: **{inst_sells}**")
-    st.sidebar.error(f"⚠️ Blocked Second Moves: **{exhausted}**")
-    st.sidebar.warning(f"⚪ Retail Traps Bypassed: **{traps}**")
