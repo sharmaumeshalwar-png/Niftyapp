@@ -52,40 +52,34 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # =====================================================================
     # REFINED MICROSTRUCTURE FEATURES
-    # =====================================================================
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
     rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
-    
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Setup (3 Candles Look-ahead -> 15 Minutes Future Vision)
-    df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
+    # OPTIMIZED TARGET SETUP: 1 Candle Look-ahead (5-Minute Future Horizon)
+    df['Target'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 1, 0)
     
-    # Drop ONLY features dependency NaNs globally. 
-    # Do NOT drop Target NaNs here; doing so truncates the most recent 3 live edge candles.
+    # Drop ONLY feature dependencies globally. Do not drop Target NaNs here.
     feature_dependencies = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=feature_dependencies, inplace=True)
 
-# Extended Feature Matrix using the same method's data points
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # DYNAMIC ZERO-CRASH SEPARATION ENGINE
 train_mask = (df.index < '2026-04-01')
 predict_mask = (df.index >= '2026-04-01')
 
-# Fallback checking if 1 April data window is clipped by server limits
+# Fallback split check
 if len(df.loc[train_mask]) < 50:
     st.sidebar.info("🔄 Server limit hit: Auto-stabilizing with 40/60 dynamic data split.")
     split_point = int(len(df) * 0.40)
     
-    # Safely drop target NaNs exclusively from training subsets
+    # Target NaNs ko sirf training dataset se drop kiya gaya hai
     train_subset = df.iloc[:split_point].dropna(subset=['Target'])
     X_train = train_subset[features_matrix]
     y_train = train_subset['Target']
@@ -93,7 +87,7 @@ if len(df.loc[train_mask]) < 50:
     X_predict = df[features_matrix].iloc[split_point:]
     df_signals = df.iloc[split_point:].copy()
 else:
-    # Safely drop target NaNs exclusively from training subsets
+    # Target NaNs ko sirf training dataset se drop kiya gaya hai
     train_subset = df.loc[train_mask].dropna(subset=['Target'])
     X_train = train_subset[features_matrix]
     y_train = train_subset['Target']
@@ -104,12 +98,11 @@ else:
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error("Data pipeline mismatch. Insufficient rows for execution matrix.")
 else:
-    # Model Setup with higher stabilization to improve hint accuracy
+    # Model Training
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
@@ -133,10 +126,10 @@ else:
     display_df['c_Combined'] = display_df['c_Combined'].round(4)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
     
-    # Invert view order so that the absolute latest live market updates display at the top
+    # Latest live market updates display at the top
     display_df = display_df.iloc[::-1]
 
-    # Main Grid Data Presentation - "Umesh Search" UI Display
+    # Main Grid Data Presentation
     st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | April 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
