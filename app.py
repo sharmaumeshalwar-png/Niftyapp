@@ -32,7 +32,6 @@ def apply_kalman_filter_strict(price_array):
 # Fetch Data automatically from free rolling source (Max 60 days allowed for 5m)
 with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy..."):
     end_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-    # Fetching maximum allowed data depth by server limits
     start_date = (datetime.now() - timedelta(days=59)).strftime('%Y-%m-%d')
     
     df = yf.download("^NSEI", start=start_date, end=end_date, interval="5m")
@@ -54,7 +53,7 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
     # =====================================================================
-    # REFINED MICROSTRUCTURE FEATURES (Same Method, Better Accuracy)
+    # REFINED MICROSTRUCTURE FEATURES
     # =====================================================================
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
@@ -68,7 +67,11 @@ with st.spinner("Refining 5-minute microstructure matrices for ultra-accuracy...
     
     # Target Setup (3 Candles Look-ahead -> 15 Minutes Future Vision)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-    df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Target'], inplace=True)
+    
+    # Drop ONLY features dependency NaNs globally. 
+    # Do NOT drop Target NaNs here; doing so truncates the most recent 3 live edge candles.
+    feature_dependencies = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=feature_dependencies, inplace=True)
 
 # Extended Feature Matrix using the same method's data points
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -81,13 +84,20 @@ predict_mask = (df.index >= '2026-04-01')
 if len(df.loc[train_mask]) < 50:
     st.sidebar.info("🔄 Server limit hit: Auto-stabilizing with 40/60 dynamic data split.")
     split_point = int(len(df) * 0.40)
-    X_train = df[features_matrix].iloc[:split_point]
-    y_train = df['Target'].iloc[:split_point]
+    
+    # Safely drop target NaNs exclusively from training subsets
+    train_subset = df.iloc[:split_point].dropna(subset=['Target'])
+    X_train = train_subset[features_matrix]
+    y_train = train_subset['Target']
+    
     X_predict = df[features_matrix].iloc[split_point:]
     df_signals = df.iloc[split_point:].copy()
 else:
-    X_train = df.loc[train_mask, features_matrix]
-    y_train = df.loc[train_mask, 'Target']
+    # Safely drop target NaNs exclusively from training subsets
+    train_subset = df.loc[train_mask].dropna(subset=['Target'])
+    X_train = train_subset[features_matrix]
+    y_train = train_subset['Target']
+    
     X_predict = df.loc[predict_mask, features_matrix]
     df_signals = df[predict_mask].copy()
 
@@ -122,6 +132,9 @@ else:
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
     display_df['c_Combined'] = display_df['c_Combined'].round(4)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+    
+    # Invert view order so that the absolute latest live market updates display at the top
+    display_df = display_df.iloc[::-1]
 
     # Main Grid Data Presentation - "Umesh Search" UI Display
     st.subheader(f"📋 Live Refined Umesh Search Matrix (5m Interval | April 2026 - Present)")
