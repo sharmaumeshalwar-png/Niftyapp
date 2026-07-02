@@ -4,9 +4,14 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="Nifty Institutional 5M Engine", layout="wide")
-st.title("🦅 Nifty 50 Ultra-Accurate Institutional 5-Min Engine")
+# Page Configuration
+st.set_page_config(page_title="Nifty Ultra-Responsive Engine", layout="wide")
+st.title("🦅 Nifty 50 Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Nifty Correction Matrix:** Lowered Parameters for Instant Reversals + Automatic DOWN Drop System")
 
+# =====================================================================
+# MATHEMATICAL ENGINE (Kalman Filter 0.001)
+# =====================================================================
 def apply_kalman_filter_strict(price_array):
     if len(price_array) == 0:
         return []
@@ -23,15 +28,21 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Fetching Nifty 5-Minute Data..."):
+with st.spinner("Aligning Responsive Nifty 5-Minute Microstructure Matrices..."):
+    # Nifty 5-Minute Interval Data Download
     df = yf.download("^NSEI", period="50d", interval="5m")
+    
+    # Multi-Index Column Flattening Bug Fix
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
+
     if len(df) == 0:
-        st.error("API Timeout. Please refresh.")
+        st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
+
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman']
@@ -39,6 +50,7 @@ with st.spinner("Fetching Nifty 5-Minute Data..."):
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
+    # Microstructure Features (Nifty Price Specifics)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -47,10 +59,13 @@ with st.spinner("Fetching Nifty 5-Minute Data..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Target Configuration (3 Candles Forward = 15 Minutes Look-ahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+
+# Timeline Boundary Matrix Separation
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
@@ -59,24 +74,82 @@ X_train = df_train[features_matrix]
 y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
-if len(X_predict) != 0:
-    model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
+if len(X_predict) == 0:
+    st.error("No data found from May 27, 2026 onwards. Check NSE trading hours.")
+else:
+    # LOW PARAMETER SETTING FOR FAST REVERSAL
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        max_depth=3,            # Low depth restricts the model from staying stuck in past trends
+        min_samples_leaf=1,     # Highest sensitivity for rapid trend identification
+        random_state=42
+    )
     model_flow.fit(X_train, y_train)
+
     probabilities = model_flow.predict_proba(X_predict)
-    
     df_signals = df[predict_mask].copy()
+    
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
-    df_signals['d_ML_Signal'] = "⚪ HOLD"
-    crossover_mask = df_signals['Sign_Change'] == 1
-    
-    df_signals.loc[crossover_mask & (df_signals['Prob_Up'] >= 0.63), 'd_ML_Signal'] = "🟢 INSTITUTIONAL BUY (Confirmed)"
-    df_signals.loc[crossover_mask & (df_signals['Prob_Down'] >= 0.63), 'd_ML_Signal'] = "🔴 INSTITUTIONAL SELL (Confirmed)"
-    df_signals.loc[crossover_mask & (df_signals['d_ML_Signal'] == "⚪ HOLD"), 'd_ML_Signal'] = "⚪ RETAIL TRAP (Avoid Fake)"
-    df_signals.loc[df_signals['Sign_Change'] == 0, 'd_ML_Signal'] = "⚪ HOLD"
+    # =====================================================================
+    # AUTO-FLIP DETECTION LOGIC FOR NIFTY 🛡️
+    # =====================================================================
+    final_signals = []
+    current_state = "HOLD"
 
-    display_df = df_signals[['a_Close', 'b_Kalman', 'c_Combined', 'd_ML_Signal']].copy()
+    sign_changes = df_signals['Sign_Change'].values
+    prob_ups = df_signals['Prob_Up'].values
+    prob_downs = df_signals['Prob_Down'].values
+
+    for i in range(len(df_signals)):
+        sc = sign_changes[i]
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+
+        # 1. Fresh Signal Rule
+        if sc == 1:
+            if p_up >= 0.60:
+                current_state = "BUY"
+                final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
+            elif p_down >= 0.60:
+                current_state = "SELL"
+                final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
+            else:
+                current_state = "HOLD"
+                final_signals.append("⚪ HOLD")
+        
+        # 2. Continuous Micro-Adjustment (Auto-Flip Guard)
+        else:
+            if current_state == "BUY":
+                # Nifty top par jaate hi agar seller activity heavy hoti hai, toh system instant flip marega
+                if p_down > 0.52 or p_up < 0.50:
+                    current_state = "SELL"
+                    final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
+                else:
+                    final_signals.append("🟢 HOLD BUY TREND")
+            
+            elif current_state == "SELL":
+                if p_up > 0.52 or p_down < 0.50:
+                    current_state = "BUY"
+                    final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
+                else:
+                    final_signals.append("🔴 HOLD SELL TREND")
+            else:
+                final_signals.append("⚪ HOLD")
+
+    df_signals['d_ML_Signal'] = final_signals
+
+    # Display Configuration
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
+    display_df = df_signals[clean_display_cols].copy()
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Micro-Differentiated Nifty 50 Engine (Anti-Fail Configuration)")
     st.dataframe(display_df, use_container_width=True, height=750)
