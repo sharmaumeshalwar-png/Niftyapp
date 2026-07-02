@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Institutional 5M Engine", layout="wide")
-st.title("🦅 Nifty 50 Ultra-Accurate Institutional 5-Min Engine")
-st.write("🎯 **Production-Grade Engine:** 5-Minute Matrix ➡️ Fixed Live Target Drop Bug ➡️ 63% Strict Filter")
+st.set_page_config(page_title="Bitcoin Institutional 5M Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Ultra-Accurate Institutional 5-Min Engine")
+st.write("🎯 **Crypto Production-Grade Engine:** 5-Minute Matrix ➡️ BTC-USD Asset Flow ➡️ Strict 63% Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,17 +29,17 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data for 5-Minute Timeframe (Max 60 days allowed by yfinance for 5m)
-with st.spinner("Fetching and aligning 5-Minute Microstructure Matrices..."):
-    # yfinance 5m data max 60 days tak ka deta hai, toh hum safe side 50 days ka data nikal rahe hain
-    df = yf.download("^NSEI", period="50d", interval="5m")
+# Fetch Data for 5-Minute Timeframe (Bitcoin runs 24/7)
+with st.spinner("Fetching and aligning Bitcoin 5-Minute Microstructure Matrices..."):
+    # yfinance 5m data max 60 days tak ka deta hai, crypto ke liye rolling 50 days nikal rahe hain
+    df = yf.download("BTC-USD", period="50d", interval="5m")
     
     # Bug Fix: Multi-Index Column Flattening
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or Invalid Ticker. Please refresh the dashboard.")
         st.stop()
 
     # Index handling to ensure datetime string comparison works perfectly
@@ -55,7 +55,7 @@ with st.spinner("Fetching and aligning 5-Minute Microstructure Matrices..."):
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
     # =====================================================================
-    # MICROSTRUCTURE FEATURES (Optimized for 5-Min Frame)
+    # MICROSTRUCTURE FEATURES (Optimized for Crypto 5-Min Frame)
     # =====================================================================
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
@@ -67,7 +67,7 @@ with st.spinner("Fetching and aligning 5-Minute Microstructure Matrices..."):
     
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # 5-Min ke hisab se Look-ahead Target (3 candles forward = 15 Mins lookahead)
+    # 5-Min Look-ahead Target (3 candles forward = 15 Mins lookahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
     # Clear Feature NaNs (Live Rows are kept safe here!)
@@ -93,9 +93,9 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No data found from May 27, 2026 onwards. Please wait for market hours or check data availability.")
+    st.error("No data found from May 27, 2026 onwards. Check yfinance connection.")
 else:
-    # Model Setup (Tuned for 5-Min fast execution)
+    # Model Setup
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
 
@@ -129,7 +129,7 @@ else:
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
     # Main Grid Presentation
-    st.subheader(f"📋 Live 5-Min Nifty 50 Execution Matrix (27 May 2026 - Present)")
+    st.subheader(f"📋 Live 5-Min Bitcoin Execution Matrix (27 May 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
 
     # Sidebar Metric Counter Auditor
@@ -138,7 +138,7 @@ else:
     inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
     traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
 
-    st.sidebar.header("📊 Production Audit (Post May 27)")
+    st.sidebar.header("📊 Crypto Production Audit")
     st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
     st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
     st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
