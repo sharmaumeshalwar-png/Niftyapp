@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Lowered Parameters for Instant Reversals + Automatic DOWN Drop System")
+st.write("🎯 **Aapki Perfect Setting:** Dynamic Time Horizon + Instant Live Reversals")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,7 +29,8 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    df = yf.download("BTC-USD", period="50d", interval="5m")
+    # Live Hint ke liye data window ensure ki
+    df = yf.download("BTC-USD", period="30d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
@@ -57,34 +58,40 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration
+    # Target Configuration (Future 3 candles lookahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-    df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
+    
+    # Drop rows where features are NaNs, but keep recent rows for prediction
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=features_matrix, inplace=True)
 
-features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+# =====================================================================
+# DYNAMIC SPLIT (No Hardcoded Dates)
+# =====================================================================
+# 80% data training ke liye, aakhri 20% data live prediction/signals ke liye
+split_idx = int(len(df) * 0.80)
 
-train_mask = df.index < '2026-05-27'
-predict_mask = df.index >= '2026-05-27'
-
-df_train = df[train_mask].dropna(subset=['Target'])
+df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
-X_predict = df.loc[predict_mask, features_matrix]
+
+# Prediction target drop nahi karega, taaki aakhri 3 live candles bhi predict ho sakein
+df_predict = df.iloc[split_idx:]
+X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No data found from May 27, 2026 onwards.")
+    st.error("Prediction matrix calculation error. Waiting for more market ticks...")
 else:
-    # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            # Strict low depth for instant shift detection
+        max_depth=3,            # Ultra low depth for instant shift detection
         min_samples_leaf=1,     # Aggressive response to edge changes
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_mask].copy()
+    df_signals = df_predict.copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -104,7 +111,6 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -115,8 +121,6 @@ else:
             else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
-        
-        # 2. Continuous Monitoring (The Auto-Flip Part you pasted!)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
@@ -124,7 +128,6 @@ else:
                     final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
                 else:
                     final_signals.append("🟢 HOLD BUY TREND")
-            
             elif current_state == "SELL":
                 if p_up > 0.52 or p_down < 0.50:
                     current_state = "BUY"
@@ -136,7 +139,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Same as your snippet)
+    # Display Configuration
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -147,5 +150,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (Anti-Fail Configuration)")
+    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (Fixed Layout)")
     st.dataframe(display_df, use_container_width=True, height=750)
