@@ -5,8 +5,8 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin Macro 1H Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) 1-Hour Macro-Learning Engine")
+st.set_page_config(page_title="Crude Oil Macro 1H Engine", layout="wide")
+st.title("⚡ Crude Oil 1-Hour Macro-Learning Engine")
 st.write("🎯 **Aapki High-Data Setting:** 1-Hour Candles + 1.5 Years Deep Learning + Fixed 1 Jan 2026 Prediction")
 
 # =====================================================================
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Downloading 2 Years BTC Macro Data & Training Model (July 2024 Onwards)..."):
-    # 🔴 Ticker changed to BTC-USD with 1-Hour interval and 2-Year data depth
-    df = yf.download("BTC-USD", period="2y", interval="1h")
+with st.spinner("Downloading 2 Years Crude Oil Macro Data & Training Model..."):
+    # 🔴 Ticker changed to CL=F (Crude Oil) with 1-Hour interval and 2-Year data depth
+    df = yf.download("CL=F", period="2y", interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout. Max data window mismatch. Please refresh.")
+        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -66,7 +66,7 @@ with st.spinner("Downloading 2 Years BTC Macro Data & Training Model (July 2024 
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 📅 AAPKI REQUESTED TIMELINE: 1 Jan 2026 se pehle ka sab seekhne me jayega, baad ka prediction me.
+# 📅 TIMELINE: 1 Jan 2026 se pehle ka sab seekhne me jayega, baad ka prediction me.
 train_mask = df.index < '2026-01-01'
 predict_mask = df.index >= '2026-01-01'
 
@@ -76,7 +76,7 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No active matrix predictions streaming from January 1, 2026 onwards. Please re-verify data chunk.")
+    st.error("No active matrix predictions streaming from January 1, 2026 onwards. Market might be closed.")
 else:
     # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING (Strictly Same Nodes)
     model_flow = RandomForestClassifier(
@@ -152,5 +152,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Dashboard (Predicting from 1st January 2026 Onwards)")
+    st.subheader(f"📋 Live 1-Hour Crude Oil Dashboard (Predicting from 1st January 2026 Onwards)")
     st.dataframe(display_df, use_container_width=True, height=750)
