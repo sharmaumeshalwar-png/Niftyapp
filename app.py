@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Pure Weighted Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Pure Weighted Engine")
-st.write("🎯 **Aapki Final Fixed Strategy:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Pure Weighted Momentum Matrix")
+st.set_page_config(page_title="BTC Ultra-Accurate Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Optimized Engine")
+st.write("🎯 **Aapki Strategy:** Kalman Price + Volatility-Adjusted Target + Deep RandomForest + Price-Distance Weighted Momentum")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -28,7 +28,7 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
+with st.spinner("Aligning Optimized Bitcoin 1-Hour Microstructure Matrices..."):
     # BTC-USD Hourly 2 Years Window
     raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
@@ -48,13 +48,17 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman Active)
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman']
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman'] 
     
-    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
-    df['Sign_Change'] = df['Sign_Change'].astype(int)
+    # 🔥 POINT 2 IMPLEMENTED: ATR (Average True Range) Engine for Volatility Targeting
+    high_low = df['High'] - df['Low']
+    high_cp = (df['High'] - df['a_Close'].shift(1)).abs()
+    low_cp = (df['Low'] - df['a_Close'].shift(1)).abs()
+    tr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(window=14).mean() + 1e-10
     
     # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -65,11 +69,12 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Past 25-Candle Target
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    # 🔥 POINT 2 CORE: Volatility-Adjusted Target (Filters Sideways Noise)
+    # Target 1 tabhi hoga jab price 25 candles pehle se kam se kam 0.5 * ATR upar ho
+    df['Target'] = np.where(df['a_Close'] > (df['a_Close'].shift(25) + (0.5 * df['ATR'])), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target'], inplace=True)
+    df.dropna(subset=features_matrix + ['Target', 'ATR'], inplace=True)
 
 # =====================================================================
 # DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
@@ -86,11 +91,12 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error. Waiting for market data ticks...")
 else:
-    # RandomForest Model Training
+    # 🔥 POINT 3 IMPLEMENTED: Optimized Deep RandomForest Architecture
     model_flow = RandomForestClassifier(
-        n_estimators=150, 
-        max_depth=3,            
-        min_samples_leaf=1,     
+        n_estimators=200, 
+        max_depth=5,            # Deep patterns depth set to 5
+        min_samples_split=5,     # Overfitting protection layer
+        min_samples_leaf=2,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
@@ -102,7 +108,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (PURE STANDALONE WEIGHTED MOMENTUM)
+    # LIVE TREND-LOCK CIRCUIT (PRICE-DISTANCE WEIGHTED ENGINE)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -115,10 +121,14 @@ else:
 
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans = df_predict['b_Kalman'].to_numpy()
 
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
+        c_val = closes[i]
+        k_val = kalmans[i]
 
         # Raw Accumulator Calculation
         if p_up >= 0.55:
@@ -129,8 +139,8 @@ else:
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # 🌟 Pure Unfiltered Mathematical Product Calculation
-        calc_weighted = (p_up - p_down) * accumulator
+        # Formula: (Close - Kalman) * Accumulator Score
+        calc_weighted = (c_val - k_val) * accumulator
         weighted_momentum_log.append(calc_weighted)
 
         # Signal Status Logs Based On Pure Accumulator Levels
@@ -158,7 +168,7 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Safe mapping back to pandas framework
+    # Mapping secure numpy calculations safely
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Weighted_Momentum'] = weighted_momentum_log 
@@ -172,11 +182,11 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Accumulator + Weighted Confidence)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Ultra-Accurate Machine Reset)")
     st.dataframe(display_df, use_container_width=True, height=750)
