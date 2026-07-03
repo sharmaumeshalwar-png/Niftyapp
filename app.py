@@ -29,14 +29,15 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # 50 days buffer download to easily carve out 13 training days and keep May 27 prediction live
-    df = yf.download("BTC-USD", period="50d", interval="5m")
+    # Fix 1: Period ko 30d kiya taaki 5m interval safely download ho sake bina timeout ke
+    df = yf.download("BTC-USD", period="30d", interval="5m")
     
+    # Fix 2: Ultra-Safe MultiIndex Column Flattening
     if isinstance(df.columns, pd.MultiIndex): 
-        df.columns = df.columns.get_level_values(0)
+        df.columns = [col[0] for col in df.columns]
 
-    if len(df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+    if df.empty or len(df) < 50:
+        st.error("⚠️ Data download nahi ho paya ya data bohot kam hai. Please page ko refresh karein!")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -58,17 +59,18 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration
+    # Target Configuration (3 periods forward shift)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
-    df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
-
-features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    
+    # Fix 3: Srf prediction features se naff values clear karna, full row optimization ke saath
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=features_matrix, inplace=True)
 
 # =====================================================================
 # 🌟 THE GOLDEN SOLUTION: 13-DAY AUTOMATIC ROLLING BOUNDARY ANCHOR
 # =====================================================================
 start_data_date = df.index.min()
-split_boundary_date = start_data_date + pd.Timedelta(days=13)  # 🔴 STRICTLY 13 DAYS FIXED FOR MAY 27 RESET
+split_boundary_date = start_data_date + pd.Timedelta(days=13)  # 🔴 STRICTLY 13 DAYS FIXED FOR ANCHOR RESET
 
 train_mask = df.index < split_boundary_date
 predict_mask = df.index >= split_boundary_date
@@ -79,8 +81,18 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0 or len(X_train) == 0:
-    st.error("Data Frame Alignment Alert: Please refresh Streamlit dashboard.")
+    st.warning(f"Data split alignment warning: Training rows ({len(X_train)}) | Prediction rows ({len(X_predict)}). Data size kam hai, isliye automatic adjustment operational mode apply ho rha h.")
+    # Fallback: agar 13 days ke baad data na bache toh 50-50 split use karega taaki blank na ho screen
+    midpoint = len(df) // 2
+    X_train = df[features_matrix].iloc[:midpoint]
+    y_train = df['Target'].iloc[:midpoint]
+    X_predict = df[features_matrix].iloc[midpoint:]
+    df_signals = df.iloc[midpoint:].copy()
 else:
+    df_signals = df[predict_mask].copy()
+
+# Model Execution Guard
+if len(X_train) > 0 and len(X_predict) > 0:
     # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
         n_estimators=150, 
@@ -91,7 +103,6 @@ else:
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -123,4 +134,28 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto
+        # 2. Continuous Monitoring (The Auto-Flip / Emergency Circuit)
+        else:
+            if current_state == "BUY" and p_down >= 0.65:
+                current_state = "SELL"
+                final_signals.append("🔴 AUTO-FLIP TO SELL (Risk Shield)")
+            elif current_state == "SELL" and p_up >= 0.65:
+                current_state = "BUY"
+                final_signals.append("🟢 AUTO-FLIP TO BUY (Risk Shield)")
+            else:
+                if current_state == "BUY":
+                    final_signals.append("🟢 HOLD BUY")
+                elif current_state == "SELL":
+                    final_signals.append("🔴 HOLD SELL")
+                else:
+                    final_signals.append("⚪ HOLD")
+
+    df_signals['Engine_Signal'] = final_signals
+
+    # =====================================================================
+    # DASHBOARD OUTPUT DISPLAY
+    # =====================================================================
+    st.subheader("📊 Engine Signal Live Tracking Matrix")
+    st.dataframe(df_signals[['a_Close', 'b_Kalman', 'c_Combined', 'Prob_Up', 'Prob_Down', 'Engine_Signal']].tail(50))
+else:
+    st.error("Data crunching state failed. Data processing pipeline clear karke wapas run karein.")
