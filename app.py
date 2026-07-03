@@ -5,20 +5,20 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H Stable Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Low-Flip Configuration)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Stable Auto-Flip Circuit")
+st.set_page_config(page_title="Bitcoin 1H Dual-Kalman Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Dual-Kalman Probability Smoothing)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Kalman Filtered Probabilities")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Kalman Filter 0.001)
+# MATHEMATICAL ENGINE (Strict Kalman Filter)
 # =====================================================================
-def apply_kalman_filter_strict(price_array):
+def apply_kalman_filter_strict(price_array, q_param=0.001, r_param=0.1):
     if len(price_array) == 0:
         return []
     x = price_array[0]
     p = 50.0  
-    q = 0.001  
-    r = 0.1    
+    q = q_param  
+    r = r_param    
     filtered_prices = []
     for z in price_array:
         p = p + q
@@ -50,7 +50,7 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
 
     # Base Matrix Definition
     df['a_Close'] = df['Close']
-    df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
+    df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values, q_param=0.001, r_param=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman']
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
@@ -86,7 +86,7 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error. Waiting for market data ticks...")
 else:
-    # Aggressive Low-Parameter Model Settings
+    # RandomForest Model Training
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -95,14 +95,18 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Bulletproof Slicing Allocation
+    # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
     
-    df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
-    df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
+    raw_prob_down = probabilities[:, 0]
+    raw_prob_up = probabilities[:, 1]
+
+    # 🌟 AAPKI REQUIREMENT: Both Probabilities par Kalman Filter lga diya (q=0.005, r=0.5 for smooth curve)
+    df_predict.loc[:, 'Prob_Down'] = apply_kalman_filter_strict(raw_prob_down, q_param=0.005, r_param=0.5)
+    df_predict.loc[:, 'Prob_Up'] = apply_kalman_filter_strict(raw_prob_up, q_param=0.005, r_param=0.5)
 
     # =====================================================================
-    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (🌟 REDUCED FLIP FILTERS)
+    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (Kalman Controlled)
     # =====================================================================
     final_signals = []
     current_state = "HOLD"
@@ -117,15 +121,14 @@ else:
         p_down = prob_downs[i]
 
         if sc == 1:
-            # 🌟 Filter Tighten: Fresh crossing requires 65% conviction now
-            if p_up >= 0.65:  
+            # Kalman smoothed probabilities strictly reduce false breaks
+            if p_up >= 0.58:  
                 current_state = "BUY"
                 final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
-            elif p_down >= 0.65:
+            elif p_down >= 0.58:
                 current_state = "SELL"
                 final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
             else:
-                # Agar state strong nahi hai toh purani state hold rakho, bina flip kiye
                 if current_state == "BUY":
                     final_signals.append("🟢 HOLD BUY TREND")
                 elif current_state == "SELL":
@@ -134,15 +137,14 @@ else:
                     final_signals.append("⚪ HOLD")
         else:
             if current_state == "BUY":
-                # 🌟 Noise Filter: Auto-flip tabhi hoga jab buyers power < 45% drop ho ya sellers > 55% ho
-                if p_down > 0.55 or p_up < 0.45:
+                # Strict anti-flip buffer working on smoothed values
+                if p_down > 0.54 or p_up < 0.46:
                     current_state = "SELL"
                     final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
                 else:
                     final_signals.append("🟢 HOLD BUY TREND")
             elif current_state == "SELL":
-                # 🌟 Noise Filter: Auto-flip tabhi hoga jab sellers power < 45% drop ho ya buyers > 55% ho
-                if p_up > 0.55 or p_down < 0.45:
+                if p_up > 0.54 or p_down < 0.46:
                     current_state = "BUY"
                     final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
                 else:
@@ -161,9 +163,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Newest hourly candles sorted on top
+    # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Strict Low-Flip Engine)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Dual-Kalman Smoothed)")
     st.dataframe(display_df, use_container_width=True, height=750)
