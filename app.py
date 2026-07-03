@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H Past-Locked Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Past-Locked Configuration)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Past 10-Candle Target (No Future Lookahead)")
+st.set_page_config(page_title="Bitcoin 1H Stable Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Low-Flip Configuration)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Stable Auto-Flip Circuit")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -65,8 +65,7 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # 🌟 AAPKI REQUIREMENT: Future hata diya, ab pichli 10 bani hui candles (Past 10 Hours) par target locked h
-    # shift(10) ka matlab hai 10 candles pehle ka data dekhna
+    # Past 10-Candle Target (Past-Locked Model)
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(10), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -77,12 +76,10 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
 # =====================================================================
 split_idx = int(len(df) * 0.50)
 
-# Pehla 50% Crypto data Training Matrix ke liye
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
 
-# Aakhri 50% Crypto data (Up to current live tick) Prediction Matrix ke liye
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
@@ -105,7 +102,7 @@ else:
     df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE DYNAMIC AUTO-FLIP CIRCUIT 🛡️
+    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (🌟 REDUCED FLIP FILTERS)
     # =====================================================================
     final_signals = []
     current_state = "HOLD"
@@ -120,24 +117,32 @@ else:
         p_down = prob_downs[i]
 
         if sc == 1:
-            if p_up >= 0.60:  
+            # 🌟 Filter Tighten: Fresh crossing requires 65% conviction now
+            if p_up >= 0.65:  
                 current_state = "BUY"
                 final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
-            elif p_down >= 0.60:
+            elif p_down >= 0.65:
                 current_state = "SELL"
                 final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
             else:
-                current_state = "HOLD"
-                final_signals.append("⚪ HOLD")
+                # Agar state strong nahi hai toh purani state hold rakho, bina flip kiye
+                if current_state == "BUY":
+                    final_signals.append("🟢 HOLD BUY TREND")
+                elif current_state == "SELL":
+                    final_signals.append("🔴 HOLD SELL TREND")
+                else:
+                    final_signals.append("⚪ HOLD")
         else:
             if current_state == "BUY":
-                if p_down > 0.52 or p_up < 0.50:
+                # 🌟 Noise Filter: Auto-flip tabhi hoga jab buyers power < 45% drop ho ya sellers > 55% ho
+                if p_down > 0.55 or p_up < 0.45:
                     current_state = "SELL"
                     final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
                 else:
                     final_signals.append("🟢 HOLD BUY TREND")
             elif current_state == "SELL":
-                if p_up > 0.52 or p_down < 0.50:
+                # 🌟 Noise Filter: Auto-flip tabhi hoga jab sellers power < 45% drop ho ya buyers > 55% ho
+                if p_up > 0.55 or p_down < 0.45:
                     current_state = "BUY"
                     final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
                 else:
@@ -160,5 +165,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Past-Locked 10-Candle Split)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Strict Low-Flip Engine)")
     st.dataframe(display_df, use_container_width=True, height=750)
