@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="NSE USD/INR Currency Engine", layout="wide")
-st.title("⚡ USD/INR Live NSE Currency Pair Dynamic Engine")
-st.write("🎯 **Aapki Perfect Setting:** 5-Minute USD/INR Rupee Tracking + Automatic Auto-Flip System")
+st.set_page_config(page_title="Ethereum Ultra-Responsive Engine", layout="wide")
+st.title("⚡ Ethereum (ETH) Live Dynamic-Flip Engine")
+st.write("🎯 **Aapki Perfect Setting:** 5-Minute ETH Crypto Microstructure + Automatic DOWN Drop System")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive USD/INR NSE Microstructure Matrices..."):
-    # 🔴 NSE Linked USD/INR Ticker 
-    df = yf.download("USDINR=X", period="50d", interval="5m")
+with st.spinner("Aligning Responsive Ethereum Microstructure Matrices..."):
+    # 🔴 Target Competitor Crypto Asset: Ethereum (ETH-USD)
+    df = yf.download("ETH-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance USD/INR Live Feed Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -58,13 +58,13 @@ with st.spinner("Aligning Responsive USD/INR NSE Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 candles lookahead = 15 minutes in 5M space)
+    # Target Configuration (3 candles lookahead = 15 minutes)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# Strict Splitting Boundaries 
+# Original Stable Timeline Splitting
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
@@ -74,7 +74,7 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No active USD/INR matrix data found from May 27, 2026 onwards.")
+    st.error("No active matrix data found from May 27, 2026 onwards.")
 else:
     # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
@@ -100,13 +100,14 @@ else:
     sign_changes = df_signals['Sign_Change'].values
     prob_ups = df_signals['Prob_Up'].values
     prob_downs = df_signals['Prob_Down'].values
+    total_rows = len(df_signals)
 
-    for i in range(len(df_signals)):
+    for i in range(total_rows):
         sc = sign_changes[i]
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross (Aapka strictly verified 60% Filter)
+        # 1. Fresh Signal Rule via Kalman Cross (Strict 60% Filter)
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -121,4 +122,33 @@ else:
         # 2. Continuous Monitoring (The Auto-Flip Part!)
         else:
             if current_state == "BUY":
-                if p_down > 0.52
+                if p_down > 0.52 or p_up < 0.50:
+                    current_state = "SELL"
+                    final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
+                else:
+                    final_signals.append("🟢 HOLD BUY TREND")
+            
+            elif current_state == "SELL":
+                if p_up > 0.52 or p_down < 0.50:
+                    current_state = "BUY"
+                    final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
+                else:
+                    final_signals.append("🔴 HOLD SELL TREND")
+            else:
+                final_signals.append("⚪ HOLD")
+
+    df_signals['d_ML_Signal'] = final_signals
+
+    # Display Configuration (Rounded to 2 decimals for absolute asset clarity)
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
+    display_df = df_signals[clean_display_cols].copy()
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Micro-Differentiated Ethereum Engine (Anti-Fail Core)")
+    st.dataframe(display_df, use_container_width=True, height=750)
