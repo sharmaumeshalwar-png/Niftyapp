@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Fixed May 27 Filter + Restored 17 June Hint Engine")
+st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Engine")
+st.write("🎯 **Aapki Perfect Setting:** Aggressive 55% Entry Gate + Fixed May 27 Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,8 +29,7 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # 🌟 DATA TUNING: Pulling stable chunk to align 3-4 June, 8 June and 17 June together
-    df = yf.download("BTC-USD", start="2026-05-10", end="2026-07-04", interval="5m")
+    df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
@@ -64,7 +63,7 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 🔴 AAPKI EXACT SAME STARTING DATE MASK AS REQUESTED
+# 🔴 AAPKI EXACT SAME DATE MASK
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
@@ -79,8 +78,8 @@ else:
     # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            # Strict low depth for instant shift detection
-        min_samples_leaf=1,     # Aggressive response to edge changes
+        max_depth=3,            
+        min_samples_leaf=1,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
@@ -106,12 +105,12 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross
+        # 1. Fresh Signal Rule via Kalman Cross (⚠️ CHANGED FROM 0.60 TO 0.55)
         if sc == 1:
-            if p_up >= 0.60:  
+            if p_up >= 0.55:  
                 current_state = "BUY"
                 final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
-            elif p_down >= 0.60:
+            elif p_down >= 0.55:
                 current_state = "SELL"
                 final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
             else:
