@@ -63,6 +63,7 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
+# 🔴 DYNAMIC WINDOW BACK TO YOUR ORIGINAL FIXED DATE MASK
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
