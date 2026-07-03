@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin Ultra Engine 5M", layout="wide")
-st.title("⚡ Bitcoin (BTC) 5-Minute Live Dynamic-Flip Engine")
-st.write("🎯 **Aapki Favorite Setting:** 5-Minute BTC Microstructure + Original 60% Strict Institutional Barrier")
+st.set_page_config(page_title="Bitcoin Active Engine 5M", layout="wide")
+st.title("⚡ Bitcoin (BTC) 5-Minute Pure Active Engine")
+st.write("🎯 **Aapki Favorite Setting:** 5-Minute BTC + Auto-Rolling Learning Window (No Signal Drop)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Bitcoin 5-Min Microstructure Matrices..."):
-    # 🔴 Global Bitcoin Ticker on 5-Minute intervals (Max 50-60d limit allowed by API)
+with st.spinner("Aligning Ultra-Active Bitcoin 5-Min Microstructure Matrices..."):
+    # 50 days data fetch
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout or System Error. Please refresh the dashboard.")
+        st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -64,35 +64,38 @@ with st.spinner("Aligning Responsive Bitcoin 5-Min Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# Original Stable Timeline Split Point
-train_mask = df.index < '2026-05-27'
-predict_mask = df.index >= '2026-05-27'
+# =====================================================================
+# 🌟 UPDATE: AUTOMATIC ROLLING SPLIT (Purani Fixed Date Hata Di)
+# =====================================================================
+# Pehla 40% data sikhne me jayega, baaki 60% par live predictions aayengi
+split_idx = int(len(df) * 0.40)
 
-df_train = df[train_mask].dropna(subset=['Target'])
+df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
-X_predict = df.loc[predict_mask, features_matrix]
+
+X_predict = df.iloc[split_idx:][features_matrix]
+df_signals = df.iloc[split_idx:].copy()
 
 if len(X_predict) == 0:
-    st.error("No active matrix data found from May 27, 2026 onwards.")
+    st.error("Matrix distribution error. Please restart the app.")
 else:
-    # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING FOR FAST DIFFERENTIATION
+    # Original Low Parameter Model Nodes
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            # Strict low depth for instant shift detection
-        min_samples_leaf=1,     # Aggressive response to edge changes
+        max_depth=3,            
+        min_samples_leaf=1,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE DYNAMIC AUTO-FLIP CIRCUIT 🛡️
+    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (Original Copy Setup) 🛡️
     # =====================================================================
     final_signals = []
     current_state = "HOLD"
@@ -119,7 +122,7 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto-Flip Part!)
+        # 2. Continuous Monitoring (Auto-Flip)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
@@ -139,7 +142,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Rounded to 2 decimals for BTC precision)
+    # Display Configuration
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -150,5 +153,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated BTC 5-Min Output Window")
+    st.subheader(f"📋 Live Micro-Differentiated BTC 5-Min Active Streams")
     st.dataframe(display_df, use_container_width=True, height=750)
