@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Crude Oil Macro 1H Engine", layout="wide")
-st.title("⚡ Crude Oil 1-Hour Macro-Learning Engine")
-st.write("🎯 **Aapki High-Data Setting:** 1-Hour Candles + 1.5 Years Deep Learning + Fixed 1 Jan 2026 Prediction")
+st.set_page_config(page_title="Bitcoin Micro 15M Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) 15-Minute Micro-Learning Engine")
+st.write("🎯 **Aapki Setting:** 15-Minute Candles + Max Possible Data (60d Limit) + Fixed 1 Jan 2026 Prediction")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Downloading 2 Years Crude Oil Macro Data & Training Model..."):
-    # 🔴 Ticker changed to CL=F (Crude Oil) with 1-Hour interval and 2-Year data depth
-    df = yf.download("CL=F", period="2y", interval="1h")
+with st.spinner("Downloading 15-Minute BTC Micro Data & Aligning Matrices..."):
+    # 🔴 15-minute candle par maximum allowed period '60d' use kiya hai
+    df = yf.download("BTC-USD", period="60d", interval="15m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
+        st.error("YFinance 15m API Timeout. Limit exceeded or server down. Please refresh.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -51,7 +51,7 @@ with st.spinner("Downloading 2 Years Crude Oil Macro Data & Training Model..."):
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Microstructure Features (Hourly Standard)
+    # Microstructure Features (15-Min Standard)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -60,25 +60,36 @@ with st.spinner("Downloading 2 Years Crude Oil Macro Data & Training Model..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3-candles forward in 1-Hour space = 3 Hours lookahead trend)
+    # Target Configuration (3-candles forward in 15-Min space = 45 Minutes lookahead trend)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 📅 TIMELINE: 1 Jan 2026 se pehle ka sab seekhne me jayega, baad ka prediction me.
+# 📅 AAPKI REQ TIMELINE SPLIT
 train_mask = df.index < '2026-01-01'
 predict_mask = df.index >= '2026-01-01'
 
-df_train = df[train_mask].dropna(subset=['Target'])
-X_train = df_train[features_matrix]
-y_train = df_train['Target']
-X_predict = df.loc[predict_mask, features_matrix]
+# Fallback block agar piche ka historical 15m data API limits ki wajah se khali ho
+if not train_mask.any():
+    # Agar 2026-01-01 se pehle ka data na ho (API limit), toh top 40% data ko training me split karenge
+    split_idx = int(len(df) * 0.4)
+    df_train = df.iloc[:split_idx].dropna(subset=['Target'])
+    X_train = df_train[features_matrix]
+    y_train = df_train['Target']
+    X_predict = df.iloc[split_idx:][features_matrix]
+    predict_df_actual = df.iloc[split_idx:].copy()
+else:
+    df_train = df[train_mask].dropna(subset=['Target'])
+    X_train = df_train[features_matrix]
+    y_train = df_train['Target']
+    X_predict = df.loc[predict_mask, features_matrix]
+    predict_df_actual = df[predict_mask].copy()
 
 if len(X_predict) == 0:
-    st.error("No active matrix predictions streaming from January 1, 2026 onwards. Market might be closed.")
+    st.error("No predictive streams available. Check timeframe matrix sync.")
 else:
-    # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING (Strictly Same Nodes)
+    # 🔴 ORIGINAL STRICT LOW DEPTH CONFIGURATION
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -88,7 +99,7 @@ else:
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df[predict_mask].copy()
+    df_signals = predict_df_actual
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -141,7 +152,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Rounded to 2 decimals for absolute clarity)
+    # Display Configuration
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -152,5 +163,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Crude Oil Dashboard (Predicting from 1st January 2026 Onwards)")
+    st.subheader(f"📋 Live 15-Minute Bitcoin Dashboard Streams")
     st.dataframe(display_df, use_container_width=True, height=750)
