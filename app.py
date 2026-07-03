@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Anti-Flip Weighted Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Anti-Flip Weighted Engine")
-st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Zero-Flip Weighted Momentum Circuit")
+st.set_page_config(page_title="BTC Pure Weighted Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Pure Weighted Engine")
+st.write("🎯 **Aapki Final Fixed Strategy:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Pure Weighted Momentum Matrix")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -102,7 +102,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (ANTI-FLIP WEIGHTED MOMENTUM ENGINE)
+    # LIVE TREND-LOCK CIRCUIT (PURE STANDALONE WEIGHTED MOMENTUM)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -129,38 +129,36 @@ else:
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # Raw math calculation
+        # 🌟 Pure Unfiltered Mathematical Product Calculation
         calc_weighted = (p_up - p_down) * accumulator
         weighted_momentum_log.append(calc_weighted)
 
-        # 🌟 AAPKI REQUIREMENT: Weighted Momentum ke Flips ko rokne ki Anti-Flip State Logic
-        # Noise cutoff zone set kiya h (-0.25 se +0.25) takii whipsaw na ho
-        if calc_weighted >= 0.50:
+        # Signal Status Logs Based On Pure Accumulator Levels
+        if accumulator == MAX_BUCKET:
             current_state = "BUY"
-            final_signals.append(f"🟢 TREND LOCKED: BUY (Weighted Power: {calc_weighted:.2f})")
+            final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
             
-        elif calc_weighted <= -0.50:
+        elif accumulator == MIN_BUCKET:
             current_state = "SELL"
-            final_signals.append(f"🔴 TREND LOCKED: SELL (Weighted Power: {calc_weighted:.2f})")
+            final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
             
         else:
-            # Jab weighted score noise zone ya zero line ke paas ghume, toh state change nahi hogi (No Flip)
             if current_state == "BUY":
-                if calc_weighted > 0:
-                    final_signals.append(f"🟢 HOLD BUY | Micro-Correction (Weighted Power: {calc_weighted:.2f})")
+                if accumulator > 0:
+                    final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ BUY WARNING | Momentum Zero-Cross Alert (Weighted Power: {calc_weighted:.2f})")
+                    final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
                     
             elif current_state == "SELL":
-                if calc_weighted < 0:
-                    final_signals.append(f"🔴 HOLD SELL | Micro-Correction (Weighted Power: {calc_weighted:.2f})")
+                if accumulator < 0:
+                    final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ SELL WARNING | Momentum Zero-Cross Alert (Weighted Power: {calc_weighted:.2f})")
+                    final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
                     
             else:
-                final_signals.append(f"⚪ CONSOLIDATION | Waiting for Power Spike (Weighted Power: {calc_weighted:.2f})")
+                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Mapping variables safely back to pandas framework
+    # Safe mapping back to pandas framework
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Weighted_Momentum'] = weighted_momentum_log 
@@ -180,5 +178,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Anti-Flip Weighted System)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Accumulator + Weighted Confidence)")
     st.dataframe(display_df, use_container_width=True, height=750)
