@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H 25-Candle Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Deep Trend Engine")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Kalman Price + Past 25-Candle Target")
+st.set_page_config(page_title="Bitcoin 1H Descriptive Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Micro-Trend Engine")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Full Points Slicing Display")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -65,7 +65,7 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # 🌟 AAPKI REQUIREMENT: Target ko pichli 25 bani hui candles (Past 25 Hours) par lock kiya h
+    # Past 25-Candle Target
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -95,15 +95,16 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Raw Probabilities Prediction (100% Original)
+    # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
     df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
     df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (Accumulator Bucket Logic)
+    # 🌟 LIVE TREND-LOCK CIRCUIT (Descriptive Step-by-Step Display)
     # =====================================================================
     final_signals = []
+    scores_log = []
     current_state = "HOLD"
     
     accumulator = 0
@@ -112,44 +113,49 @@ else:
 
     prob_ups = df_predict['Prob_Up'].values
     prob_downs = df_predict['Prob_Down'].values
-    sign_changes = df_predict['Sign_Change'].values
 
     for i in range(len(df_predict)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
-        sc = sign_changes[i]
 
+        # Points Addition/Reduction
         if p_up >= 0.55:
             accumulator += 1  
         elif p_down >= 0.55:
             accumulator -= 1  
         
+        # Keep within boundaries
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
+        scores_log.append(accumulator)
 
-        if accumulator >= MAX_BUCKET:
-            if current_state != "BUY":
-                current_state = "BUY"
-                final_signals.append("🟢 INSTITUTIONAL BUY (Trend Locked)")
-            else:
-                final_signals.append("🟢 HOLD BUY TREND")
-                
-        elif accumulator <= MIN_BUCKET:
-            if current_state != "SELL":
-                current_state = "SELL"
-                final_signals.append("🔴 INSTITUTIONAL SELL (Trend Locked)")
-            else:
-                final_signals.append("🔴 HOLD SELL TREND")
-                
+        # 🌟 AAPKI REQUIREMENT: Pure flow ko level wise display karna (5, 4, 3, 2, 1...)
+        if accumulator == MAX_BUCKET:
+            current_state = "BUY"
+            final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
+            
+        elif accumulator == MIN_BUCKET:
+            current_state = "SELL"
+            final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
+            
         else:
+            # Jab score decrease ya increase ho raha ho (Between -4 and +4)
             if current_state == "BUY":
-                final_signals.append("🟢 HOLD BUY TREND")
+                if accumulator > 0:
+                    final_signals.append(f"🟢 HOLD BUY | Trend Softening (Score: {accumulator})")
+                else:
+                    final_signals.append(f"⚠️ BUY TREND CRITICAL | Reversal Warning (Score: {accumulator})")
+                    
             elif current_state == "SELL":
-                final_signals.append("🔴 HOLD SELL TREND")
+                if accumulator < 0:
+                    final_signals.append(f"🔴 HOLD SELL | Trend Softening (Score: {accumulator})")
+                else:
+                    final_signals.append(f"⚠️ SELL TREND CRITICAL | Reversal Warning (Score: {accumulator})")
+                    
             else:
-                final_signals.append("⚪ HOLD (Building Conviction)")
+                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
     df_predict.loc[:, 'd_ML_Signal'] = final_signals
-    df_predict.loc[:, 'Accumulator_Score'] = accumulator  
+    df_predict.loc[:, 'Accumulator_Score'] = scores_log  
 
     # Display Configuration
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'd_ML_Signal']
@@ -157,12 +163,4 @@ else:
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    # Sorting to get latest ticks on top
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Deep 25-Candle Lookback)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df['Prob_Up'] =
