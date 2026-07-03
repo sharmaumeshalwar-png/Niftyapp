@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Price-Distance Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Price-Distance Weighted Engine")
-st.write("🎯 **Aapki Latest Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Price-Distance Weighted Momentum `(Close - Kalman) * Accumulator` ")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Pure Distance Engine")
+st.write("🎯 **Aapki Strategy:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Pure Momentum `(Close - Kalman)`")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -51,7 +51,7 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
     # Base Matrix Definition (Price Kalman Active)
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman']  # Yeh hi h hamara (Close - Kalman)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman']  # Exact (Close - Kalman)
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
@@ -102,7 +102,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (PRICE-DISTANCE WEIGHTED ENGINE)
+    # LIVE TREND-LOCK CIRCUIT (PURE DISTANCE MOMENTUM LOGIC)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -113,7 +113,6 @@ else:
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
-    # Index arrays safely clean extracted
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
@@ -134,12 +133,10 @@ else:
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # 🌟 AAPKI REQUIREMENT: (Close - Kalman) * Accumulator Score
-        # Loop ke andar completely secure numeric arrays par execute kiya h taaki index bug na aaye
-        calc_weighted = (c_val - k_val) * accumulator
+        # 🌟 AAPKI REQUIREMENT: Pure (Close - Kalman) Distance
+        calc_weighted = c_val - k_val
         weighted_momentum_log.append(calc_weighted)
 
-        # Signal Status Logs Based On Pure Accumulator Levels
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
             final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
@@ -164,7 +161,7 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Mapping secure numpy calculations back to pandas structure simultaneously
+    # Mapping secure numpy calculations safely
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Weighted_Momentum'] = weighted_momentum_log 
@@ -178,11 +175,11 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) # Price differences can be large, so 2 decimals clean look
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Price-Distance Weighted System)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Distance Momentum)")
     st.dataframe(display_df, use_container_width=True, height=750)
