@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty 1H Pure Accumulator Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Accumulator Points Engine")
-st.write("🎯 **Aapki Custom Setting:** 2-Year Nifty Horizon + Strict 50:50 Split + Kalman Price + Pure Raw Accumulator Score (No EMA)")
+st.write("🎯 **Aapki Custom Setting:** 2-Year Nifty Horizon + Strict 50:50 Split + Kalman Price + Pure Raw Accumulator Score (Line 156 Fixed)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -97,11 +97,13 @@ else:
 
     # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
-    df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
-    df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
+    
+    # 🔥 FIX: Direct clean assignment using numpy arrays to prevent indexing mismatch
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (PURE RAW ACCUMULATOR ONLY)
+    # 🌟 LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -111,24 +113,24 @@ else:
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
-    prob_ups = df_predict['Prob_Up'].values
-    prob_downs = df_predict['Prob_Down'].values
+    # Extract clean arrays to bypass any pandas indexing gap errors completely
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
 
+    # 🔥 LOOP FIXED: Bound target loop explicitly to the clean numpy array length
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # Raw Point Addition / Subtraction
+        # Raw Point Calculation
         if p_up >= 0.55:
             accumulator += 1  
         elif p_down >= 0.55:
             accumulator -= 1  
         
-        # Boundaries logic
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # 🌟 Pure Raw Scores ke base par exact status logs
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
             final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
@@ -153,4 +155,22 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    df_predict.
+    # Mapping secure logs back to dataframe smoothly
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+
+    # Display Configuration
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'd_ML_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
+    # Newest hourly candles sorted on top
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Engine (Pure Raw Accumulator)")
+    st.dataframe(display_df, use_container_width=True, height=750)
