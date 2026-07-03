@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Ethereum Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Ethereum (ETH) Live Dynamic-Flip Engine")
-st.write("🎯 **Aapki Perfect Setting:** 5-Minute ETH Crypto Microstructure + Automatic DOWN Drop System")
+st.set_page_config(page_title="Solana Strict Ultra-Engine", layout="wide")
+st.title("⚡ Solana (SOL) Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Aapki Original Setting:** 5-Minute SOL Crypto + Fixed 60% Strict Institutional Barrier")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,9 +28,9 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Ethereum Microstructure Matrices..."):
-    # 🔴 Target Competitor Crypto Asset: Ethereum (ETH-USD)
-    df = yf.download("ETH-USD", period="50d", interval="5m")
+with st.spinner("Aligning Strict Solana Microstructure Matrices..."):
+    # 🔴 Target High-Volatility Crypto Competitor: Solana (SOL-USD)
+    df = yf.download("SOL-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
@@ -58,13 +58,13 @@ with st.spinner("Aligning Responsive Ethereum Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 candles lookahead = 15 minutes)
+    # Target Configuration (3 candles lookahead strictly = 15 minutes)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# Original Stable Timeline Splitting
+# Strictly Verified Timeline Splitting
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
@@ -92,7 +92,7 @@ else:
     df_signals['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE DYNAMIC AUTO-FLIP CIRCUIT 🛡️
+    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (Original Same Copy Setup) 🛡️
     # =====================================================================
     final_signals = []
     current_state = "HOLD"
@@ -107,7 +107,7 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross (Strict 60% Filter)
+        # 1. Fresh Signal Rule via Kalman Cross (Original Strict 60% Barrier)
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -139,7 +139,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Rounded to 2 decimals for absolute asset clarity)
+    # Display Configuration (Rounded to 2 decimals for asset clarity)
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -150,5 +150,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated Ethereum Engine (Anti-Fail Core)")
+    st.subheader(f"📋 Live Strict Micro-Differentiated Solana Output Window")
     st.dataframe(display_df, use_container_width=True, height=750)
