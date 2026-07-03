@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H Pure Accumulator Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Accumulator Points Engine")
-st.write("🎯 **Aapki Custom Setting:** 2-Year Bitcoin Horizon + Strict 50:50 Split + Kalman Price + Pure Raw Accumulator Score (Zero-Crash Edition)")
+st.set_page_config(page_title="BTC Weighted Accumulator Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Weighted Accumulator Engine")
+st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Weighted Confidence Column")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -29,7 +29,7 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
-    # 🌟 BTC OVERRIDE: BTC-USD Hourly 2 Years Window
+    # BTC-USD Hourly 2 Years Window
     raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
     if len(raw_df) == 0:
@@ -102,7 +102,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP FOR BTC)
+    # LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP WITH RAW ACCUMULATOR)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -112,7 +112,6 @@ else:
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
-    # Clean numpy arrays extraction to prevent index crashes
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
 
@@ -120,7 +119,7 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # Raw Point Calculation
+        # Raw Accumulator Calculation
         if p_up >= 0.55:
             accumulator += 1  
         elif p_down >= 0.55:
@@ -157,18 +156,12 @@ else:
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
 
+    # 🌟 AAPKI REQUIREMENT: (Prob_Up - Prob_Down) * Accumulator_Score ka solid column
+    df_predict['Weighted_Momentum'] = (df_predict['Prob_Up'] - df_predict['Prob_Down']) * df_predict['Accumulator_Score']
+
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    # Sorting to get latest ticks on top
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Raw Accumulator)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df['b_Kalman'] = display_df['b_Kalman'].
