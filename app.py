@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Bitcoin 1H Descriptive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Micro-Trend Engine")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Full Points Slicing Display")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Micro-Trend Engine (Bug Fixed)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Full Points Slicing (Line 166 Fixed)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -80,6 +80,7 @@ df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
 
+# Base Predict Matrix Frame
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
@@ -97,11 +98,13 @@ else:
 
     # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
+    
+    # Secure Direct Slicing To Prevent Dimension Error
     df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
     df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (Descriptive Step-by-Step Display)
+    # 🌟 LIVE TREND-LOCK CIRCUIT (Line 166 Secure Index Protection Loop)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -111,10 +114,12 @@ else:
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
+    # Array arrays direct df_predict se clean fetch kiye hain taaki sizing strict rahe
     prob_ups = df_predict['Prob_Up'].values
     prob_downs = df_predict['Prob_Down'].values
 
-    for i in range(len(df_predict)):
+    # 🔥 FIXED: Array boundaries ko `len(prob_ups)` ke mutabik bound kiya h, takii crash na ho
+    for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
@@ -128,7 +133,6 @@ else:
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # 🌟 AAPKI REQUIREMENT: Pure flow ko level wise display karna (5, 4, 3, 2, 1...)
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
             final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
@@ -138,7 +142,6 @@ else:
             final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
             
         else:
-            # Jab score decrease ya increase ho raha ho (Between -4 and +4)
             if current_state == "BUY":
                 if accumulator > 0:
                     final_signals.append(f"🟢 HOLD BUY | Trend Softening (Score: {accumulator})")
@@ -163,4 +166,12 @@ else:
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['Prob_Up'] =
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
+    # Sorting to get latest ticks on top
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Full Point-Flow Matrix)")
+    st.dataframe(display_df, use_container_width=True, height=750)
