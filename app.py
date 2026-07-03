@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Engine")
-st.write("🎯 **Aapki Perfect Setting:** Aggressive 55% Entry Gate + Fixed May 27 Filter")
+st.write("🎯 **Aapki Perfect Setting:** Pure 60% Entry Gate + Fixed May 27 Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -105,19 +105,19 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross (⚠️ CHANGED FROM 0.60 TO 0.55)
+        # 1. Fresh Signal Rule via Kalman Cross (🔒 LOCKED BACK TO 0.60)
         if sc == 1:
-            if p_up >= 0.55:  
+            if p_up >= 0.60:  
                 current_state = "BUY"
                 final_signals.append("🟢 INSTITUTIONAL BUY (Confirmed)")
-            elif p_down >= 0.55:
+            elif p_down >= 0.60:
                 current_state = "SELL"
                 final_signals.append("🔴 INSTITUTIONAL SELL (Confirmed)")
             else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto-Flip Part you pasted!)
+        # 2. Continuous Monitoring (The Auto-Flip Part!)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
