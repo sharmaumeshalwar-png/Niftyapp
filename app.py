@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Solana Strict Ultra-Engine", layout="wide")
-st.title("⚡ Solana (SOL) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Original Setting:** 5-Minute SOL Crypto + Fixed 60% Strict Institutional Barrier")
+st.set_page_config(page_title="Crude Oil Strict Engine", layout="wide")
+st.title("⚡ Crude Oil Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Aapki Original Setting:** 5-Minute Crude Oil Futures Tracking + Fixed 60% Strict Institutional Barrier")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Strict Solana Microstructure Matrices..."):
-    # 🔴 Target High-Volatility Crypto Competitor: Solana (SOL-USD)
-    df = yf.download("SOL-USD", period="50d", interval="5m")
+with st.spinner("Aligning Strict Crude Oil Commodity Microstructure Matrices..."):
+    # 🔴 Global Crude Oil Futures Ticker (Reflects Indian MCX/NSE Crude Oil Action)
+    df = yf.download("CL=F", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
@@ -74,7 +74,7 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No active matrix data found from May 27, 2026 onwards.")
+    st.error("No active matrix data found from May 27, 2026 onwards. Market might be closed for weekend.")
 else:
     # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
@@ -139,7 +139,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Rounded to 2 decimals for asset clarity)
+    # Display Configuration (Rounded to 2 decimals for commodity clarity)
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -150,5 +150,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Strict Micro-Differentiated Solana Output Window")
+    st.subheader(f"📋 Live Strict Micro-Differentiated Crude Oil Output Window")
     st.dataframe(display_df, use_container_width=True, height=750)
