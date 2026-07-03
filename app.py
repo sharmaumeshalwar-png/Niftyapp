@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H 50:50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Equal Split Layout)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Crypto Horizon + Strict 50:50 Matrix Balance")
+st.set_page_config(page_title="Bitcoin 1H Past-Locked Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Past-Locked Configuration)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Past 10-Candle Target (No Future Lookahead)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,14 +29,14 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
-    # 🌟 CRYPTO OVERRIDE: BTC-USD Hourly 2 Years Window
+    # BTC-USD Hourly 2 Years Window
     raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
         
-    # MultiIndex Framework Elimination (Line 152 Explicit Protection)
+    # MultiIndex Framework Elimination
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
@@ -65,11 +65,12 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 Hours Lookahead Trend)
-    df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
+    # 🌟 AAPKI REQUIREMENT: Future hata diya, ab pichli 10 bani hui candles (Past 10 Hours) par target locked h
+    # shift(10) ka matlab hai 10 candles pehle ka data dekhna
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(10), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix, inplace=True)
+    df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
 # =====================================================================
 # DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
@@ -77,7 +78,7 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
 split_idx = int(len(df) * 0.50)
 
 # Pehla 50% Crypto data Training Matrix ke liye
-df_train = df.iloc[:split_idx].dropna(subset=['Target'])
+df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
 
@@ -97,7 +98,7 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Bulletproof Slicing Allocation (Protects Line 152 / 160 dimensional errors)
+    # Bulletproof Slicing Allocation
     probabilities = model_flow.predict_proba(X_predict)
     
     df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
@@ -159,5 +160,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (2Y Horizon - Strict 50:50 Balance)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Past-Locked 10-Candle Split)")
     st.dataframe(display_df, use_container_width=True, height=750)
