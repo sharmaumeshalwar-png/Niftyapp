@@ -5,30 +5,30 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Price-Distance Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Pure Distance Engine")
-st.write("🎯 **Aapki Strategy:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Pure Momentum `(Close - Kalman)`")
+st.set_page_config(page_title="BTC Kalman 0.50 Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
+# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
 # =====================================================================
-def apply_kalman_filter_strict(price_array):
-    if len(price_array) == 0:
+def apply_kalman_filter_custom(data_array, initial_p=50.0):
+    if len(data_array) == 0:
         return []
-    x = price_array[0]
-    p = 50.0  
-    q = 0.001  
-    r = 0.1    
-    filtered_prices = []
-    for z in price_array:
+    x = data_array[0]
+    p = initial_p  
+    q = 0.001      # Process noise
+    r = 0.1        # Measurement noise
+    filtered_values = []
+    for z in data_array:
         p = p + q
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_prices.append(x)
-    return filtered_prices
+        filtered_values.append(x)
+    return filtered_values
 
-with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
+with st.spinner("Aligning Double Kalman Bitcoin Microstructure Matrices..."):
     # BTC-USD Hourly 2 Years Window
     raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
@@ -48,10 +48,10 @@ with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices...")
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman Active)
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
-    df['b_Kalman'] = apply_kalman_filter_strict(df['a_Close'].values)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman']  # Exact (Close - Kalman)
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
@@ -102,11 +102,11 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (PURE DISTANCE MOMENTUM LOGIC)
+    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL PROCESSING)
     # =====================================================================
     final_signals = []
     scores_log = []
-    weighted_momentum_log = [] 
+    raw_weighted_momentum_log = [] 
     current_state = "HOLD"
     
     accumulator = 0
@@ -116,13 +116,13 @@ else:
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
-    kalmans = df_predict['b_Kalman'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
         c_val = closes[i]
-        k_val = kalmans[i]
+        k_price_val = kalmans_price[i]
 
         # Raw Accumulator Calculation
         if p_up >= 0.55:
@@ -133,9 +133,9 @@ else:
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
 
-        # 🌟 AAPKI REQUIREMENT: Pure (Close - Kalman) Distance
-        calc_weighted = c_val - k_val
-        weighted_momentum_log.append(calc_weighted)
+        # Raw Weighted Momentum (Close - Kalman)
+        calc_raw_weighted = c_val - k_price_val
+        raw_weighted_momentum_log.append(calc_raw_weighted)
 
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
@@ -161,17 +161,20 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Mapping secure numpy calculations safely
+    # Mapping secure array data back to pandas
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Weighted_Momentum'] = weighted_momentum_log 
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+
+    # 🔥 AAPKI CORE REQUIREMENT: Weighted Momentum ke upar ALAG se Kalman filter chalaya strictly 0.50 se
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
@@ -181,5 +184,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Distance Momentum)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Kalman 0.50 Hyper-Responsive Smooth Matrix)")
     st.dataframe(display_df, use_container_width=True, height=750)
