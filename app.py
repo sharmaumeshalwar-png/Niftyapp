@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Native Volatility 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Double Kalman [Pure Crypto Volatility Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Native BTC Volatility (No External VIX) + 25-Candle Window + VIX 3-Regime + Double Kalman Smooth Momentum (P=0.50)")
+st.set_page_config(page_title="Nifty Kalman 0.50 India VIX Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour Double Kalman [0.50 India VIX Engine]")
+st.write("🎯 **Aapki Custom Setting:** Nifty Index + India VIX Sync + Fixed 25-Candle Window + 3-Regime Filtering + Past 25-Candle Target + Double Kalman Smooth Momentum (P=0.50)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Adaptive Noise Kalman Filter)
@@ -20,14 +20,14 @@ def apply_kalman_filter_adaptive(data_array, regimes_array, initial_p=50.0):
     
     filtered_values = []
     for z, regime in zip(data_array, regimes_array):
-        # Strictly adaptive noise selection based on Crypto VIX regime
-        if regime == 2:    # High Volatility (Crypto Panic / Breakout)
-            q = 0.005      
-            r = 0.05       
-        elif regime == 0:  # Low Volatility (Quiet accumulation)
-            q = 0.0005     
+        # Strictly adaptive noise selection based on India VIX regime
+        if regime == 2:    # High Volatility (Market Panic Mode)
+            q = 0.005      # High process noise (highly responsive to breaks)
+            r = 0.05       # Low measurement noise
+        elif regime == 0:  # Low Volatility (Quiet / Dull Mode)
+            q = 0.0005     # Smooth out random fluctuations
             r = 0.2        
-        else:              # Normal Volatility (Standard Crypto Mode)
+        else:              # Normal Volatility (Standard Trading Mode)
             q = 0.001
             r = 0.1
             
@@ -38,15 +38,16 @@ def apply_kalman_filter_adaptive(data_array, regimes_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing Native Bitcoin Volatility & Double Kalman Matrices..."):
-    # Download raw BTC asset data (2 Years Window)
-    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
+with st.spinner("Synchronizing Nifty 50 & India VIX Intraday Candle Matrices..."):
+    # Download raw assets data (2 Years Window)
+    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+    vix_df = yf.download("^INDIAVIX", period="2y", interval="1d") # Daily India VIX 
     
-    if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+    if len(raw_df) == 0 or len(vix_df) == 0:
+        st.error("YFinance API Timeout or Market Closed. Please refresh dashboard.")
         st.stop()
         
-    # MultiIndex Framework Elimination for BTC
+    # MultiIndex Framework Elimination for Nifty 50
     df = pd.DataFrame(index=raw_df.index)
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
@@ -57,19 +58,22 @@ with st.spinner("Processing Native Bitcoin Volatility & Double Kalman Matrices..
 
     df.index = pd.to_datetime(df.index)
     df['a_Close'] = df['Close']
+    
+    # MultiIndex Framework Elimination for India VIX & Mapping onto Hourly DataFrame
+    vix_clean = vix_df['Close'].iloc[:, 0] if isinstance(vix_df['Close'], pd.DataFrame) else vix_df['Close']
+    vix_clean.index = pd.to_datetime(vix_clean.index).date
+    
+    # CRITICAL CANDLE-WISE SYNC PIPELINE
+    df['Date_Only'] = df.index.date
+    df['VIX'] = df['Date_Only'].map(vix_clean).ffill().fillna(15.0) # Baseline Indian market proxy fallback
+    df.drop(columns=['Date_Only'], inplace=True)
 
-    # 🔥 GENERATING NATIVE BITCOIN VOLATILITY (Pure Crypto VIX)
-    # Annualized rolling hourly volatility mapped directly as a native feature
-    log_returns = np.log(df['a_Close'] / df['a_Close'].shift(1))
-    df['VIX'] = log_returns.rolling(window=24).std() * np.sqrt(24 * 365) * 100
-    df['VIX'] = df['VIX'].fillna(30.0) # Baseline crypto fallback
+    # Strictly Fixed 25-Candle Rolling Feature for India VIX
+    df['VIX_Rolling_25'] = df['VIX'].rolling(window=25).mean().fillna(15.0)
 
-    # Strictly Fixed 25-Candle Rolling Window for Crypto Volatility
-    df['VIX_Rolling_25'] = df['VIX'].rolling(window=25).mean().fillna(30.0)
-
-    # STRICT CRYPTO VOLATILITY 3-REGIME DEFINITION 
-    # Regime 0: Quiet (<20), Regime 1: Normal (20-45), Regime 2: Crypto Panic/Breakout (>45)
-    df['VIX_Regime'] = np.where(df['VIX'] < 20, 0, np.where(df['VIX'] <= 45, 1, 2))
+    # STRICT INDIA VIX 3-REGIME DEFINITION 
+    # Regime 0: Quiet (<13), Regime 1: Normal (13-19), Regime 2: Panic/Spike (>19)
+    df['VIX_Regime'] = np.where(df['VIX'] < 13, 0, np.where(df['VIX'] <= 19, 1, 2))
 
     # Base Matrix Definition (Price Kalman 1 Active)
     df['b_Kalman_Price'] = apply_kalman_filter_adaptive(df['a_Close'].values, df['VIX_Regime'].values, initial_p=50.0)
@@ -87,10 +91,10 @@ with st.spinner("Processing Native Bitcoin Volatility & Double Kalman Matrices..
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Past 25-Candle Target for BTC Direction
+    # Past 25-Candle Target for Nifty Direction
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    # Matrix inputs updated with Native Crypto Volatility Parameters
+    # Matrix inputs updated with Synced India VIX Parameters
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'VIX_Regime', 'VIX_Rolling_25']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
@@ -107,7 +111,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Waiting for market data ticks...")
+    st.error("Prediction matrix error. Waiting for live market grid updates...")
 else:
     # RandomForest Model Training
     model_flow = RandomForestClassifier(
@@ -125,7 +129,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL WITH BTC REGIME OVERRIDES)
+    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL WITH REGIME OVERRIDES)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -149,12 +153,12 @@ else:
         k_price_val = kalmans_price[i]
         current_regime = vix_regimes[i]
 
-        # STRICT REGIME SENSITIVITY OVERRIDES FOR CRYPTO METRICS
-        if current_regime == 2:      # Crypto Panic Regime
+        # STRICT REGIME SENSITIVITY OVERRIDES FOR INDIAN MARKET METRICS
+        if current_regime == 2:      # India VIX Panic Spike Zone (>19)
             barrier = 0.62
-        elif current_regime == 0:    # Crypto Quiet Zone
+        elif current_regime == 0:    # India VIX Quiet Low Zone (<13)
             barrier = 0.52
-        else:                        # Balanced Crypto Mode
+        else:                        # Balanced Standard Mode (13-19)
             barrier = 0.55
 
         # Raw Accumulator Calculation
@@ -170,7 +174,7 @@ else:
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
-        regime_label = "💥 PANIC/SPIKE" if current_regime == 2 else ("⚖️ NORMAL" if current_regime == 1 else "😴 QUIET")
+        regime_label = "💥 VIX PANIC" if current_regime == 2 else ("⚖️ NORMAL" if current_regime == 1 else "😴 QUIET")
 
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
@@ -196,7 +200,7 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction ({regime_label} Score: {accumulator})")
 
-    # Mapping secure array data back to pandas
+    # Mapping secure array data back to pandas dataframe
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
@@ -221,5 +225,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure BTC Native Volatility Bound Matrix)")
+    st.subheader(f"📋 Live 1-Hour Nifty 50 Matrix (India VIX Bound Adaptive Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
