@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Crude Oil Strict Engine", layout="wide")
-st.title("⚡ Crude Oil Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Original Setting:** 5-Minute Crude Oil Futures Tracking + Fixed 60% Strict Institutional Barrier")
+st.set_page_config(page_title="Solana Macro 1H Engine", layout="wide")
+st.title("⚡ Solana (SOL) 1-Hour Macro-Learning Engine")
+st.write("🎯 **Aapki High-Data Setting:** 1-Hour Candles + 1.5 Years Deep Learning + Fixed 1 Jan 2026 Prediction")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,18 +28,20 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Strict Crude Oil Commodity Microstructure Matrices..."):
-    # 🔴 Global Crude Oil Futures Ticker (Reflects Indian MCX/NSE Crude Oil Action)
-    df = yf.download("CL=F", period="50d", interval="5m")
+with st.spinner("Downloading 2 Years Macro Data & Training Model (July 2024 Onwards)..."):
+    # 🔴 1-Hour interval ke sath period="2y" kiya hai taaki 1 saal se upar ka deep data mile
+    df = yf.download("SOL-USD", period="2y", interval="1h")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
 
     if len(df) == 0:
-        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
+        st.error("YFinance API Timeout. Max data window mismatch. Please refresh.")
         st.stop()
 
     df.index = pd.to_datetime(df.index)
+    # Ensure index is timezone naive for clean string comparison
+    df.index = df.index.tz_localize(None)
 
     # Base Matrix Definition
     df['a_Close'] = df['Close']
@@ -49,7 +51,7 @@ with st.spinner("Aligning Strict Crude Oil Commodity Microstructure Matrices..."
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Microstructure Features
+    # Microstructure Features (Hourly Standard)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -58,15 +60,15 @@ with st.spinner("Aligning Strict Crude Oil Commodity Microstructure Matrices..."
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 candles lookahead strictly = 15 minutes)
+    # Target Configuration (3-candles forward in 1-Hour space = 3 Hours lookahead trend)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# Strictly Verified Timeline Splitting
-train_mask = df.index < '2026-05-27'
-predict_mask = df.index >= '2026-05-27'
+# 📅 AAPKI REQUESTED TIMELINE: 1 Jan 2026 se pehle ka sab seekhne me jayega, baad ka prediction me.
+train_mask = df.index < '2026-01-01'
+predict_mask = df.index >= '2026-01-01'
 
 df_train = df[train_mask].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
@@ -74,13 +76,13 @@ y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No active matrix data found from May 27, 2026 onwards. Market might be closed for weekend.")
+    st.error("No active matrix predictions streaming from January 1, 2026 onwards. Please re-verify data chunk.")
 else:
-    # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
+    # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING (Strictly Same Nodes)
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            # Strict low depth for instant shift detection
-        min_samples_leaf=1,     # Aggressive response to edge changes
+        max_depth=3,            
+        min_samples_leaf=1,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
@@ -139,7 +141,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration (Rounded to 2 decimals for commodity clarity)
+    # Display Configuration (Rounded to 2 decimals for absolute clarity)
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -150,5 +152,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Strict Micro-Differentiated Crude Oil Output Window")
+    st.subheader(f"📋 Live 1-Hour Solana Dashboard (Predicting from 1st January 2026 Onwards)")
     st.dataframe(display_df, use_container_width=True, height=750)
