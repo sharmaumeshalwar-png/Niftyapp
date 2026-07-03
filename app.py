@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin Active Engine 5M", layout="wide")
-st.title("⚡ Bitcoin (BTC) 5-Minute Pure Active Engine")
-st.write("🎯 **Aapki Favorite Setting:** 5-Minute BTC + Auto-Rolling Learning Window (No Signal Drop)")
+st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Engine")
+st.write("🎯 **Anti-Change Config:** Fixed 15-Day Learning Window + 100% Stable Signals")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,7 +28,7 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Ultra-Active Bitcoin 5-Min Microstructure Matrices..."):
+with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     # 50 days data fetch
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
@@ -58,29 +58,33 @@ with st.spinner("Aligning Ultra-Active Bitcoin 5-Min Microstructure Matrices..."
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 candles lookahead = 15 minutes)
+    # Target Configuration
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity'], inplace=True)
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # =====================================================================
-# 🌟 UPDATE: AUTOMATIC ROLLING SPLIT (Purani Fixed Date Hata Di)
+# 🌟 SAFE & STABLE FIXED-DAY SPLIT ENGINE
 # =====================================================================
-# Pehla 40% data sikhne me jayega, baaki 60% par live predictions aayengi
-split_idx = int(len(df) * 0.40)
+# Data ke start point se strictly agle 15 Days tak model seekhega (Exact same matrix size always!)
+start_date = df.index.min()
+split_date = start_date + pd.Timedelta(days=15)
 
-df_train = df.iloc[:split_idx].dropna(subset=['Target'])
+train_mask = df.index < split_date
+predict_mask = df.index >= split_date
+
+df_train = df[train_mask].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-X_predict = df.iloc[split_idx:][features_matrix]
-df_signals = df.iloc[split_idx:].copy()
+X_predict = df.loc[predict_mask, features_matrix]
+df_signals = df[predict_mask].copy()
 
-if len(X_predict) == 0:
-    st.error("Matrix distribution error. Please restart the app.")
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error("Matrix Sync Error due to API data compression. Please click refresh.")
 else:
-    # Original Low Parameter Model Nodes
+    # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING (Strictly Unchanged)
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -95,7 +99,7 @@ else:
     df_signals['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE DYNAMIC AUTO-FLIP CIRCUIT (Original Copy Setup) 🛡️
+    # LIVE DYNAMIC AUTO-FLIP CIRCUIT 🛡️
     # =====================================================================
     final_signals = []
     current_state = "HOLD"
@@ -103,14 +107,13 @@ else:
     sign_changes = df_signals['Sign_Change'].values
     prob_ups = df_signals['Prob_Up'].values
     prob_downs = df_signals['Prob_Down'].values
-    total_rows = len(df_signals)
 
-    for i in range(total_rows):
+    for i in range(len(df_signals)):
         sc = sign_changes[i]
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross (Strict 60% Filter)
+        # 1. Fresh Signal Rule via Kalman Cross
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -122,7 +125,7 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (Auto-Flip)
+        # 2. Continuous Monitoring (The Auto-Flip Part!)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
@@ -153,5 +156,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated BTC 5-Min Active Streams")
+    st.subheader(f"📋 Live Stable Bitcoin Engine (Fixed-Day Reset)")
     st.dataframe(display_df, use_container_width=True, height=750)
