@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Pure 50-Day Data Horizon + Strict 80:20 Matrix Split")
+st.write("🎯 **Aapki Perfect Setting:** Pure 50-Day Data Horizon + Strict 80:20 Matrix Split (Bug Fixed)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,15 +29,23 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # 🌟 AAPKI REQUIREMENT 1: Poore 50 din ka live 5-minute data download
-    df = yf.download("BTC-USD", period="50d", interval="5m")
+    # 50 din ka data download
+    raw_df = yf.download("BTC-USD", period="50d", interval="5m")
     
-    if isinstance(df.columns, pd.MultiIndex): 
-        df.columns = df.columns.get_level_values(0)
-
-    if len(df) == 0:
+    if len(raw_df) == 0:
         st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
+        
+    # 🔥 LINE 104 FIX: Structure ko strict 1D columns me convert karna
+    df = pd.DataFrame(index=raw_df.index)
+    
+    # Extract clean series regardless of MultiIndex structure
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in raw_df.columns:
+            if isinstance(raw_df[col], pd.DataFrame):
+                df[col] = raw_df[col].iloc[:, 0]  # Take first column if multi-index
+            else:
+                df[col] = raw_df[col]
 
     df.index = pd.to_datetime(df.index)
 
@@ -61,40 +69,40 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     # Target Configuration (Future 3 candles lookahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
-    # Cleaning target for training but retaining rows for features
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix, inplace=True)
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (🌟 AAPKI REQUIREMENT 2: Strict 80:20 Ratio)
+# DYNAMIC SPLIT ENGINE (Strict 80:20 Ratio)
 # =====================================================================
-# Strict 80% boundary index calculation
 split_idx = int(len(df) * 0.80)
 
-# First 80% goes to Training Matrix
+# 80% Training Data
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# Remaining 20% goes to Live Prediction (Includes most recent ticks)
+# 20% Live Prediction Data
 df_predict = df.iloc[split_idx:]
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0:
     st.error("Prediction matrix calculation error. Waiting for more market ticks...")
 else:
-    # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
+    # Model configuration
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            # Strict low depth for instant shift detection
-        min_samples_leaf=1,     # Aggressive response to edge changes
+        max_depth=3,            
+        min_samples_leaf=1,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
+    # Probabilities extraction safe mechanism
     probabilities = model_flow.predict_proba(X_predict)
     df_signals = df_predict.copy()
     
+    # Safe assignment using flat arrays
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
@@ -113,7 +121,6 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -124,8 +131,6 @@ else:
             else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
-        
-        # 2. Continuous Monitoring Auto-Flip
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
@@ -133,8 +138,29 @@ else:
                     final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
                 else:
                     final_signals.append("🟢 HOLD BUY TREND")
-            
             elif current_state == "SELL":
                 if p_up > 0.52 or p_down < 0.50:
                     current_state = "BUY"
-                    final_signals.append("
+                    final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
+                else:
+                    final_signals.append("🔴 HOLD SELL TREND")
+            else:
+                final_signals.append("⚪ HOLD")
+
+    df_signals['d_ML_Signal'] = final_signals
+
+    # Display Configuration
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
+    display_df = df_signals[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
+    # Sort latest on top
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (50D Horizon - 80:20 Split)")
+    st.dataframe(display_df, use_container_width=True, height=750)
