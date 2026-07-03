@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 1H Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Dynamic-Flip Engine")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 80:20 Split Applied on Nifty 1H")
+st.set_page_config(page_title="Nifty 1H 50:50 Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour Engine (Equal Split Layout)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Matrix Balance")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,20 +29,20 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
-    # 🌟 NIFTY 1-HOUR CONFIGURATION (2 Years window for deep training)
+    # NIFTY 1-HOUR DATA (2 Years Window)
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or NSE Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # Structure ko strict 1D columns me convert karna (MultiIndex Protection)
+    # MultiIndex Framework Elimination
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
             if isinstance(raw_df[col], pd.DataFrame):
-                df[col] = raw_df[col].iloc[:, 0]  # Take first column if multi-index
+                df[col] = raw_df[col].iloc[:, 0]
             else:
                 df[col] = raw_df[col]
 
@@ -65,23 +65,24 @@ with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (Future 3 candles lookahead = 3 Hours forecast)
+    # Target Configuration (3 Hours Lookahead)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix, inplace=True)
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (Strict 80:20 Ratio)
+# DYNAMIC SPLIT ENGINE (🌟 AAPKI REQUIREMENT: Strict 50:50 Ratio)
 # =====================================================================
-split_idx = int(len(df) * 0.80)
+# Total rows ka exact 50% split points index
+split_idx = int(len(df) * 0.50)
 
-# 80% Training Matrix (Historical Hourly Ticks)
+# Pehla 50% historical data direct Training Matrix me
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# 20% Live Prediction Matrix (Latest Hourly Ticks)
+# Aakhri 50% data (Current Ticks tak) Prediction Matrix me
 df_predict = df.iloc[split_idx:]
 X_predict = df_predict[features_matrix]
 
@@ -97,7 +98,7 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Probabilities processing
+    # Probabilities derivation
     probabilities = model_flow.predict_proba(X_predict)
     df_signals = df_predict.copy()
     
@@ -148,17 +149,4 @@ else:
     df_signals['d_ML_Signal'] = final_signals
 
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
-    display_df = df_signals[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    # Newest hourly candles on top
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 1-Hour Nifty Engine (2Y Horizon - 80:20 Split)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    clean_display_cols =
