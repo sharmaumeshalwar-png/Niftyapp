@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Pure 50-Day Data Horizon + Strict 80:20 Matrix Split (Bug Fixed)")
+st.set_page_config(page_title="Nifty 50 Ultra-Responsive Engine", layout="wide")
+st.title("⚡ Nifty 50 Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Aapki Perfect Setting:** Pure 50-Day Data Horizon + Strict 80:20 Split Applied on Nifty Index")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,18 +28,17 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # 50 din ka data download
-    raw_df = yf.download("BTC-USD", period="50d", interval="5m")
+with st.spinner("Aligning Responsive Nifty Market Microstructure Matrices..."):
+    # 🌟 NIFTY 50 INDEX TICKER OVERRIDE (^NSEI)
+    raw_df = yf.download("^NSEI", period="50d", interval="5m")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or NSE Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # 🔥 LINE 104 FIX: Structure ko strict 1D columns me convert karna
+    # Structure ko strict 1D columns me convert karna (Line 104 Fix)
     df = pd.DataFrame(index=raw_df.index)
     
-    # Extract clean series regardless of MultiIndex structure
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
             if isinstance(raw_df[col], pd.DataFrame):
@@ -66,7 +65,7 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (Future 3 candles lookahead)
+    # Target Configuration (Future 3 candles lookahead = 15 Mins forecast)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -77,19 +76,19 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 # =====================================================================
 split_idx = int(len(df) * 0.80)
 
-# 80% Training Data
+# 80% Training Matrix (Historical Nifty Ticks)
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# 20% Live Prediction Data
+# 20% Live Prediction Matrix (Latest Nifty Ticks)
 df_predict = df.iloc[split_idx:]
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix calculation error. Waiting for more market ticks...")
+    st.error("Prediction matrix calculation error. Waiting for Indian market trading hours...")
 else:
-    # Model configuration
+    # Aggressive Low-Parameter Model Settings
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -98,11 +97,10 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Probabilities extraction safe mechanism
+    # Probabilities processing
     probabilities = model_flow.predict_proba(X_predict)
     df_signals = df_predict.copy()
     
-    # Safe assignment using flat arrays
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
 
@@ -158,9 +156,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Sort latest on top
+    # Newest ticks displayed on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (50D Horizon - 80:20 Split)")
+    st.subheader(f"📋 Live Micro-Differentiated Nifty Engine (50D Horizon - 80:20 Split)")
     st.dataframe(display_df, use_container_width=True, height=750)
