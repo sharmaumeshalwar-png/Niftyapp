@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Permanent Engine")
-st.write("🎯 **Aapki Permanent Setting:** 25-Day Rolling Training Anchor (Anti-Crash Blueprint)")
+st.write("🎯 **Aapki Perfect Permanent Setting:** 13-Day Rolling Anchor (Saare Hints Restored & Locked)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,7 +29,7 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # Safe 50 days buffer download to easily carve out 25 training days
+    # 50 days buffer download to easily carve out 13 training days and keep May 27 prediction live
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
@@ -65,10 +65,10 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # =====================================================================
-# 🌟 PERMANENT FIX: AUTOMATIC ROLLING 25-DAY BOUNDARY ANCHOR
+# 🌟 THE GOLDEN SOLUTION: 13-DAY AUTOMATIC ROLLING BOUNDARY ANCHOR
 # =====================================================================
 start_data_date = df.index.min()
-split_boundary_date = start_data_date + pd.Timedelta(days=25)  # 🔴 EXACTLY 25 DAYS FIXED
+split_boundary_date = start_data_date + pd.Timedelta(days=13)  # 🔴 STRICTLY 13 DAYS FIXED FOR MAY 27 RESET
 
 train_mask = df.index < split_boundary_date
 predict_mask = df.index >= split_boundary_date
@@ -123,36 +123,4 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto-Flip Part you pasted!)
-        else:
-            if current_state == "BUY":
-                if p_down > 0.52 or p_up < 0.50:
-                    current_state = "SELL"
-                    final_signals.append("🔴 SYSTEM AUTO-FLIP (SELL / Exit Buy)")
-                else:
-                    final_signals.append("🟢 HOLD BUY TREND")
-            
-            elif current_state == "SELL":
-                if p_up > 0.52 or p_down < 0.50:
-                    current_state = "BUY"
-                    final_signals.append("🟢 SYSTEM AUTO-FLIP (BUY / Exit Sell)")
-                else:
-                    final_signals.append("🔴 HOLD SELL TREND")
-            else:
-                final_signals.append("⚪ HOLD")
-
-    df_signals['d_ML_Signal'] = final_signals
-
-    # Display Configuration (Same as your snippet)
-    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
-    display_df = df_signals[clean_display_cols].copy()
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (Anti-Fail Configuration)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+        # 2. Continuous Monitoring (The Auto
