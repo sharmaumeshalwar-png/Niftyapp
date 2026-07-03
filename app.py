@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Crude Oil Kalman 0.50 Engine", layout="wide")
-st.title("🛢️ Crude Oil Live 1-Hour Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Crude Oil Futures (CL=F) + Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
+st.set_page_config(page_title="India VIX 25-Candle Engine", layout="wide")
+st.title("⚖️ Pure India VIX Live 1-Hour Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Standalone India VIX (^INDIAVIX) + Fixed 25-Candle Target/Rolling Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Mode)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,9 +28,9 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning Double Kalman Crude Oil Microstructure Matrices..."):
-    # Crude Oil Futures Hourly 2 Years Window
-    raw_df = yf.download("CL=F", period="2y", interval="1h")
+with st.spinner("Aligning 25-Candle Double Kalman India VIX Matrices..."):
+    # India VIX Hourly 2 Years Window
+    raw_df = yf.download("^INDIAVIX", period="2y", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
@@ -56,6 +56,9 @@ with st.spinner("Aligning Double Kalman Crude Oil Microstructure Matrices..."):
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
+    # 25-Candle Volatility Rolling Window Logic
+    df['VIX_Rolling_25'] = df['a_Close'].rolling(window=25).mean().ffill().fillna(15.0)
+    
     # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -65,10 +68,10 @@ with st.spinner("Aligning Double Kalman Crude Oil Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Past 25-Candle Target
+    # 25-Candle Directional Lookahead Target Logic
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'VIX_Rolling_25']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
 # =====================================================================
@@ -84,7 +87,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Waiting for market data ticks...")
+    st.error("Prediction matrix error. Dataframe split bounds mismatch.")
 else:
     # RandomForest Model Training
     model_flow = RandomForestClassifier(
@@ -139,24 +142,24 @@ else:
 
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
-            final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
+            final_signals.append("🟢 VOLATILITY EXPANSION (Max Locked [5/5])")
             
         elif accumulator == MIN_BUCKET:
             current_state = "SELL"
-            final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
+            final_signals.append("🔴 VOLATILITY CRASH (Max Locked [-5/-5])")
             
         else:
             if current_state == "BUY":
                 if accumulator > 0:
-                    final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+                    final_signals.append(f"🟢 HOLD EXPANSION | Points Decreasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    final_signals.append(f"⚠️ EXPANSION CRITICAL | Reversal Warning (Score: {accumulator})")
                     
             elif current_state == "SELL":
                 if accumulator < 0:
-                    final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
+                    final_signals.append(f"🔴 HOLD CRASH | Points Increasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    final_signals.append(f"⚠️ CRASH CRITICAL | Reversal Warning (Score: {accumulator})")
                     
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
@@ -170,11 +173,12 @@ else:
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'VIX_Rolling_25', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['VIX_Rolling_25'] = display_df['VIX_Rolling_25'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
@@ -184,5 +188,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Crude Oil Engine (Kalman 0.50 Hyper-Responsive Smooth Matrix)")
+    st.subheader(f"📋 Live 1-Hour India VIX Standalone Engine (Kalman 0.50 Matrix Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
