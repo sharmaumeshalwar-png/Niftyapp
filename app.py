@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 50 Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Nifty 50 Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Pure 50-Day Data Horizon + Strict 80:20 Split Applied on Nifty Index")
+st.set_page_config(page_title="Nifty 1H Ultra-Responsive Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour Dynamic-Flip Engine")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 80:20 Split Applied on Nifty 1H")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Nifty Market Microstructure Matrices..."):
-    # 🌟 NIFTY 50 INDEX TICKER OVERRIDE (^NSEI)
-    raw_df = yf.download("^NSEI", period="50d", interval="5m")
+with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
+    # 🌟 NIFTY 1-HOUR CONFIGURATION (2 Years window for deep training)
+    raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or NSE Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # Structure ko strict 1D columns me convert karna (Line 104 Fix)
+    # Structure ko strict 1D columns me convert karna (MultiIndex Protection)
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
@@ -65,7 +65,7 @@ with st.spinner("Aligning Responsive Nifty Market Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (Future 3 candles lookahead = 15 Mins forecast)
+    # Target Configuration (Future 3 candles lookahead = 3 Hours forecast)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -76,17 +76,17 @@ with st.spinner("Aligning Responsive Nifty Market Microstructure Matrices..."):
 # =====================================================================
 split_idx = int(len(df) * 0.80)
 
-# 80% Training Matrix (Historical Nifty Ticks)
+# 80% Training Matrix (Historical Hourly Ticks)
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# 20% Live Prediction Matrix (Latest Nifty Ticks)
+# 20% Live Prediction Matrix (Latest Hourly Ticks)
 df_predict = df.iloc[split_idx:]
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix calculation error. Waiting for Indian market trading hours...")
+    st.error("Prediction matrix error. Waiting for market data...")
 else:
     # Aggressive Low-Parameter Model Settings
     model_flow = RandomForestClassifier(
@@ -156,9 +156,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Newest ticks displayed on top
+    # Newest hourly candles on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Micro-Differentiated Nifty Engine (50D Horizon - 80:20 Split)")
+    st.subheader(f"📋 Live 1-Hour Nifty Engine (2Y Horizon - 80:20 Split)")
     st.dataframe(display_df, use_container_width=True, height=750)
