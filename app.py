@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 1H Pure Accumulator Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Accumulator Points Engine")
-st.write("🎯 **Aapki Custom Setting:** 2-Year Nifty Horizon + Strict 50:50 Split + Kalman Price + Pure Raw Accumulator Score (Line 156 Fixed)")
+st.set_page_config(page_title="Bitcoin 1H Pure Accumulator Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Accumulator Points Engine")
+st.write("🎯 **Aapki Custom Setting:** 2-Year Bitcoin Horizon + Strict 50:50 Split + Kalman Price + Pure Raw Accumulator Score (Zero-Crash Edition)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -28,9 +28,9 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
-    # NIFTY: ^NSEI Hourly 2 Years Window
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
+    # 🌟 BTC OVERRIDE: BTC-USD Hourly 2 Years Window
+    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout. Please refresh the dashboard.")
@@ -98,12 +98,11 @@ else:
     # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
     
-    # 🔥 FIX: Direct clean assignment using numpy arrays to prevent indexing mismatch
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP)
+    # 🌟 LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP FOR BTC)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -113,11 +112,10 @@ else:
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
-    # Extract clean arrays to bypass any pandas indexing gap errors completely
+    # Clean numpy arrays extraction to prevent index crashes
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
 
-    # 🔥 LOOP FIXED: Bound target loop explicitly to the clean numpy array length
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
@@ -155,7 +153,7 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Mapping secure logs back to dataframe smoothly
+    # Safe mapping back to pandas framework
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
 
@@ -168,9 +166,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Newest hourly candles sorted on top
+    # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Engine (Pure Raw Accumulator)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Raw Accumulator)")
     st.dataframe(display_df, use_container_width=True, height=750)
