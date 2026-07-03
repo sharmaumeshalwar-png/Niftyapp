@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bitcoin 1H Descriptive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Micro-Trend Engine (Bug Fixed)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Split + Full Points Slicing (Line 166 Fixed)")
+st.set_page_config(page_title="Bitcoin 1H EMA-Accumulator Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour EMA-Accumulator Engine")
+st.write("🎯 **Aapki Custom Strategy:** 2-Year Horizon + Strict 50:50 Split + Kalman Price + EMA Smoothed Accumulator Score")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -80,7 +80,6 @@ df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
 
-# Base Predict Matrix Frame
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
@@ -98,80 +97,87 @@ else:
 
     # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
-    
-    # Secure Direct Slicing To Prevent Dimension Error
     df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
     df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # 🌟 LIVE TREND-LOCK CIRCUIT (Line 166 Secure Index Protection Loop)
+    # 🌟 LIVE TREND-LOCK CIRCUIT (EMA ON ACCUMULATOR SCORE)
     # =====================================================================
-    final_signals = []
-    scores_log = []
-    current_state = "HOLD"
-    
+    raw_scores = []
     accumulator = 0
     MAX_BUCKET = 5     
     MIN_BUCKET = -5    
 
-    # Array arrays direct df_predict se clean fetch kiye hain taaki sizing strict rahe
     prob_ups = df_predict['Prob_Up'].values
     prob_downs = df_predict['Prob_Down'].values
 
-    # 🔥 FIXED: Array boundaries ko `len(prob_ups)` ke mutabik bound kiya h, takii crash na ho
+    # Step 1: Raw Accumulator Loop execute karna
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # Points Addition/Reduction
         if p_up >= 0.55:
             accumulator += 1  
         elif p_down >= 0.55:
             accumulator -= 1  
         
-        # Keep within boundaries
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
-        scores_log.append(accumulator)
+        raw_scores.append(accumulator)
+    
+    # Series conversion to apply EMA
+    df_predict.loc[:, 'Raw_Score'] = raw_scores
+    
+    # 🌟 Step 2: Pure Accumulator Score par 8-period ka Exponential Moving Average lagana
+    df_predict.loc[:, 'Smoothed_Score'] = df_predict['Raw_Score'].ewm(span=8, adjust=False).mean()
 
-        if accumulator == MAX_BUCKET:
+    # Step 3: Smoothed Score ke decimals ke base par final logic design karna
+    final_signals = []
+    current_state = "HOLD"
+    smoothed_scores_array = df_predict['Smoothed_Score'].values
+
+    for i in range(len(smoothed_scores_array)):
+        s_score = smoothed_scores_array[i]
+
+        # Trigger points strictly based on EMA levels
+        if s_score >= 4.0:
             current_state = "BUY"
-            final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
+            final_signals.append(f"🟢 STRONG BUY TREND (Locked | EMA Score: {s_score:.2f})")
             
-        elif accumulator == MIN_BUCKET:
+        elif s_score <= -4.0:
             current_state = "SELL"
-            final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
+            final_signals.append(f"🔴 STRONG SELL TREND (Locked | EMA Score: {s_score:.2f})")
             
         else:
             if current_state == "BUY":
-                if accumulator > 0:
-                    final_signals.append(f"🟢 HOLD BUY | Trend Softening (Score: {accumulator})")
+                if s_score > 0:
+                    final_signals.append(f"🟢 HOLD BUY | Curve Softening (EMA Score: {s_score:.2f})")
                 else:
-                    final_signals.append(f"⚠️ BUY TREND CRITICAL | Reversal Warning (Score: {accumulator})")
+                    final_signals.append(f"⚠️ BUY CRITICAL | Reversal Imminent (EMA Score: {s_score:.2f})")
                     
             elif current_state == "SELL":
-                if accumulator < 0:
-                    final_signals.append(f"🔴 HOLD SELL | Trend Softening (Score: {accumulator})")
+                if s_score < 0:
+                    final_signals.append(f"🔴 HOLD SELL | Curve Softening (EMA Score: {s_score:.2f})")
                 else:
-                    final_signals.append(f"⚠️ SELL TREND CRITICAL | Reversal Warning (Score: {accumulator})")
+                    final_signals.append(f"⚠️ SELL CRITICAL | Reversal Imminent (EMA Score: {s_score:.2f})")
                     
             else:
-                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+                final_signals.append(f"⚪ NEUTRAL | Velocity Consolidating (EMA Score: {s_score:.2f})")
 
     df_predict.loc[:, 'd_ML_Signal'] = final_signals
-    df_predict.loc[:, 'Accumulator_Score'] = scores_log  
 
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Smoothed_Score', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Smoothed_Score'] = display_df['Smoothed_Score'].round(2)
     
     # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Full Point-Flow Matrix)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (EMA-Accumulator Continuous Trajectory)")
     st.dataframe(display_df, use_container_width=True, height=750)
