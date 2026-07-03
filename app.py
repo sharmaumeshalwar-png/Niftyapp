@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Kalman 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
+st.set_page_config(page_title="Nifty 50 Kalman Engine", layout="wide")
+st.title("🦅 Nifty 50 (NSE) Live 1-Hour Double Kalman Engine")
+st.write("🎯 **Aapka Master Nifty Setup:** Ticker ^NSEI + Kalman Price + Past 25-Candle Target + Double Kalman Smoothed Weighted Momentum (P=0.50)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,12 +28,12 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning Double Kalman Bitcoin Microstructure Matrices..."):
-    # BTC-USD Hourly 2 Years Window
-    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
+with st.spinner("Fetching and Aligning Indian Stock Market Microstructure Matrices..."):
+    # ^NSEI (Nifty 50 Index) Hourly 2 Years Window
+    raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("NSE API Timeout or Market Closed Data Fetch Error. Please refresh.")
         st.stop()
         
     # MultiIndex Framework Elimination
@@ -65,7 +65,7 @@ with st.spinner("Aligning Double Kalman Bitcoin Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Past 25-Candle Target
+    # Past 25-Candle Target (Nifty Trend Horizon)
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -84,9 +84,9 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Waiting for market data ticks...")
+    st.error("Prediction matrix error. Waiting for market opening ticks...")
 else:
-    # RandomForest Model Training
+    # RandomForest Model Training for Nifty Context
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -166,7 +166,7 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # 🔥 AAPKI CORE REQUIREMENT: Weighted Momentum ke upar ALAG se Kalman filter chalaya strictly 0.50 se
+    # 🔥 AAPKI REGULAR REQUIREMENT: Weighted Momentum ke upar strictly Kalman 0.50 execution
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Display Configuration
@@ -180,9 +180,9 @@ else:
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Sorting to get latest ticks on top
+    # Sorting to get latest trading rows on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Kalman 0.50 Hyper-Responsive Smooth Matrix)")
+    st.subheader(f"📋 Live 1-Hour Nifty Index Engine (Double Kalman 0.50 Setup)")
     st.dataframe(display_df, use_container_width=True, height=750)
