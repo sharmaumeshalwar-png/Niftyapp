@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Engine")
-st.write("🎯 **Aapki Perfect Setting:** Pure 60% Entry Gate + Fixed May 27 Filter")
+st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Permanent Engine")
+st.write("🎯 **Aapki Permanent Setting:** 25-Day Rolling Training Anchor (Anti-Crash Blueprint)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,6 +29,7 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
+    # Safe 50 days buffer download to easily carve out 25 training days
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
@@ -63,17 +64,22 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 🔴 AAPKI EXACT SAME DATE MASK
-train_mask = df.index < '2026-05-27'
-predict_mask = df.index >= '2026-05-27'
+# =====================================================================
+# 🌟 PERMANENT FIX: AUTOMATIC ROLLING 25-DAY BOUNDARY ANCHOR
+# =====================================================================
+start_data_date = df.index.min()
+split_boundary_date = start_data_date + pd.Timedelta(days=25)  # 🔴 EXACTLY 25 DAYS FIXED
+
+train_mask = df.index < split_boundary_date
+predict_mask = df.index >= split_boundary_date
 
 df_train = df[train_mask].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 X_predict = df.loc[predict_mask, features_matrix]
 
-if len(X_predict) == 0:
-    st.error("No data found from May 27, 2026 onwards.")
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error("Data Frame Alignment Alert: Please refresh Streamlit dashboard.")
 else:
     # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
@@ -105,7 +111,7 @@ else:
         p_up = prob_ups[i]
         p_down = prob_downs[i]
 
-        # 1. Fresh Signal Rule via Kalman Cross (🔒 LOCKED BACK TO 0.60)
+        # 1. Fresh Signal Rule via Kalman Cross
         if sc == 1:
             if p_up >= 0.60:  
                 current_state = "BUY"
@@ -117,7 +123,7 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto-Flip Part!)
+        # 2. Continuous Monitoring (The Auto-Flip Part you pasted!)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
