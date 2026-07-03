@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip Engine")
-st.write("🎯 **Anti-Change Config:** Fixed 15-Day Learning Window + 100% Stable Signals")
+st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
+st.write("🎯 **Aapki Perfect Setting:** Lowered Parameters for Instant Reversals + Automatic DOWN Drop System")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,7 +29,6 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    # 50 days data fetch
     df = yf.download("BTC-USD", period="50d", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
@@ -64,36 +63,28 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# =====================================================================
-# 🌟 SAFE & STABLE FIXED-DAY SPLIT ENGINE
-# =====================================================================
-# Data ke start point se strictly agle 15 Days tak model seekhega (Exact same matrix size always!)
-start_date = df.index.min()
-split_date = start_date + pd.Timedelta(days=15)
-
-train_mask = df.index < split_date
-predict_mask = df.index >= split_date
+train_mask = df.index < '2026-05-27'
+predict_mask = df.index >= '2026-05-27'
 
 df_train = df[train_mask].dropna(subset=['Target'])
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
-
 X_predict = df.loc[predict_mask, features_matrix]
-df_signals = df[predict_mask].copy()
 
-if len(X_predict) == 0 or len(X_train) == 0:
-    st.error("Matrix Sync Error due to API data compression. Please click refresh.")
+if len(X_predict) == 0:
+    st.error("No data found from May 27, 2026 onwards.")
 else:
-    # 🔴 AAPKI PERFECT ORIGINAL LOW SETTING (Strictly Unchanged)
+    # 🔴 AAPKI PERFECT LOW SETTING FOR FAST DIFFERENTIATION
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3,            
-        min_samples_leaf=1,     
+        max_depth=3,            # Strict low depth for instant shift detection
+        min_samples_leaf=1,     # Aggressive response to edge changes
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
+    df_signals = df[predict_mask].copy()
     
     df_signals['Prob_Down'] = probabilities[:, 0]
     df_signals['Prob_Up'] = probabilities[:, 1]
@@ -125,7 +116,7 @@ else:
                 current_state = "HOLD"
                 final_signals.append("⚪ HOLD")
         
-        # 2. Continuous Monitoring (The Auto-Flip Part!)
+        # 2. Continuous Monitoring (The Auto-Flip Part you pasted!)
         else:
             if current_state == "BUY":
                 if p_down > 0.52 or p_up < 0.50:
@@ -145,7 +136,7 @@ else:
 
     df_signals['d_ML_Signal'] = final_signals
 
-    # Display Configuration
+    # Display Configuration (Same as your snippet)
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
     display_df = df_signals[clean_display_cols].copy()
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -156,5 +147,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Stable Bitcoin Engine (Fixed-Day Reset)")
+    st.subheader(f"📋 Live Micro-Differentiated Bitcoin Engine (Anti-Fail Configuration)")
     st.dataframe(display_df, use_container_width=True, height=750)
