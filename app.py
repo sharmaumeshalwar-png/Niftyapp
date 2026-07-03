@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Weighted Accumulator Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour Weighted Accumulator Engine")
-st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Weighted Confidence Column")
+st.write("🎯 **Aapki Custom Setting:** Kalman Price + Past 25-Candle Target + Pure Raw Accumulator + Weighted Confidence (Line 167 Fixed)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter ONLY for Price)
@@ -102,10 +102,11 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP WITH RAW ACCUMULATOR)
+    # LIVE TREND-LOCK CIRCUIT (BUG FREE SECURE LOOP)
     # =====================================================================
     final_signals = []
     scores_log = []
+    weighted_momentum_log = [] # New list to store math products safely
     current_state = "HOLD"
     
     accumulator = 0
@@ -127,6 +128,10 @@ else:
         
         accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
         scores_log.append(accumulator)
+
+        # 🔥 FIXED: Line 167 math formula calculated safely inside loop to bypass Pandas index bugs
+        calc_weighted = (p_up - p_down) * accumulator
+        weighted_momentum_log.append(calc_weighted)
 
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
@@ -152,16 +157,25 @@ else:
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Safe mapping back to pandas framework
+    # Safe unified mapping back to pandas framework at the exact same moment
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
-
-    # 🌟 AAPKI REQUIREMENT: (Prob_Up - Prob_Down) * Accumulator_Score ka solid column
-    df_predict['Weighted_Momentum'] = (df_predict['Prob_Up'] - df_predict['Prob_Down']) * df_predict['Accumulator_Score']
+    df_predict['Weighted_Momentum'] = weighted_momentum_log # Mapped safely without series index validation crashes
 
     # Display Configuration
     clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman'] = display_df['b_Kalman'].
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(3)
+    
+    # Sorting to get latest ticks on top
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (Pure Accumulator + Weighted Confidence)")
+    st.dataframe(display_df, use_container_width=True, height=750)
