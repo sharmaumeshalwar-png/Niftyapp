@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Institutional 5M Engine", layout="wide")
-st.title("🦅 Nifty 50 Ultra-Accurate Institutional 5Min Engine")
-st.write("🎯 **Production-Grade Engine:** 5-Minute Matrix ➡️ Fixed Live Target Drop Bug ➡️ 63% Strict Filter")
+st.set_page_config(page_title="Nifty Institutional 1H Engine", layout="wide")
+st.title("🦅 Nifty 50 Ultra-Accurate Institutional 1-Hour Engine")
+st.write("🎯 **Max Training Mode:** Learning from past 2 years ➡️ Signals active from 1 Jan 2026 ➡️ 63% Strict Filter")
 
 # ==========================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,17 +29,17 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-# Fetch Data for 5-Minute Timeframe (Max 60 days allowed by yfinance for 5m)
-with st.spinner("Fetching and aligning 5-Minute Microstructure Matrices..."):
-    # yfinance 5m data max 60 days tak ka deta hai, toh hum safe side 50 days ka data nikal rahe hain
-    df = yf.download("^NSEI", period="50d", interval="5m")
+# Fetch Data for 1-Hour Timeframe 
+# 'period="720d"' se pichle ~2 saal ka saara data load hoga taaki model max seekh sake
+with st.spinner("Fetching max historical 1-Hour data for deep learning..."):
+    df = yf.download("^NSEI", period="720d", interval="1h")
 
 # Bug Fix: Multi-Index Column Flattening
 if isinstance(df.columns, pd.MultiIndex):
     df.columns = df.columns.get_level_values(0)
 
 if len(df) == 0:
-    st.error("YFinance API Timeout. Please refresh the dashboard.")
+    st.error("YFinance API Timeout or No Data found. Please refresh the dashboard.")
     st.stop()
 
 # Index handling to ensure datetime string comparison works perfectly
@@ -55,7 +55,7 @@ df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(
 df['Sign_Change'] = df['Sign_Change'].astype(int)
 
 # ==========================================
-# MICROSTRUCTURE FEATURES (Optimized for 5-Min Frame)
+# MICROSTRUCTURE FEATURES (Optimized for 1-Hour Frame)
 # ==========================================
 df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
 
@@ -67,7 +67,7 @@ df['Normalized_Gap'] = df['c_Combined'] / rolling_std
 
 df['Flow_Velocity'] = df['c_Combined'].diff(1)
 
-# 5-Min ke hisab se Look-ahead Target (3 candles forward = 15 Mins lookahead)
+# 1-Hour ke hisab se Look-ahead Target (3 candles forward = 3 Hours lookahead)
 df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
 
 # Clear Feature NaNs (Live Rows are kept safe here!)
@@ -77,26 +77,26 @@ df.dropna(subset=['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_V
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
 # ==========================================
-# STRICT SEPARATION OF TIME LOGIC (Strict Target Isolation)
+# STRICT SEPARATION OF TIME LOGIC (Signals from 1 Jan 2026)
 # ==========================================
-# 27 May 2026 se pehle ka data training ke liye use hoga
-train_mask = df.index < '2026-05-27'
-# 27 May 2026 se lekar aaj (Live Present) tak ka data prediction matrix me jayega
-predict_mask = df.index >= '2026-05-27'
+# 1 Jan 2026 se pehle ka pichla saara data (approx 2 saal) training me jayega
+train_mask = df.index < '2026-01-01'
+# 1 Jan 2026 se lekar aaj tak ka data prediction/hints me dikhega
+predict_mask = df.index >= '2026-01-01'
 
-# Training Set: Yahan se target drop karenge perfect mathematically training ke liye
+# Training Set
 df_train = df[train_mask].dropna(subset=['Target'])
 
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# Prediction Set: Live Market rows completely untouched and safe!
+# Prediction Set
 X_predict = df.loc[predict_mask, features_matrix]
 
 if len(X_predict) == 0:
-    st.error("No data found from May 27, 2026 onwards. Please wait for market hours or check data availability.")
+    st.error("No data found from Jan 1, 2026 onwards for prediction.")
 else:
-    # Model Setup (Tuned for 5-Min fast execution)
+    # Model Setup
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=5, min_samples_leaf=2, random_state=42)
     model_flow.fit(X_train, y_train)
     
@@ -130,7 +130,7 @@ else:
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
     
     # Main Grid Presentation
-    st.subheader("📋 Live 5-Min Nifty 50 Execution Matrix (27 May 2026 - Present)")
+    st.subheader("📋 Live 1-Hour Nifty 50 Execution Matrix (1 Jan 2026 - Present)")
     st.dataframe(display_df, use_container_width=True, height=750)
     
     # Sidebar Metric Counter Auditor
@@ -139,7 +139,7 @@ else:
     inst_sells = len(df_signals[df_signals['d_ML_Signal'] == "🔴 INSTITUTIONAL SELL (Confirmed)"])
     traps = len(df_signals[df_signals['d_ML_Signal'] == "⚪ RETAIL TRAP (Avoid Fake)"])
     
-    st.sidebar.header("📊 Production Audit (Post May 27)")
+    st.sidebar.header("📊 Production Audit (Post Jan 01)")
     st.sidebar.write(f"Total Sign Flips Checked: **{total_flips}**")
     st.sidebar.write(f"🟢 Confirmed Buy Moves: **{inst_buys}**")
     st.sidebar.write(f"🔴 Confirmed Sell Moves: **{inst_sells}**")
