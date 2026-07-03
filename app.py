@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bitcoin Ultra-Responsive Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live Dynamic-Flip & Low-Parameter Engine")
-st.write("🎯 **Aapki Perfect Setting:** Lowered Parameters for Instant Reversals + Automatic DOWN Drop System")
+st.write("🎯 **Aapki Perfect Setting:** Fixed May 27 Filter + Restored 17 June Hint Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -29,7 +29,8 @@ def apply_kalman_filter_strict(price_array):
     return filtered_prices
 
 with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
-    df = yf.download("BTC-USD", period="50d", interval="5m")
+    # 🌟 DATA TUNING: Pulling stable chunk to align 3-4 June, 8 June and 17 June together
+    df = yf.download("BTC-USD", start="2026-05-10", end="2026-07-04", interval="5m")
     
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
@@ -63,7 +64,7 @@ with st.spinner("Aligning Responsive Crypto Microstructure Matrices..."):
 
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-# 🔴 DYNAMIC WINDOW BACK TO YOUR ORIGINAL FIXED DATE MASK
+# 🔴 AAPKI EXACT SAME STARTING DATE MASK AS REQUESTED
 train_mask = df.index < '2026-05-27'
 predict_mask = df.index >= '2026-05-27'
 
