@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Nifty 1H 50:50 Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Engine (Equal Split Layout)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Matrix Balance")
+st.title("⚡ Nifty 50 Live 1-Hour Engine (Bug Fixed)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Matrix Balance (No Line 152 Error)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -72,24 +72,23 @@ with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
     df.dropna(subset=features_matrix, inplace=True)
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (🌟 AAPKI REQUIREMENT: Strict 50:50 Ratio)
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
 # =====================================================================
-# Total rows ka exact 50% split points index
 split_idx = int(len(df) * 0.50)
 
-# Pehla 50% historical data direct Training Matrix me
+# Pehla 50% data Matrix Training ke liye
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
-X_train = df_train[features_matrix]
-y_train = df_train['Target']
+X_train = df_train[features_matrix].copy()
+y_train = df_train['Target'].copy()
 
-# Aakhri 50% data (Current Ticks tak) Prediction Matrix me
-df_predict = df.iloc[split_idx:]
-X_predict = df_predict[features_matrix]
+# Aakhri 50% data Matrix Prediction ke liye
+df_predict = df.iloc[split_idx:].copy()
+X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
     st.error("Prediction matrix error. Waiting for market data...")
 else:
-    # Aggressive Low-Parameter Model Settings
+    # Model Setup
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -98,12 +97,12 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Probabilities derivation
+    # 🔥 LINE 152 CRASH FIX: Direct matrix probability slicing mechanism
     probabilities = model_flow.predict_proba(X_predict)
-    df_signals = df_predict.copy()
     
-    df_signals['Prob_Down'] = probabilities[:, 0]
-    df_signals['Prob_Up'] = probabilities[:, 1]
+    # Slicing ko secure variable me hold karna bina data frame crash kiye
+    df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
+    df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
     # LIVE DYNAMIC AUTO-FLIP CIRCUIT 🛡️
@@ -111,11 +110,11 @@ else:
     final_signals = []
     current_state = "HOLD"
 
-    sign_changes = df_signals['Sign_Change'].values
-    prob_ups = df_signals['Prob_Up'].values
-    prob_downs = df_signals['Prob_Down'].values
+    sign_changes = df_predict['Sign_Change'].values
+    prob_ups = df_predict['Prob_Up'].values
+    prob_downs = df_predict['Prob_Down'].values
 
-    for i in range(len(df_signals)):
+    for i in range(len(df_predict)):
         sc = sign_changes[i]
         p_up = prob_ups[i]
         p_down = prob_downs[i]
@@ -146,7 +145,20 @@ else:
             else:
                 final_signals.append("⚪ HOLD")
 
-    df_signals['d_ML_Signal'] = final_signals
+    df_predict.loc[:, 'd_ML_Signal'] = final_signals
 
     # Display Configuration
-    clean_display_cols =
+    clean_display_cols = ['a_Close', 'b_Kalman', 'Prob_Up', 'Prob_Down', 'd_ML_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman'] = display_df['b_Kalman'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    
+    # Sort Matrix
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Engine (2Y Horizon - Strict 50:50 Balance)")
+    st.dataframe(display_df, use_container_width=True, height=750)
