@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 1H 50:50 Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Engine (Bug Fixed)")
-st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Horizon + Strict 50:50 Matrix Balance (No Line 152 Error)")
+st.set_page_config(page_title="Bitcoin 1H 50:50 Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Engine (Equal Split Layout)")
+st.write("🎯 **Aapki Perfect Setting:** 2-Year Hourly Crypto Horizon + Strict 50:50 Matrix Balance")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Kalman Filter 0.001)
@@ -28,15 +28,15 @@ def apply_kalman_filter_strict(price_array):
         filtered_prices.append(x)
     return filtered_prices
 
-with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
-    # NIFTY 1-HOUR DATA (2 Years Window)
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+with st.spinner("Aligning Responsive Bitcoin 1-Hour Microstructure Matrices..."):
+    # 🌟 CRYPTO OVERRIDE: BTC-USD Hourly 2 Years Window
+    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout or NSE Market Closed. Please refresh the dashboard.")
+        st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
         
-    # MultiIndex Framework Elimination
+    # MultiIndex Framework Elimination (Line 152 Explicit Protection)
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
@@ -65,7 +65,7 @@ with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Configuration (3 Hours Lookahead)
+    # Target Configuration (3 Hours Lookahead Trend)
     df['Target'] = np.where(df['a_Close'].shift(-3) > df['a_Close'], 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -76,19 +76,19 @@ with st.spinner("Aligning Responsive Nifty 1-Hour Microstructure Matrices..."):
 # =====================================================================
 split_idx = int(len(df) * 0.50)
 
-# Pehla 50% data Matrix Training ke liye
+# Pehla 50% Crypto data Training Matrix ke liye
 df_train = df.iloc[:split_idx].dropna(subset=['Target'])
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
 
-# Aakhri 50% data Matrix Prediction ke liye
+# Aakhri 50% Crypto data (Up to current live tick) Prediction Matrix ke liye
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Waiting for market data...")
+    st.error("Prediction matrix error. Waiting for market data ticks...")
 else:
-    # Model Setup
+    # Aggressive Low-Parameter Model Settings
     model_flow = RandomForestClassifier(
         n_estimators=150, 
         max_depth=3,            
@@ -97,10 +97,9 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # 🔥 LINE 152 CRASH FIX: Direct matrix probability slicing mechanism
+    # Bulletproof Slicing Allocation (Protects Line 152 / 160 dimensional errors)
     probabilities = model_flow.predict_proba(X_predict)
     
-    # Slicing ko secure variable me hold karna bina data frame crash kiye
     df_predict.loc[:, 'Prob_Down'] = probabilities[:, 0]
     df_predict.loc[:, 'Prob_Up'] = probabilities[:, 1]
 
@@ -156,9 +155,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Sort Matrix
+    # Newest hourly candles sorted on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Engine (2Y Horizon - Strict 50:50 Balance)")
+    st.subheader(f"📋 Live 1-Hour Bitcoin Engine (2Y Horizon - Strict 50:50 Balance)")
     st.dataframe(display_df, use_container_width=True, height=750)
