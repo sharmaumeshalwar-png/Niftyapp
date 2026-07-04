@@ -51,48 +51,56 @@ split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-# Base Training Core
-model_flow = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42, warm_start=True)
+# Base Training Core (Removed warm_start to prevent dimension mismatch crashes)
+model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
 model_flow.fit(df_train[features_matrix], df_train['Target'])
 
-# Extraction for adaptive loops
+# Extractions for adaptive loops
 X_predict_v = df_predict[features_matrix].to_numpy()
-y_predict_v = df_predict['Target'].to_numpy()
 closes_v = df_predict['a_Close'].to_numpy()
 
 view_log, brain_notes, accumulator_log = [], [], []
 accumulator = 0
 last_valid_view = "⚪ HOLD (No Clear Pattern)"
 
-# Memory buffers to force strict training increments
-window_X, window_y = [], []
+# Active incremental memory arrays
+accumulated_X = df_train[features_matrix].copy()
+accumulated_y = df_train['Target'].copy()
 
 for i in range(len(df_predict)):
     row_feats = X_predict_v[i].reshape(1, -1)
     
-    # Incremental Parameter Refitting (Model seeks corrections online)
-    if i > 0 and i % 24 == 0:  # Har 24 ghante me model parameters ko pichli galtiyo se sikhao
-        window_X = X_predict_v[max(0, i-48):i]
-        window_y = y_predict_v[max(0, i-48):i]
-        model_flow.n_estimators += 5
-        model_flow.fit(window_X, window_y)
+    # Safe Parameter Refitting: Mixed memory technique to retain both classes [0, 1]
+    if i > 0 and i % 24 == 0:
+        recent_chunk_X = df_predict[features_matrix].iloc[max(0, i-24):i]
+        recent_chunk_y = df_predict['Target'].iloc[max(0, i-24):i]
+        
+        # Append latest market memory safely
+        accumulated_X = pd.concat([accumulated_X, recent_chunk_X]).iloc[-len(df_train):]
+        accumulated_y = pd.concat([accumulated_y, recent_chunk_y]).iloc[-len(df_train):]
+        
+        # Re-fit parameters safely without breaking shape constraints
+        model_flow.fit(accumulated_X, accumulated_y)
         
     probs = model_flow.predict_proba(row_feats)[0]
-    p_down, p_up = probs[0], probs[1]
     
-    # ⚡ STRICT NO-FLIP LOGIC (HINTS CLEAR WINDOW)
-    # Target 95% certainty boundary
-    if p_up >= 0.65:
+    # Handle single-class edge cases gracefully if they ever appear
+    if len(probs) == 2:
+        p_down, p_up = probs[0], probs[1]
+    else:
+        p_down, p_up = (1.0, 0.0) if model_flow.classes_[0] == 0 else (0.0, 1.0)
+    
+    # STRICT TREND-LOCK FILTER (Aims for 95% target consistency)
+    if p_up >= 0.63:
         last_valid_view = f"📈 UP (Confidence: {p_up*100:.1f}%)"
         accumulator = min(5, accumulator + 1)
-        note = "🎯 Pattern Locked: Velocity & Kalman verified upward momentum."
-    elif p_down >= 0.65:
+        note = "🎯 Pattern Secured: Parameters tracking steady upward shift."
+    elif p_down >= 0.63:
         last_valid_view = f"📉 DOWN (Confidence: {p_down*100:.1f}%)"
         accumulator = max(-5, accumulator - 1)
-        note = "🎯 Pattern Locked: Velocity & Kalman verified downward momentum."
+        note = "🎯 Pattern Secured: Parameters tracking steady downward shift."
     else:
-        # Jab tak 65% cross nahi hota, view flip nahi hoga, pichla strong hint hi hold rahega
-        note = "⚡ No new macro confirmation. Holding previous clear trajectory state."
+        note = "⚡ Sideways mixing filtered. Locking previous highest conviction trajectory."
 
     view_log.append(last_valid_view)
     brain_notes.append(note)
