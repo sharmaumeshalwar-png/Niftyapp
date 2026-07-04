@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Strict 2.0 Tuning]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: Standard | K3: P=2.0, Q=2.0, R=2.0 strictly on Weighted Momentum base)")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Full Matrix Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Kalman on Close-Kalman1 | K3: Kalman 0.50 on Close-VWAP)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -53,10 +53,22 @@ with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrice
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
     
+    # -----------------------------------------------------------------
+    # INTRADAY VWAP COMPUTATION BLOCK
+    # -----------------------------------------------------------------
+    typical_price = (df['High'] + df['Low'] + df['a_Close']) / 3
+    df['TP_Vol'] = typical_price * df['Volume']
+    
+    df['Date_Group'] = df.index.date
+    cum_tp_vol = df.groupby('Date_Group')['TP_Vol'].cumsum()
+    cum_vol = df.groupby('Date_Group')['Volume'].cumsum()
+    
+    df['VWAP'] = cum_tp_vol / (cum_vol + 1e-10)
+    
+    # Microstructure Features
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -69,7 +81,7 @@ with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrice
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target'], inplace=True)
+    df.dropna(subset=features_matrix + ['Target', 'VWAP'], inplace=True)
 
 # =====================================================================
 # DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
@@ -166,17 +178,21 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Standard Tuning)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50) -> SAARE KALMAN INTACT HAIN!
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
-    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly
-    # Strictly assigned: initial_p=2.0, q_val=2.0, r_val=2.0 as requested!
+    # -----------------------------------------------------------------
+    # [Kalman 3] NEW DEFINITION: (Close - VWAP) Base Vector
+    # -----------------------------------------------------------------
+    df_predict['Close_Minus_VWAP'] = df_predict['a_Close'] - df_predict['VWAP']
+    
+    # Kalman Filter assigned with initial_p=0.50 on the (Close - VWAP) vector
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
-        df_predict['Raw_Weighted_Momentum'].values, 
-        initial_p=2.0, q_val=2.0, r_val=2.0
+        df_predict['Close_Minus_VWAP'].values, 
+        initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
     # Display Configuration
