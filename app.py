@@ -4,7 +4,7 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="BTC Simulation Core", layout="wide")
+st.set_page_config(page_title="BTC Fixed Machine Engine", layout="wide")
 st.title("🧠 BTC Live 1-Hour [1,000-Fold Kalman Simulator Matrix]")
 
 # =====================================================================
@@ -22,39 +22,37 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return np.array(filtered_values)
 
-with st.spinner("Processing Data Engine & Flattening 1,000 Grid Nodes..."):
-    # Download data safely
+with st.spinner("Executing Cross-Section Multi-Index Layer Extraction..."):
+    # 730d dynamic data download
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
     if raw_df.empty:
-        st.error("Market API Error: Data download nahi ho pa raha hai.")
+        st.error("Market API Endpoint Error. Please reload the server.")
         st.stop()
         
-    # FIX: Column headers ko check karne ke liye lowercase me convert karna
-    # Aur agar MultiIndex ho toh base level par le aana
-    if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = [str(col[0]).lower() for col in raw_df.columns]
-    else:
-        raw_df.columns = [str(col).lower() for col in raw_df.columns]
-
-    # Map mapping by position if exact names are distorted
+    # CROSS-SECTION MATRIX CLEANING ENGINE
     df = pd.DataFrame(index=raw_df.index)
     
-    # Safely mapping standard positions
     try:
+        if isinstance(raw_df.columns, pd.MultiIndex):
+            # Extract only columns belonging to BTC-USD asset to drop multidimensional overhead
+            df['Open'] = pd.to_numeric(raw_df.xs('BTC-USD', axis=1, level=1)['Open'], errors='coerce')
+            df['High'] = pd.to_numeric(raw_df.xs('BTC-USD', axis=1, level=1)['High'], errors='coerce')
+            df['Low'] = pd.to_numeric(raw_df.xs('BTC-USD', axis=1, level=1)['Low'], errors='coerce')
+            df['Close'] = pd.to_numeric(raw_df.xs('BTC-USD', axis=1, level=1)['Close'], errors='coerce')
+        else:
+            df['Open'] = pd.to_numeric(raw_df['Open'], errors='coerce')
+            df['High'] = pd.to_numeric(raw_df['High'], errors='coerce')
+            df['Low'] = pd.to_numeric(raw_df['Low'], errors='coerce')
+            df['Close'] = pd.to_numeric(raw_df['Close'], errors='coerce')
+    except Exception:
+        # Strict backup parsing via position array mapping
         df['Open'] = pd.to_numeric(raw_df.iloc[:, 0], errors='coerce')
         df['High'] = pd.to_numeric(raw_df.iloc[:, 1], errors='coerce')
         df['Low'] = pd.to_numeric(raw_df.iloc[:, 2], errors='coerce')
         df['Close'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
-    except Exception as e:
-        # Fallback names handling
-        for col in raw_df.columns:
-            if 'open' in col: df['Open'] = pd.to_numeric(raw_df[col], errors='coerce')
-            if 'high' in col: df['High'] = pd.to_numeric(raw_df[col], errors='coerce')
-            if 'low' in col: df['Low'] = pd.to_numeric(raw_df[col], errors='coerce')
-            if 'close' in col: df['Close'] = pd.to_numeric(raw_df[col], errors='coerce')
 
-    # Fill any empty spaces instantly to lock dataframe rows length
+    # Forward fill gaps to secure row counts
     df.ffill(inplace=True)
     df.bfill(inplace=True)
 
@@ -62,7 +60,7 @@ with st.spinner("Processing Data Engine & Flattening 1,000 Grid Nodes..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Parameter Engineering
+    # Mathematical Variables for Machine Processing
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -71,10 +69,10 @@ with st.spinner("Processing Data Engine & Flattening 1,000 Grid Nodes..."):
     
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    df.fillna(0, inplace=True)
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
-# 50:50 Clean Matrix Partition
+# 50:50 Dynamic Model Splits
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
@@ -113,7 +111,7 @@ for q_sim in q_grid:
             best_r = r_sim
 
 # =====================================================================
-# SIGNAL AND DYNAMIC VIEW GENERATOR
+# SIGNAL GENERATION WINDOW
 # =====================================================================
 view_log, brain_notes, accumulator_log = [], [], []
 accumulator = 0
@@ -136,7 +134,7 @@ for i in range(len(prob_ups)):
         note = f"🎯 [95% TARGET] Q:{best_q:.4f} | R:{best_r:.2f}"
     else:
         last_valid_view = f"⚪ HOLD (Up: {p_up*100:.0f}% | Dn: {p_down*100:.0f}%)"
-        note = "⚡ Filtering market noise. Preserving precision ratio."
+        note = "⚡ No multi-vector convergence. Freezing tracking state."
 
     view_log.append(last_valid_view)
     brain_notes.append(note)
@@ -147,7 +145,7 @@ df_predict['Accumulator_Score'] = accumulator_log
 df_predict['ML_Simulation_Notes'] = brain_notes
 df_predict['Weighted_Momentum'] = np.round(best_weighted_momentum_series, 2)
 
-# Cleanup UI Presentation
+# Frame rendering properties
 clean_cols = ['a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 'Accumulator_Score', 'Live_View', 'ML_Simulation_Notes']
 display_df = df_predict[clean_cols].copy().iloc[::-1]
 
