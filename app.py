@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Vol-Momentum Engine", layout="wide")
+st.set_page_config(page_title="BTC Cleaned Vol-Momentum Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Volume / Weighted Momentum Ratio Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + **🔥 NEW: Volume divided by Weighted Momentum (Zero Crash Buffer Applied)** + Unbounded Score on Ratio + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + Volume divided by Weighted Momentum + **🔥 FIXED: Missing/Zero Volume Data-Gap Cleaner Filter Enabled** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Injecting Volume/Weighted Momentum Division Matrix..."):
+with st.spinner("Cleansing Yahoo Finance Data Gaps & Injecting Ratio Engine..."):
     # Bitcoin 1-HOUR Interval Data
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -42,6 +42,11 @@ with st.spinner("Injecting Volume/Weighted Momentum Division Matrix..."):
             df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
     df.index = pd.to_datetime(df.index)
+
+    # -----------------------------------------------------------------
+    # 🔥 DATA-GAP CLEANER FILTER: Dropping rows where Volume is 0 or NaN
+    # -----------------------------------------------------------------
+    df = df[df['Volume'] > 0].copy()
 
     # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
@@ -109,13 +114,10 @@ else:
     # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # -----------------------------------------------------------------
-    # 🎯 NEW MATHEMATICAL OPERATION: VOLUME / WEIGHTED MOMENTUM
-    # -----------------------------------------------------------------
-    # Adding a clean 1e-5 epsilon buffer to shield the engine from 0 denominator breaks
+    # 🎯 RATIO CONFIGURATION: VOLUME / WEIGHTED MOMENTUM
     df_predict['Vol_Mntm_Ratio'] = df_predict['Volume'] / (df_predict['Weighted_Momentum'] + 1e-5)
 
-    # Unbounded expansion calculation tracking the velocity transitions of the ratio
+    # Unbounded expansion tracking calculation
     ratio_values = df_predict['Vol_Mntm_Ratio'].to_numpy()
     ratio_unbounded_log = []
     unbounded_accumulator = 0  
@@ -146,5 +148,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Volume/Weighted Momentum Ratio Dashboard (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Cleaned Volume/Weighted Momentum Ratio Dashboard (No Zero-Volume Gaps)")
     st.dataframe(display_df, use_container_width=True, height=750)
