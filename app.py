@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Super Discovery Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Triple Kalman Matrix (K3: P=250.0 Hyper Discovery)")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: P=0.50 Smooth | K3: P=250.0 Hyper Discovery)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -166,12 +166,16 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Weighted Momentum (Smooth Mode: initial_p=0.50 se chalega)
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Smooth Mode)
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
+        df_predict['Raw_Weighted_Momentum'].values, 
+        initial_p=0.50, q_val=0.001, r_val=0.1
+    )
 
-    # [Kalman 3] SUPER DISCOVERY UPGRADE: Directly runs on Weighted_Momentum (Kalman 2 output)
+    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly (P=250.0 Super Discovery Mode)
+    # Target values assigned: q_val=0.15 (High adaptive engine), r_val=0.005 (Unfiltered trust)
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
-        df_predict['Weighted_Momentum'].values, 
+        df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=250.0, 
         q_val=0.15, 
         r_val=0.005
@@ -193,5 +197,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Triple Kalman Hyper Discovery Mode)")
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Dual Momentum Matrix Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
