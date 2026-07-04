@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Raw K2 Expansion Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 5-Minute Standalone [Raw Kalman 2 Unbounded Expansion Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 5-Min Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + **NEW: Kalman 3 Completely Bypassed, Open Expansion Rule Applied Directly on Weighted_Momentum (Kalman 2)**")
+st.set_page_config(page_title="BTC Raw K2 Hourly Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Raw Kalman 2 Hourly Unbounded Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion Rule Applied Directly on Weighted_Momentum (Kalman 2)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,9 +28,9 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Bypassing Kalman 3 and Hooking Open Expansion directly to Kalman 2 Waves..."):
-    # Bitcoin 5-MINUTE Interval Data (Max period allowed by Yahoo Finance for 5m is 60 days)
-    raw_df = yf.download("BTC-USD", period="60d", interval="5m")
+with st.spinner("Aligning 1-Hour Temporal Triple Kalman Bitcoin Matrices..."):
+    # Bitcoin 1-HOUR Interval Data (Max historical period allowed by Yahoo Finance for 1h is 730 days)
+    raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
@@ -77,7 +77,7 @@ with st.spinner("Bypassing Kalman 3 and Hooking Open Expansion directly to Kalma
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Strictly Fixed 25-Candle Directional Lookahead Target Logic
+    # Strictly Fixed 25-Hour Directional Lookahead Target Logic
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -96,7 +96,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Dataframe split bounds mismatch.")
+    st.error("Prediction matrix error. Hourly timeframe data split bounds mismatch.")
 else:
     # RandomForest Model Training
     model_flow = RandomForestClassifier(
@@ -189,16 +189,13 @@ else:
     # -----------------------------------------------------------------
     df_predict['Useful_VWAP'] = df_predict['VWAP'] * (df_predict['Prob_Up'].shift(1) - df_predict['Prob_Up'])
     df_predict['Useful_VWAP'] = df_predict['Useful_VWAP'].fillna(0)
-    
-    # NOTE: Kalman 3 layers have been stripped out. 
-    # We apply the stretch rules directly on df_predict['Weighted_Momentum'] (Kalman 2)
 
     # -----------------------------------------------------------------
-    # 🎯 NEW CHASSIS CORE: UNBOUNDED EXPANSION ENGINE DIRECT ON KALMAN 2
+    # UNBOUNDED EXPANSION ENGINE DIRECT ON HOURLY KALMAN 2
     # -----------------------------------------------------------------
     k2_values = df_predict['Weighted_Momentum'].to_numpy()
     k2_unbounded_log = []
-    unbounded_accumulator = 0  # Anchor index baseline
+    unbounded_accumulator = 0  
 
     for idx in range(len(k2_values)):
         if idx == 0:
@@ -207,11 +204,10 @@ else:
             
         # Directional checks directly tracked on Kalman 2 (Weighted Momentum Vector)
         if k2_values[idx] > k2_values[idx - 1]:
-            unbounded_accumulator += 1   # Infinite expansion to the upside
+            unbounded_accumulator += 1   # Open expansion upside
         elif k2_values[idx] < k2_values[idx - 1]:
-            unbounded_accumulator -= 1   # Infinite expansion to the downside
+            unbounded_accumulator -= 1   # Open expansion downside
             
-        # Hard limits completely bypassed to track pure structural stretch & reversals
         k2_unbounded_log.append(unbounded_accumulator)
         
     df_predict['K2_Open_Score'] = k2_unbounded_log
@@ -224,13 +220,4 @@ else:
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
-    
-    # Inverting framework to see latest 5-min intervals on top rows
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 5-Minute BTC Standalone Engine (Raw K2 Open Expansion Wave Matrix)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df
