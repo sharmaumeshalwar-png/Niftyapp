@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Dual Kalman Spread Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Dual Past Kalman Spread Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 10-Candle Target + **NEW: Kalman 10-Past & Kalman 25-Past Spread Optimization** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Fixed Spread Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Dual Past Kalman Spread Engine - FIXED]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 10-Candle Target + **Kalman 10-Past & Kalman 25-Past Spread Optimization** + **FIXED: Pandas 2.0+ fillna Deprecation Bug Fixed** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing Dual Past Kalman Layers & Injecting Spread Matrix..."):
+with st.spinner("Processing Fixed Dual Past Kalman Layers & Injecting Spread Matrix..."):
     # Bitcoin 1-HOUR Interval Data (730 Days max for hourly)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -112,17 +112,17 @@ else:
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # -----------------------------------------------------------------
-    # 🎯 NEW CORE CUSTOM ENGINE BLOCK: DUAL PAST KALMAN GENERATION
+    # 🎯 FIXED CORE CHASSIS: DUAL PAST KALMAN GENERATION (NO DEPRECATION BUG)
     # -----------------------------------------------------------------
-    # Step A: Shift lookbacks directly extracted from the Kalman 2 output array
-    df_predict['WM_10_Past_Raw'] = df_predict['Weighted_Momentum'].shift(10).fillna(method='bfill')
-    df_predict['WM_25_Past_Raw'] = df_predict['Weighted_Momentum'].shift(25).fillna(method='bfill')
+    # Enforcing modern .bfill() syntax to bypass line 118/119 crashes smoothly
+    df_predict['WM_10_Past_Raw'] = df_predict['Weighted_Momentum'].shift(10).bfill()
+    df_predict['WM_25_Past_Raw'] = df_predict['Weighted_Momentum'].shift(25).bfill()
 
-    # Step B: Executing 0.50 initial Kalman filters over the past raw arrays
+    # Executing 0.50 initial Kalman filters over the past raw arrays
     df_predict['Kalman_10_Past'] = apply_kalman_filter_custom(df_predict['WM_10_Past_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     df_predict['Kalman_25_Past'] = apply_kalman_filter_custom(df_predict['WM_25_Past_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Step C: Deriving the core net tracking spread
+    # Deriving the core net tracking spread
     df_predict['K3_Spread_Discovery'] = df_predict['Kalman_10_Past'] - df_predict['Kalman_25_Past']
 
     # -----------------------------------------------------------------
