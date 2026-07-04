@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Super Discovery Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: P=0.50 Smooth | K3: P=250.0 Hyper Discovery)")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Peak Discovery Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Smooth | K3: Peak-Lock Breakout & Decay Engine)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -25,6 +25,34 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
+
+# =====================================================================
+# ADVANCED KALMAN 3 ENGINE (Peak-Lock & Adaptive Decay Circuit)
+# =====================================================================
+def apply_kalman_3_peak_decay(data_array, initial_p=250.0, q_val=0.15, r_val=0.005, decay_rate=0.95):
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = initial_p
+    filtered_values = []
+    
+    for z in data_array:
+        # CRITERIA: Agar raw momentum current filtered value se bada hai -> Price ke sath instantly upar jao (No Lag Peak Lock)
+        if z > x:
+            x = z
+            p = initial_p # Reset uncertainty to max confidence
+        else:
+            # Agar raw momentum kam hai -> Perform controlled decay with Kalman smoothing
+            p = p + q_val
+            k = p / (p + r_val)
+            x_next = x + k * (z - x)
+            p = (1 - k) * p
+            
+            # Apply decay block taaki value step-by-step kam hoti rahe
+            x = x_next * decay_rate
+            
         filtered_values.append(x)
     return filtered_values
 
@@ -172,13 +200,14 @@ else:
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
-    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly (P=250.0 Super Discovery Mode)
-    # Target values assigned: q_val=0.15 (High adaptive engine), r_val=0.005 (Unfiltered trust)
-    df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
+    # [Kalman 3] NEW PEAK-LOCK DISCOVERY: Parallelly runs on Raw_Weighted_Momentum
+    # Peak-hold switch dynamic criteria with 250.0 alpha parameter configuration
+    df_predict['Triple_Kalman_Discovery'] = apply_kalman_3_peak_decay(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=250.0, 
         q_val=0.15, 
-        r_val=0.005
+        r_val=0.005,
+        decay_rate=0.95  # 5% decay per candle when momentum drops
     )
 
     # Display Configuration
@@ -197,5 +226,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Dual Momentum Matrix Mode)")
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Peak-Lock Matrix Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
