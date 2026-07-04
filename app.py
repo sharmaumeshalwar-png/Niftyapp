@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Useful VWAP Velocity Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 5-Minute Triple Kalman [Probability Velocity Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 5-Min Data + Strict 50:50 Split + Useful_VWAP = VWAP * (Prob_Up_Last_Row - Prob_Up_Current) + Parallel Dual Momentum (K2: Smooth Momentum | K3: Kalman 0.50 on [Kalman2 - Useful_VWAP])")
+st.set_page_config(page_title="BTC Dual Accumulator Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 5-Minute Standalone [Dual Bound $[-5, 5]$ Accumulator Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 5-Min Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + **NEW: Kalman 3 Discovery Score Bounded Strictly within $[-5, 5]$**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 5-Minute Probability Velocity Useful VWAP Matrices..."):
+with st.spinner("Synchronizing Dual-Bounded 5-Minute Microstructure Matrices..."):
     # Bitcoin 5-MINUTE Interval Data (Max period allowed by Yahoo Finance for 5m is 60 days)
     raw_df = yf.download("BTC-USD", period="60d", interval="5m")
     
@@ -185,26 +185,44 @@ else:
     )
 
     # -----------------------------------------------------------------
-    # 🎯 NEW CUSTOM CORE: VELOCITY DELTA INTERACTION ON VWAP MATRICES
+    # VELOCITY DELTA INTERACTION ON VWAP MATRICES
     # -----------------------------------------------------------------
-    # Useful_VWAP = VWAP * (Prob_Up_Last_Row - Prob_Up_Current_Row)
-    # Using shift(1) to cleanly grab the last row/previous candle probability value
     df_predict['Useful_VWAP'] = df_predict['VWAP'] * (df_predict['Prob_Up'].shift(1) - df_predict['Prob_Up'])
-    
-    # Fill any initial NaN values stemming from shift(1) calculation step
     df_predict['Useful_VWAP'] = df_predict['Useful_VWAP'].fillna(0)
-    
-    # Cascade target formulation structure: Kalman 2 - Useful_VWAP
     df_predict['Discovery_Alpha_Base'] = df_predict['Weighted_Momentum'] - df_predict['Useful_VWAP']
     
-    # [Kalman 3] Applying standard Kalman filter with initial_p=0.50 on Velocity Adaptive Base
+    # [Kalman 3 Core Extraction] Applying standard Kalman filter with initial_p=0.50
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
         df_predict['Discovery_Alpha_Base'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
+    # -----------------------------------------------------------------
+    # 🎯 NEW CUSTOM EXTENSION: KALMAN 3 BOUNDED ACCUMULATOR BUCKET $[-5, 5]$
+    # -----------------------------------------------------------------
+    k3_values = df_predict['Triple_Kalman_Discovery'].to_numpy()
+    k3_accumulator_log = []
+    k3_accumulator = 0  # Initialized state index counter
+
+    for idx in range(len(k3_values)):
+        if idx == 0:
+            k3_accumulator_log.append(0)
+            continue
+            
+        # Compare current index value against the last row value (Velocity Shift direction)
+        if k3_values[idx] > k3_values[idx - 1]:
+            k3_accumulator += 1   # Price Discovery trending upwards
+        elif k3_values[idx] < k3_values[idx - 1]:
+            k3_accumulator -= 1   # Price Discovery heading downwards
+            
+        # Hard limits constraint lock strictly inside [-5, 5] bounds
+        k3_accumulator = max(-5, min(5, k3_accumulator))
+        k3_accumulator_log.append(k3_accumulator)
+        
+    df_predict['K3_Accumulator_Score'] = k3_accumulator_log
+
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Useful_VWAP', 'Triple_Kalman_Discovery', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Triple_Kalman_Discovery', 'K3_Accumulator_Score', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -213,12 +231,12 @@ else:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Useful_VWAP'] = display_df['Useful_VWAP'].round(4) # Higher float precision for fine grain delta changes
     display_df['Triple_Kalman_Discovery'] = display_df['Triple_Kalman_Discovery'].round(2) 
+    display_df['K3_Accumulator_Score'] = display_df['K3_Accumulator_Score'].astype(int)
     
     # Inverting framework to see latest 5-min intervals on top rows
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 5-Minute BTC Standalone Engine (Probability Velocity VWAP Mode)")
+    st.subheader(f"📋 Live 5-Minute BTC Standalone Engine (Dual Bound Accumulator Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
