@@ -23,27 +23,38 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return np.array(filtered_values)
 
 with st.spinner("Processing Data Engine & Flattening 1,000 Grid Nodes..."):
-    # Multi-level layers ko flat download karne ki koshish
+    # Download data safely
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
     if raw_df.empty:
-        st.error("Market API Error: Data download nahi ho pa raha hai. Internet check karein.")
+        st.error("Market API Error: Data download nahi ho pa raha hai.")
         st.stop()
         
-    # CRITICAL FIX: Columns Ko Completely Flat Karna taaki Koi MultiIndex Na Bache
+    # FIX: Column headers ko check karne ke liye lowercase me convert karna
+    # Aur agar MultiIndex ho toh base level par le aana
     if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = [str(col[0]) for col in raw_df.columns]
+        raw_df.columns = [str(col[0]).lower() for col in raw_df.columns]
     else:
-        raw_df.columns = [str(col) for col in raw_df.columns]
-        
-    # Clean dataframe initialization
+        raw_df.columns = [str(col).lower() for col in raw_df.columns]
+
+    # Map mapping by position if exact names are distorted
     df = pd.DataFrame(index=raw_df.index)
-    df['Open'] = pd.to_numeric(raw_df['Open'], errors='coerce')
-    df['High'] = pd.to_numeric(raw_df['High'], errors='coerce')
-    df['Low'] = pd.to_numeric(raw_df['Low'], errors='coerce')
-    df['Close'] = pd.to_numeric(raw_df['Close'], errors='coerce')
     
-    # Forward fill missing bars if any to avoid blank dropping
+    # Safely mapping standard positions
+    try:
+        df['Open'] = pd.to_numeric(raw_df.iloc[:, 0], errors='coerce')
+        df['High'] = pd.to_numeric(raw_df.iloc[:, 1], errors='coerce')
+        df['Low'] = pd.to_numeric(raw_df.iloc[:, 2], errors='coerce')
+        df['Close'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
+    except Exception as e:
+        # Fallback names handling
+        for col in raw_df.columns:
+            if 'open' in col: df['Open'] = pd.to_numeric(raw_df[col], errors='coerce')
+            if 'high' in col: df['High'] = pd.to_numeric(raw_df[col], errors='coerce')
+            if 'low' in col: df['Low'] = pd.to_numeric(raw_df[col], errors='coerce')
+            if 'close' in col: df['Close'] = pd.to_numeric(raw_df[col], errors='coerce')
+
+    # Fill any empty spaces instantly to lock dataframe rows length
     df.ffill(inplace=True)
     df.bfill(inplace=True)
 
@@ -60,7 +71,6 @@ with st.spinner("Processing Data Engine & Flattening 1,000 Grid Nodes..."):
     
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    # Fill remaining NaNs instead of dropping rows (This guarantees screen won't be blank)
     df.fillna(0, inplace=True)
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
@@ -82,7 +92,7 @@ target_v = df_predict['Target'].to_numpy()
 # =====================================================================
 # ⚙️ 1,000 KALMAN SIMULATION RUNNER
 # =====================================================================
-q_grid = np.logspace(-4, -1, 10) # Optimized scale for faster loads
+q_grid = np.logspace(-4, -1, 10) 
 r_grid = np.logspace(-2, 1, 20)
 
 best_accuracy = 0.0
