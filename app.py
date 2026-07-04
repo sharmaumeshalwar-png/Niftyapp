@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Fixed Spread Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Dual Past Kalman Spread Engine - FIXED]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 10-Candle Target + **Kalman 10-Past & Kalman 25-Past Spread Optimization** + **FIXED: Pandas 2.0+ fillna Deprecation Bug Fixed** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Purana Core Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Original Weighted Momentum Core Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP REMOVED** + ML Score $[-5,5]$ + **Rollback to Past 25-Candle Target** + **Kalman 3 Completely Removed** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing Fixed Dual Past Kalman Layers & Injecting Spread Matrix..."):
+with st.spinner("Restoring Original Weighted Momentum Core Engine Matrices..."):
     # Bitcoin 1-HOUR Interval Data (730 Days max for hourly)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -48,7 +48,7 @@ with st.spinner("Processing Fixed Dual Past Kalman Layers & Injecting Spread Mat
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (Note: VWAP features are omitted entirely)
+    # Microstructure Features Space (VWAP parameters completely removed)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -57,9 +57,9 @@ with st.spinner("Processing Fixed Dual Past Kalman Layers & Injecting Spread Mat
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     # -----------------------------------------------------------------
-    # TARGET RULE (STRICT PAST 10 CANDLES - ZERO LEAKAGE)
+    # TARGET RULE (STRICT PAST 25 CANDLES CORE - ZERO LEAKAGE)
     # -----------------------------------------------------------------
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(10), 1, 0)
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
@@ -108,42 +108,28 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum
+    # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # -----------------------------------------------------------------
-    # 🎯 FIXED CORE CHASSIS: DUAL PAST KALMAN GENERATION (NO DEPRECATION BUG)
+    # UNBOUNDED EXPANSION ENGINE DIRECT ON PURA KALMAN 2 (WEIGHTED MOMENTUM)
     # -----------------------------------------------------------------
-    # Enforcing modern .bfill() syntax to bypass line 118/119 crashes smoothly
-    df_predict['WM_10_Past_Raw'] = df_predict['Weighted_Momentum'].shift(10).bfill()
-    df_predict['WM_25_Past_Raw'] = df_predict['Weighted_Momentum'].shift(25).bfill()
-
-    # Executing 0.50 initial Kalman filters over the past raw arrays
-    df_predict['Kalman_10_Past'] = apply_kalman_filter_custom(df_predict['WM_10_Past_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-    df_predict['Kalman_25_Past'] = apply_kalman_filter_custom(df_predict['WM_25_Past_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Deriving the core net tracking spread
-    df_predict['K3_Spread_Discovery'] = df_predict['Kalman_10_Past'] - df_predict['Kalman_25_Past']
-
-    # -----------------------------------------------------------------
-    # UNBOUNDED EXPANSION ENGINE BASED STRICTLY ON SPREAD VELOCITY
-    # -----------------------------------------------------------------
-    spread_values = df_predict['K3_Spread_Discovery'].to_numpy()
-    k3_unbounded_log = []
+    k2_values = df_predict['Weighted_Momentum'].to_numpy()
+    k2_unbounded_log = []
     unbounded_accumulator = 0  
 
-    for idx in range(len(spread_values)):
+    for idx in range(len(k2_values)):
         if idx == 0:
-            k3_unbounded_log.append(0)
+            k2_unbounded_log.append(0)
             continue
-        if spread_values[idx] > spread_values[idx - 1]: unbounded_accumulator += 1
-        elif spread_values[idx] < spread_values[idx - 1]: unbounded_accumulator -= 1
-        k3_unbounded_log.append(unbounded_accumulator)
+        if k2_values[idx] > k2_values[idx - 1]: unbounded_accumulator += 1
+        elif k2_values[idx] < k2_values[idx - 1]: unbounded_accumulator -= 1
+        k2_unbounded_log.append(unbounded_accumulator)
         
-    df_predict['K3_Open_Score'] = k3_unbounded_log
+    df_predict['K2_Open_Score'] = k2_unbounded_log
 
     # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_10_Past', 'Kalman_25_Past', 'K3_Spread_Discovery', 'K3_Open_Score', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'K2_Open_Score', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -151,14 +137,11 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Kalman_10_Past'] = display_df['Kalman_10_Past'].round(2) 
-    display_df['Kalman_25_Past'] = display_df['Kalman_25_Past'].round(2) 
-    display_df['K3_Spread_Discovery'] = display_df['K3_Spread_Discovery'].round(2) 
-    display_df['K3_Open_Score'] = display_df['K3_Open_Score'].astype(int)
+    display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
     
-    # Inverting completely via index flip to force the live active bar on Top Row
+    # Strictly flip index rows to freeze latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Dual Past Kalman Spread Matrix (Latest Active Hour Locked on Top Row)")
+    st.subheader(f"📋 Live Original Weighted Momentum Core Engine (Latest Active Hour on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
