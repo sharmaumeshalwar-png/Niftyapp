@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Silver Original Core Engine", layout="wide")
-st.title("⚡ Silver (SI=F) Live 1-Hour Standalone [Original Core Dataset Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Silver 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="India VIX Original Core Engine", layout="wide")
+st.title("⚡ India VIX Live 1-Hour Standalone [Original Core Dataset Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only India VIX 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,12 +28,12 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Restoring Your Original Stable Core Data Engine for Silver..."):
-    # Silver COMEX Futures 1-HOUR Interval Data (Ticker changed to SI=F)
-    raw_df = yf.download("SI=F", period="730d", interval="1h")
+with st.spinner("Restoring Your Original Stable Core Data Engine for India VIX..."):
+    # India VIX 1-HOUR Interval Data (Ticker: ^INDIAVIX)
+    raw_df = yf.download("^INDIAVIX", period="730d", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or NSE Market Closed. Please refresh the dashboard.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -100,8 +100,9 @@ else:
         scores_log.append(accumulator)
         raw_weighted_momentum_log.append(c_val - k_price_val)
         
-        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
-        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+        # Mapping signals for Volatility Spike/Crush
+        if accumulator == 5: final_signals.append("🟢 VOLATILITY SPIKE (Max Locked [5/5])")
+        elif accumulator == -5: final_signals.append("🔴 VOLATILITY CRUSH (Max Locked [-5/-5])")
         else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
 
     df_predict['d_ML_Signal'] = final_signals
