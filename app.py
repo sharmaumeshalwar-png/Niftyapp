@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Prob Crossover Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Probability Kalman Crossover Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + **🔥 NEW: 25-Candle Kalman Avg on Prob_Up (P=0.50)** + **🔥 NEW: Prob_Up vs Kalman_Avg Crossover Signal** + **Open Score Column REMOVED** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Momentum Crossover Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Weighted Momentum Kalman Crossover Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + **🔥 RESTORED: Pure Weighted Momentum (Kalman 2)** + **🔥 NEW: 25-Candle Kalman Avg on Weighted_Momentum (P=0.50)** + **🔥 NEW: Weighted_Momentum vs Kalman_Avg Crossover Signal** + **Open Score Column REMOVED** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Calibrating 25-Candle Probability Kalman Filters..."):
+with st.spinner("Calibrating Weighted Momentum Crossover Matrices..."):
     # Bitcoin 1-HOUR Interval Data
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -109,46 +109,47 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum
+    # 🎯 CORE RESTORED: [Kalman 2 Execution] Runs smoothly on Raw_Weighted_Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # -----------------------------------------------------------------
-    # 🎯 NEW CORE MATHEMATICAL OPERATION: KALMAN AVG ON PROB_UP (P=0.50)
+    # 🎯 NEW MATHEMATICAL OPERATION: KALMAN AVG ON WEIGHTED_MOMENTUM (P=0.50)
     # -----------------------------------------------------------------
-    # Creating a 25-candle historical lookback shift baseline for probability mapping
-    df_predict['Prob_Up_25H_Shift'] = df_predict['Prob_Up'].shift(25).bfill()
-    df_predict['Kalman_Prob_Avg'] = apply_kalman_filter_custom(df_predict['Prob_Up_25H_Shift'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    # Extracting the 25-candle historical shift from the pure Kalman 2 stream
+    df_predict['WM_25H_Shift'] = df_predict['Weighted_Momentum'].shift(25).bfill()
+    df_predict['Kalman_Mntm_Avg'] = apply_kalman_filter_custom(df_predict['WM_25H_Shift'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # -----------------------------------------------------------------
-    # DIRECT CROSSOVER ALERT ENGINE (PROB_UP vs KALMAN_PROB_AVG)
+    # PURE MOMENTUM CROSSOVER ALERT ENGINE (MOMENTUM vs KALMAN_MNTM_AVG)
     # -----------------------------------------------------------------
-    p_up_arr = df_predict['Prob_Up'].to_numpy()
-    k_avg_arr = df_predict['Kalman_Prob_Avg'].to_numpy()
+    wm_arr = df_predict['Weighted_Momentum'].to_numpy()
+    k_avg_arr = df_predict['Kalman_Mntm_Avg'].to_numpy()
     crossover_log = []
 
-    for idx in range(len(p_up_arr)):
-        if p_up_arr[idx] > k_avg_arr[idx]:
-            crossover_log.append("🚀 BUY ZONE (Prob > Kalman Avg)")
-        elif p_up_arr[idx] < k_avg_arr[idx]:
-            crossover_log.append("📉 SELL ZONE (Prob < Kalman Avg)")
+    for idx in range(len(wm_arr)):
+        if wm_arr[idx] > k_avg_arr[idx]:
+            crossover_log.append("🚀 BUY ZONE (Momentum > Kalman Avg)")
+        elif wm_arr[idx] < k_avg_arr[idx]:
+            crossover_log.append("📉 SELL ZONE (Momentum < Kalman Avg)")
         else:
             crossover_log.append("🔷 TIE ZONE")
 
     df_predict['Crossover_Signal'] = crossover_log
 
     # Formatting UI Structure (Open Score Removed completely)
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Kalman_Prob_Avg', 'Crossover_Signal', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_Mntm_Avg', 'Crossover_Signal', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Kalman_Prob_Avg'] = display_df['Kalman_Prob_Avg'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Kalman_Mntm_Avg'] = display_df['Kalman_Mntm_Avg'].round(2) 
     
     # Inverting via index flip sequence to lock the absolute latest candle on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Probability Kalman Crossover Dashboard (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Live Cleaned Weighted Momentum Kalman Crossover Matrix (Latest Hour Locked on Top)")
     st.dataframe(display_df, use_container_width=True, height=750)
