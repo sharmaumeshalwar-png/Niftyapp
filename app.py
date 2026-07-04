@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Past 100H No-Leakage Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Strict Past 100-Hour Momentum Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion on Kalman 2 + **🔥 FIXED: Strictly Past 100-Candle Momentum (Zero Future Leakage)** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Past 10H No-Leakage Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Strict Past 10-Hour Momentum Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion on Kalman 2 + **🔥 NEW FIXED: Strictly Past 10-Candle Momentum (Zero Future Leakage)** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Enforcing Pure Historical Anchors (Eliminating Future Leakage)..."):
+with st.spinner("Calibrating Engine for Fast 10-Hour Past Momentum Waves..."):
     # Bitcoin 1-HOUR Interval Data (730 Days max for hourly)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -63,10 +63,10 @@ with st.spinner("Enforcing Pure Historical Anchors (Eliminating Future Leakage).
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     # -----------------------------------------------------------------
-    # 🎯 STRICT PAST NO-LEAKAGE CORE ENGINE TARGET RULE:
-    # shift(100) with positive sign looks back at the PAST 100 candles.
+    # 🎯 STRICT PAST NO-LEAKAGE TARGET RULE (10 CANDLES):
+    # shift(10) looks back at the PAST 10 candles.
     # -----------------------------------------------------------------
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(100), 1, 0)
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(10), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target', 'VWAP'], inplace=True)
@@ -146,10 +146,11 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
     
     # Strictly flip index rows to freeze latest active hour on Top
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Strict Past 100H Momentum Matrix (Latest Hour Locked on Top)")
+    st.subheader(f"📋 Live Strict Past 10H Momentum Matrix (Latest Hour Locked on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
