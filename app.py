@@ -23,12 +23,24 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Training Parameters & Loading Deep Brain Matrix..."):
+    # Download data safetly
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
-    if len(raw_df) == 0: st.stop()
+    
+    if len(raw_df) == 0:
+        st.error("YFinance API down or no data found. Please refresh.")
+        st.stop()
+        
+    # FIX: MultiIndex Columns Ko Single Layer Me Flatten Karna
+    if isinstance(raw_df.columns, pd.MultiIndex):
+        raw_df.columns = [col[0] for col in raw_df.columns]
         
     df = pd.DataFrame(index=raw_df.index)
     for col in ['Open', 'High', 'Low', 'Close']:
-        df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+        if col in raw_df.columns:
+            df[col] = raw_df[col]
+        else:
+            st.error(f"Required column {col} missing from source.")
+            st.stop()
 
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
@@ -46,12 +58,16 @@ with st.spinner("Training Parameters & Loading Deep Brain Matrix..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
+if len(df) == 0:
+    st.error("Data matrix is empty after dropping NaNs. Increase the lookback period.")
+    st.stop()
+
 # 50:50 Train & Predict Matrix Split
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-# Base Training Core (Removed warm_start to prevent dimension mismatch crashes)
+# Base Training Core
 model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
 model_flow.fit(df_train[features_matrix], df_train['Target'])
 
@@ -70,27 +86,24 @@ accumulated_y = df_train['Target'].copy()
 for i in range(len(df_predict)):
     row_feats = X_predict_v[i].reshape(1, -1)
     
-    # Safe Parameter Refitting: Mixed memory technique to retain both classes [0, 1]
+    # Safe Parameter Refitting
     if i > 0 and i % 24 == 0:
         recent_chunk_X = df_predict[features_matrix].iloc[max(0, i-24):i]
         recent_chunk_y = df_predict['Target'].iloc[max(0, i-24):i]
         
-        # Append latest market memory safely
         accumulated_X = pd.concat([accumulated_X, recent_chunk_X]).iloc[-len(df_train):]
         accumulated_y = pd.concat([accumulated_y, recent_chunk_y]).iloc[-len(df_train):]
         
-        # Re-fit parameters safely without breaking shape constraints
         model_flow.fit(accumulated_X, accumulated_y)
         
     probs = model_flow.predict_proba(row_feats)[0]
     
-    # Handle single-class edge cases gracefully if they ever appear
     if len(probs) == 2:
         p_down, p_up = probs[0], probs[1]
     else:
         p_down, p_up = (1.0, 0.0) if model_flow.classes_[0] == 0 else (0.0, 1.0)
     
-    # STRICT TREND-LOCK FILTER (Aims for 95% target consistency)
+    # STRICT TREND-LOCK FILTER (95% target consistency alignment)
     if p_up >= 0.63:
         last_valid_view = f"📈 UP (Confidence: {p_up*100:.1f}%)"
         accumulator = min(5, accumulator + 1)
@@ -115,6 +128,12 @@ df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Wei
 # UI Layer Clean Frame
 clean_cols = ['a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 'Accumulator_Score', 'Live_View', 'ML_Dynamic_Training_Notes']
 display_df = df_predict[clean_cols].copy().iloc[::-1]
+
+# Format numerical indexes safetly
+display_df['a_Close'] = display_df['a_Close'].round(2)
+display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2)
+
 display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
 st.subheader("📋 Stateful Self-Learning Matrix (Latest Candle Locked on Top)")
