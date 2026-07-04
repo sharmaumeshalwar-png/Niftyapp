@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Raw K2 Top Row Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Absolute Top-Row Live Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion on Kalman 2 + **FIXED: Latest Active Candle Strictly On Top Row**")
+st.set_page_config(page_title="BTC 100H Macro Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [100-Hour Macro Lookahead Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion on Kalman 2 + **NEW: 100-Candle Lookahead Target Vector (+100 Hours)** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Flipping Matrix Array to Lock Latest Hour on Top..."):
+with st.spinner("Re-aligning Neural Engine to 100-Hour Forward Lookahead Horizons..."):
     # Bitcoin 1-HOUR Interval Data (Max historical period allowed by Yahoo Finance for 1h is 730 days)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -77,8 +77,11 @@ with st.spinner("Flipping Matrix Array to Lock Latest Hour on Top..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Strictly Fixed 25-Hour Directional Lookahead Target Logic
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    # -----------------------------------------------------------------
+    # 🎯 UPDATED CORE LOGIC: STRICT 100-CANDLE DIRECTIONAL LOOKAHEAD
+    # -----------------------------------------------------------------
+    # Comparing current price with price 100 bars ahead to catch the macro swings
+    df['Target'] = np.where(df['a_Close'].shift(-100) > df['a_Close'], 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target', 'VWAP'], inplace=True)
@@ -223,10 +226,9 @@ else:
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
     
-    # 🎯 FIX BLOCK: INVERTING THE DATAFRAME COMPLETELY VIA CHRONOLOGICAL INDEX FLIP
-    # isse absolute latest candle hamesha matrix ke pehle index (Top Row) par lock ho jayegi.
+    # Chronological index flip sequence execution to push latest hour directly to index 0
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Hourly BTC Standalone Engine (Latest Hour Locked on TOP Row)")
+    st.subheader(f"📋 Live 100-Hour Macro Target Matrix (Latest Active Hour on Top)")
     st.dataframe(display_df, use_container_width=True, height=750)
