@@ -2,11 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import requests
+from sklearn.ensemble import RandomForestClassifier  # ⚡ CRITICAL FIX: Global level par top par import kiya
 
 # Page Configuration
 st.set_page_config(page_title="BTC Breakout Core Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Original Copy with Multi-Node Redundancy:** 50:50 Split + **Binance & Kraken Dual Node (Anti-Timeout)** + Dynamic Buying/Selling Zone Breakout Tracker")
+st.write("🎯 **Original Copy with Multi-Node Redundancy:** 50:50 Split + Binance & Kraken Dual Node + **Fixed Global Import Scope**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -30,7 +31,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 @st.cache_data(ttl=60)
 def fetch_btc_fail_safe():
     """Fetches data from Binance with an automatic fallback to Kraken if it times out"""
-    # 1. TRY BINANCE NODE
     binance_url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 720}
     try:
@@ -50,18 +50,16 @@ def fetch_btc_fail_safe():
             df.set_index("Timestamp", inplace=True)
             return df
     except Exception:
-        pass # Silence error to trigger the backup node seamlessly
+        pass 
 
-    # 2. FALLBACK TO KRAKEN NODE (If Binance fails)
     kraken_url = "https://api.kraken.com/0/public/OHLC"
-    params = {"pair": "XBTUSD", "interval": 60} # 60 minutes = 1h
+    params = {"pair": "XBTUSD", "interval": 60} 
     try:
         response = requests.get(kraken_url, params=params, timeout=5)
         if response.status_code == 200:
             res_json = response.json()
             data = res_json['result']['XXBTZUSD']
             parsed_data = []
-            # Kraken array: [time, open, high, low, close, vwap, volume, count]
             for item in data[-720:]:
                 parsed_data.append({
                     "Timestamp": pd.to_datetime(item[0], unit='s'),
@@ -79,7 +77,7 @@ def fetch_btc_fail_safe():
 with st.spinner("Connecting to Global Nodes & Processing Breakout Matrix..."):
     df_raw = fetch_btc_fail_safe()
     if df_raw.empty:
-        st.error("🚨 Both Primary (Binance) and Backup (Kraken) endpoints are unreachable. Please check your internet connection or server firewall.")
+        st.error("🚨 Both Primary (Binance) and Backup (Kraken) endpoints are unreachable. Please check your internet connection.")
         st.stop()
         
     df = df_raw.copy()
@@ -113,7 +111,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) != 0:
-    from sklearn.ensemble import RandomForestClassifier
+    # Model configuration runs smoothly using the global import setup now
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model_flow.fit(X_train, y_train)
 
@@ -164,4 +162,28 @@ if len(X_predict) != 0:
         if w_moms[i] > 0:
             buying_zone_low = lows[i]  
         elif w_moms[i] < 0:
-            selling_zone_high =
+            selling_zone_high = highs[i] 
+
+        zone_status_log.append(f"🟢 Buy:{buying_zone_low:.0f} | 🔴 Sell:{selling_zone_high:.0f}")
+
+        if closes[i] > selling_zone_high and prob_ups[i] > 0.52:
+            breakout_signals.append("💥 BREAKOUT BUY (Resistance Broken)")
+        elif closes[i] < buying_zone_low and prob_downs[i] > 0.52:
+            breakout_signals.append("💥 BREAKOUT SELL (Support Broken)")
+        else:
+            breakout_signals.append("⚖️ Inside Zone Tracking")
+
+    df_predict['Live_Tracked_Zones'] = zone_status_log
+    df_predict['Zone_Break_Signal'] = breakout_signals
+
+    # Formatting UI Structure
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Live_Tracked_Zones', 'Zone_Break_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    display_df =
