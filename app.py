@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Institutional 10Y Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Day Standalone Triple Kalman [10-Year Institutional Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Daily Data + 10 Years Data Window (8Y Train / 2Y Predict) + Price Kalman + Fixed 25-Day Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Smooth Momentum | K3: Kalman 0.50 on Alpha Discovery Vector)")
+st.set_page_config(page_title="BTC Standalone 5M Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 5-Minute Standalone Triple Kalman [Scalping Alpha Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 5-Min Data + Strict 50:50 Train-Test Split + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Smooth Momentum | K3: Kalman 0.50 on Alpha Discovery Vector)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,9 +28,9 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing 10-Year Macro Data Window (8 Years Training Engine Alignment)..."):
-    # Bitcoin DAILY 10 Years Data Window to safely cover 8Y Train + 2Y Predict
-    raw_df = yf.download("BTC-USD", period="10y", interval="1d")
+with st.spinner("Aligning 5-Minute Triple Kalman Bitcoin Microstructure Matrices..."):
+    # Bitcoin 5-MINUTE Interval Data (Max period allowed by Yahoo Finance for 5m is 60 days)
+    raw_df = yf.download("BTC-USD", period="60d", interval="5m")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
@@ -54,7 +54,7 @@ with st.spinner("Processing 10-Year Macro Data Window (8 Years Training Engine A
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
     
     # -----------------------------------------------------------------
-    # DAILY SESSION VWAP COMPUTATION BLOCK
+    # INTRADAY TRUE VWAP COMPUTATION BLOCK (Resets Every Day)
     # -----------------------------------------------------------------
     typical_price = (df['High'] + df['Low'] + df['a_Close']) / 3
     df['TP_Vol'] = typical_price * df['Volume']
@@ -77,25 +77,16 @@ with st.spinner("Processing 10-Year Macro Data Window (8 Years Training Engine A
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Strictly Fixed 25-Day Directional Lookahead Target Logic
+    # Strictly Fixed 25-Candle Directional Lookahead Target Logic
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target', 'VWAP'], inplace=True)
 
 # =====================================================================
-# CHRONOLOGICAL SPLIT ENGINE (Strict 8 Years Training : 2 Years Prediction)
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
 # =====================================================================
-# Total trading days framework allocation
-total_available_days = len(df)
-approx_8_years_days = int(365.25 * 8)
-
-# Boundary safeguard to ensure we never overflow the dataset array bounds
-if total_available_days > approx_8_years_days:
-    split_idx = approx_8_years_days
-else:
-    # Fallback in case 10 years asset history has gaps
-    split_idx = int(total_available_days * 0.80)
+split_idx = int(len(df) * 0.50)
 
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -105,18 +96,18 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Insufficient historical timeline depth.")
+    st.error("Prediction matrix error. Dataframe split bounds mismatch.")
 else:
-    # RandomForest Model Training over massive 8-year structural matrix
+    # RandomForest Model Training
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=4,            # Slightly increased depth to absorb 8 years complexity securely
-        min_samples_leaf=2,     
+        max_depth=3,            
+        min_samples_leaf=1,     
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
-    # Raw Probabilities Prediction over the remaining 2-year cycle forward horizon
+    # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
     
     df_predict['Prob_Down'] = probabilities[:, 0]
@@ -187,14 +178,14 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Daily Filter)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 standard setting)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
     # -----------------------------------------------------------------
-    # [Kalman 3] ADVANCED PROBABILITY BIAS DISCOVERY CORE (2Y PREDICT HORIZON)
+    # [Kalman 3] ADVANCED PROBABILITY BIAS DISCOVERY CORE (5M INTERVAL)
     # -----------------------------------------------------------------
     # 1. Structural Deviation Vector (Kalman 2 - VWAP)
     df_predict['K2_Minus_VWAP'] = df_predict['Weighted_Momentum'] - df_predict['VWAP']
@@ -205,7 +196,7 @@ else:
     # 3. Dynamic Alpha Discovery Vector Generation
     df_predict['Alpha_Discovery_Base'] = df_predict['K2_Minus_VWAP'] * df_predict['Abs_Prob_Bias']
     
-    # 4. Applying standard Kalman Filter with initial_p=0.50 on the Alpha Vector Base
+    # 4. Applying standard Kalman Filter with initial_p=0.50 on the Discovery vector
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
         df_predict['Alpha_Discovery_Base'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
@@ -223,9 +214,9 @@ else:
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['Triple_Kalman_Discovery'] = display_df['Triple_Kalman_Discovery'].round(2) 
     
-    # Sorting to show most recent days on top rows
+    # Sorting to show most recent 5-min intervals on top rows
     display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d')
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Day BTC Standalone Engine (8Y Train / 2Y Prediction Parallel Discovery)")
+    st.subheader(f"📋 Live 5-Minute BTC Standalone Engine (50:50 Parallel Discovery Matrix)")
     st.dataframe(display_df, use_container_width=True, height=750)
