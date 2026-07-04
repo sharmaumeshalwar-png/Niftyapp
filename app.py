@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Triple Kalman Cascaded Smoothed Weighted Momentum (P=0.50 Mode)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Double Kalman Bitcoin Microstructure Matrices..."):
+with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrices..."):
     # Bitcoin Hourly 2 Years Window
     raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
@@ -102,7 +102,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL PROCESSING)
+    # LIVE TREND-LOCK CIRCUIT (DOUBLE/TRIPLE KALMAN SIGNAL PROCESSING)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -166,11 +166,14 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Weighted Momentum ke upar ALAG se Kalman filter chalaya strictly 0.50 se
+    # [Kalman 2] Weighted Momentum ke upar Kalman filter strictly 0.50 se
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
+    # [Kalman 3] NEW ADDITION: 2nd Kalman (Weighted_Momentum) ke upar ek aur baar Kalman strictly 0.50 se
+    df_predict['Triple_Kalman_Momentum'] = apply_kalman_filter_custom(df_predict['Weighted_Momentum'].values, initial_p=0.50)
+
     # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Triple_Kalman_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -179,10 +182,11 @@ else:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Triple_Kalman_Momentum'] = display_df['Triple_Kalman_Momentum'].round(2) 
     
     # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Kalman 0.50 Matrix Mode)")
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Triple Kalman 0.50 Cascade Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
