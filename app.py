@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [P=2.0 Momentum Mode]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: P=0.50 | K3: P=2.0 strictly on Weighted Momentum base)")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Strict 2.0 Tuning]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: Standard | K3: P=2.0, Q=2.0, R=2.0 strictly on Weighted Momentum base)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -102,7 +102,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (TRIPLE KALMAN SIGNAL PROCESSING)
+    # LIVE TREND-LOCK CIRCUIT (TRIPLE KALMAN SIGNAL SIGNALING)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -166,16 +166,17 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Mode)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Standard Tuning)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
-    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly with initial_p=2.0 strictly
+    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly
+    # Strictly assigned: initial_p=2.0, q_val=2.0, r_val=2.0 as requested!
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
-        initial_p=2.0, q_val=0.001, r_val=0.1
+        initial_p=2.0, q_val=2.0, r_val=2.0
     )
 
     # Display Configuration
