@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [True Breakout Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Smooth | K3: Pure Momentum Price Action Tracker)")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [P=2.0 Momentum Mode]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum Kalman (K2: P=0.50 | K3: P=2.0 strictly on Weighted Momentum base)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -25,32 +25,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
-
-# =====================================================================
-# ADVANCED KALMAN 3 ENGINE (True Peak Breakout & Momentum Sync)
-# =====================================================================
-def apply_kalman_3_true_breakout(data_array, initial_p=250.0, q_val=0.15, r_val=0.005):
-    if len(data_array) == 0:
-        return []
-    
-    x = data_array[0]
-    p = initial_p
-    filtered_values = []
-    
-    for z in data_array:
-        # CRITERIA: Agar current value pichle breakout points se badhi hai, to instant alignment with price
-        if z >= x:
-            x = z  # No smoothing, pure raw discovery track
-            p = initial_p
-        else:
-            # Agar momentum down hai to ye sirf utna hi niche aayega jitna Kalman calculation ise smooth target degi
-            p = p + q_val
-            k = p / (p + r_val)
-            x = x + k * (z - x)
-            p = (1 - k) * p
-            
         filtered_values.append(x)
     return filtered_values
 
@@ -192,18 +166,16 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Smooth Mode)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Mode)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
-    # [Kalman 3] TRUE BREAKOUT DETECTION: Parallelly runs on Raw_Weighted_Momentum
-    df_predict['Triple_Kalman_Discovery'] = apply_kalman_3_true_breakout(
+    # [Kalman 3] ALSO Runs on Raw_Weighted_Momentum directly with initial_p=2.0 strictly
+    df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
-        initial_p=250.0, 
-        q_val=0.15, 
-        r_val=0.005
+        initial_p=2.0, q_val=0.001, r_val=0.1
     )
 
     # Display Configuration
@@ -222,5 +194,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Breakout Matrix Mode)")
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Dual Momentum Matrix Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
