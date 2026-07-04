@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Original Core Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Original Core Dataset Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="Silver Original Core Engine", layout="wide")
+st.title("⚡ Silver (SI=F) Live 1-Hour Standalone [Original Core Dataset Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Silver 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,12 +28,12 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Restoring Your Original Stable Core Data Engine..."):
-    # Bitcoin 1-HOUR Interval Data
-    raw_df = yf.download("BTC-USD", period="730d", interval="1h")
+with st.spinner("Restoring Your Original Stable Core Data Engine for Silver..."):
+    # Silver COMEX Futures 1-HOUR Interval Data (Ticker changed to SI=F)
+    raw_df = yf.download("SI=F", period="730d", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
