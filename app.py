@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Continuous Crossover Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [100% Correct Continuous Momentum Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + **🔥 CRITICAL FIX: Full continuous array memory for Weighted_Momentum to stop Wrong Data** + **25-Candle Kalman Avg (P=0.50)** + **Weighted_Momentum Crossover Signal** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Original Core Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Original Core Dataset Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing Continuous Mathematical Vectors (Fixing Data Distortion)..."):
+with st.spinner("Restoring Your Original Stable Core Data Engine..."):
     # Bitcoin 1-HOUR Interval Data
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -43,18 +43,12 @@ with st.spinner("Processing Continuous Mathematical Vectors (Fixing Data Distort
 
     df.index = pd.to_datetime(df.index)
 
-    # Data-Gap Cleaner Filter: Removing zero volume hours
-    df = df[df['Volume'] > 0].copy()
-
-    # -----------------------------------------------------------------
-    # 🔥 CRITICAL DATA FIX: CALCULATING ALL KALMAN LAYERS ON FULL LENGTH
-    # -----------------------------------------------------------------
     # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space
+    # Microstructure Features Space (Note: VWAP features are completely omitted)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -62,34 +56,15 @@ with st.spinner("Processing Continuous Mathematical Vectors (Fixing Data Distort
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Rule (Strict Past 25 Candles Core - Zero Leakage)
+    # -----------------------------------------------------------------
+    # TARGET RULE (STRICT PAST 25 CANDLES - ZERO LEAKAGE)
+    # -----------------------------------------------------------------
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    # Generating the Pure Kalman 2 Weighted Momentum on full continuous length to protect memory states
-    df['Weighted_Momentum'] = apply_kalman_filter_custom(df['c_Combined'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-    
-    # Generating the 25-Candle Kalman Avg Filter on full continuous series
-    df['WM_25H_Shift'] = df['Weighted_Momentum'].shift(25).bfill()
-    df['Kalman_Mntm_Avg'] = apply_kalman_filter_custom(df['WM_25H_Shift'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Pure Momentum Crossover Check applied seamlessly
-    wm_arr_full = df['Weighted_Momentum'].to_numpy()
-    k_avg_arr_full = df['Kalman_Mntm_Avg'].to_numpy()
-    crossover_log_full = []
-
-    for idx in range(len(wm_arr_full)):
-        if wm_arr_full[idx] > k_avg_arr_full[idx]:
-            crossover_log_full.append("🚀 BUY ZONE (Momentum > Kalman Avg)")
-        elif wm_arr_full[idx] < k_avg_arr_full[idx]:
-            crossover_log_full.append("📉 SELL ZONE (Momentum < Kalman Avg)")
-        else:
-            crossover_log_full.append("🔷 TIE ZONE")
-    df['Crossover_Signal'] = crossover_log_full
-
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio on pre-computed correct data)
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -109,18 +84,21 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # Live Signals & Accumulators
-    final_signals, scores_log = [], []
+    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
-        p_up, p_down = prob_ups[i], prob_downs[i]
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
         
         if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
         elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
@@ -128,9 +106,13 @@ else:
 
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_Mntm_Avg', 'Crossover_Signal', 'd_ML_Signal']
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Formatting UI Structure (All new modifications removed completely)
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -138,11 +120,10 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Kalman_Mntm_Avg'] = display_df['Kalman_Mntm_Avg'].round(2) 
     
-    # Inverting via index flip sequence to lock the absolute latest candle on Top Row
+    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Continuous Array Momentum Crossover Matrix (100% Fixed & Stable Data on Top Row)")
+    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
