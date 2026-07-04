@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Pure Crypto VIX 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Double Kalman [Pure Crypto VIX Engine]")
-st.write("🎯 **Aapki Custom Setting:** BTC Price + Native Crypto VIX Index Sync + Fixed 25-Candle Window + 3-Regime Dynamic Barriers + Double Kalman Smooth Momentum (P=0.50)")
+st.set_page_config(page_title="Reliance Kalman 0.50 Engine", layout="wide")
+st.title("💼 Reliance Industries (RELIANCE) Live 1-Hour Double Kalman [Pure Native Volatility Engine]")
+st.write("🎯 **Aapki Custom Setting:** Reliance NSE Stock Data + Native Volatility Index Sync + Fixed 25-Candle Window + 3-Regime Dynamic Barriers + Double Kalman Smooth Momentum (P=0.50)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Adaptive Noise Kalman Filter)
@@ -20,14 +20,14 @@ def apply_kalman_filter_adaptive(data_array, regimes_array, initial_p=50.0):
     
     filtered_values = []
     for z, regime in zip(data_array, regimes_array):
-        # Strictly adaptive noise selection based on Crypto VIX regime
-        if regime == 2:    # Hyper Crypto Liquid Expansion (High Volatility)
-            q = 0.005      # Ultra fast tracking for massive breakouts
+        # Strictly adaptive noise selection based on Reliance Native Volatility regime
+        if regime == 2:    # Hyper Liquid Momentum Expansion (High Volatility)
+            q = 0.005      # Ultra-responsive tracking for rapid institutional shifts
             r = 0.05       
-        elif regime == 0:  # Dry Compression Area (Low Volatility)
-            q = 0.0005     # Smooth out chop noise
+        elif regime == 0:  # Tight Volume Compression (Low Volatility)
+            q = 0.0005     # Eliminate minor sideways retail noise
             r = 0.2        
-        else:              # Standard Balance Zone
+        else:              # Standard Balanced Trading Range
             q = 0.001
             r = 0.1
             
@@ -38,12 +38,12 @@ def apply_kalman_filter_adaptive(data_array, regimes_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Building Native Crypto Volatility & Price Matrices..."):
-    # Download raw BTC data (2 Years Window)
-    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
+with st.spinner("Building Native Reliance Volatility & Pricing Matrices..."):
+    # Download raw Reliance NSE data (2 Years Window)
+    raw_df = yf.download("RELIANCE.NS", period="2y", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
     # MultiIndex Framework Elimination
@@ -59,7 +59,7 @@ with st.spinner("Building Native Crypto Volatility & Price Matrices..."):
     df['a_Close'] = df['Close']
     
     # =====================================================================
-    # MATHEMATICAL ENGINE: PURE NATIVE CRYPTO VIX CALCULATION (25-Candle Structure)
+    # MATHEMATICAL ENGINE: PURE NATIVE VOLATILITY VIX CALCULATION (25-Candle Structure)
     # =====================================================================
     # Step A: True Range Calculation
     df['H_L'] = df['High'] - df['Low']
@@ -68,24 +68,24 @@ with st.spinner("Building Native Crypto Volatility & Price Matrices..."):
     df['True_Range'] = df[['H_L', 'H_PC', 'L_PC']].max(axis=1)
     
     # Step B: Rolling ATR Over Fixed 25-Candle Window
-    df['Crypto_ATR_25'] = df['True_Range'].rolling(window=25).mean()
+    df['Stock_ATR_25'] = df['True_Range'].rolling(window=25).mean()
     
     # Step C: Standard Deviation Volatility of Returns Over Fixed 25-Candle Window
     df['Log_Ret'] = np.log(df['a_Close'] / df['a_Close'].shift(1))
-    df['Crypto_Std_25'] = df['Log_Ret'].rolling(window=25).std() * np.sqrt(24 * 365) * 100 # Annualized Intraday Scale
+    df['Stock_Std_25'] = df['Log_Ret'].rolling(window=25).std() * np.sqrt(24 * 365) * 100 # Annualized Intraday Scale
     
-    # Step D: Synthetic Pure Crypto VIX Vector Composition
-    df['Crypto_VIX'] = (df['Crypto_ATR_25'] / df['a_Close'] * 1000) + (df['Crypto_Std_25'] * 0.1)
-    df['Crypto_VIX'] = df['Crypto_VIX'].ffill().fillna(25.0)
+    # Step D: Synthetic Pure Reliance VIX Vector Composition
+    df['Stock_VIX'] = (df['Stock_ATR_25'] / df['a_Close'] * 1000) + (df['Stock_Std_25'] * 0.1)
+    df['Stock_VIX'] = df['Stock_VIX'].ffill().fillna(20.0)
 
     # Strictly Fixed 25-Candle Rolling Feature for the Volatility Matrix
-    df['VIX_Rolling_25'] = df['Crypto_VIX'].rolling(window=25).mean().ffill().fillna(25.0)
+    df['VIX_Rolling_25'] = df['Stock_VIX'].rolling(window=25).mean().ffill().fillna(20.0)
 
-    # STRICT NATIVE CRYPTO VOLATILITY 3-REGIME MAPPING BASED ON PERCENTILES
-    vix_low = df['Crypto_VIX'].quantile(0.30)
-    vix_high = df['Crypto_VIX'].quantile(0.85)
+    # STRICT NATIVE STOCK VOLATILITY 3-REGIME MAPPING BASED ON PERCENTILES
+    vix_low = df['Stock_VIX'].quantile(0.30)
+    vix_high = df['Stock_VIX'].quantile(0.85)
     
-    df['VIX_Regime'] = np.where(df['Crypto_VIX'] < vix_low, 0, np.where(df['Crypto_VIX'] <= vix_high, 1, 2))
+    df['VIX_Regime'] = np.where(df['Stock_VIX'] < vix_low, 0, np.where(df['Stock_VIX'] <= vix_high, 1, 2))
 
     # Base Matrix Definition (Price Kalman 1 Active)
     df['b_Kalman_Price'] = apply_kalman_filter_adaptive(df['a_Close'].values, df['VIX_Regime'].values, initial_p=50.0)
@@ -109,7 +109,7 @@ with st.spinner("Building Native Crypto Volatility & Price Matrices..."):
     # Clean temporary columns
     df.drop(columns=['H_L', 'H_PC', 'L_PC', 'True_Range', 'Log_Ret'], inplace=True, errors='ignore')
     
-    # Matrix inputs updated with Crypto VIX Parameters
+    # Matrix inputs updated with Native Volatility Parameters
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'VIX_Regime', 'VIX_Rolling_25']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
@@ -168,11 +168,11 @@ else:
         k_price_val = kalmans_price[i]
         current_regime = vix_regimes[i]
 
-        # NATIVE CRYPTO DYNAMIC OVERRIDES FOR ACTIVATION BARRIERS
-        if current_regime == 2:      # Hyper Expansion Expansion Panic
-            barrier = 0.62           # Rigid entry block to bypass false volatility spikes
-        elif current_regime == 0:    # Dry Compression Area
-            barrier = 0.52           # Sensitive trigger for breakout validation
+        # NATIVE EQUITIES DYNAMIC OVERRIDES FOR ACTIVATION BARRIERS
+        if current_regime == 2:      # High Volatility Institutional Expansion
+            barrier = 0.62           # Strict checkpoint to safeguard against institutional traps
+        elif current_regime == 0:    # Low Volatility Sidechain Compression
+            barrier = 0.52           # High sensitivity tracking for early accumulation breakout
         else:                        # Balanced Trade Zone
             barrier = 0.55
 
@@ -189,7 +189,7 @@ else:
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
-        regime_label = "💥 CRYPTO PANIC" if current_regime == 2 else ("⚖️ NORMAL" if current_regime == 1 else "😴 COMPRESSION")
+        regime_label = "💥 HIGH VOL" if current_regime == 2 else ("⚖️ NORMAL" if current_regime == 1 else "😴 COMPRESSION")
 
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
@@ -224,8 +224,8 @@ else:
     df_predict['Weighted_Momentum'] = apply_kalman_filter_adaptive(df_predict['Raw_Weighted_Momentum'].values, df_predict['VIX_Regime'].values, initial_p=0.50)
 
     # Display Configuration
-    df_predict['Crypto_VIX'] = df_predict['Crypto_VIX'].round(2)
-    clean_display_cols = ['Crypto_VIX', 'VIX_Rolling_25', 'VIX_Regime', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    df_predict['Stock_VIX'] = df_predict['Stock_VIX'].round(2)
+    clean_display_cols = ['Stock_VIX', 'VIX_Rolling_25', 'VIX_Regime', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['VIX_Rolling_25'] = display_df['VIX_Rolling_25'].round(2)
@@ -240,5 +240,5 @@ else:
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Matrix (Native Crypto Volatility VIX Architecture)")
+    st.subheader(f"📋 Live 1-Hour Reliance Matrix (Native Volatility Adaptive Architecture)")
     st.dataframe(display_df, use_container_width=True, height=750)
