@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Raw K2 Hourly Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Raw Kalman 2 Hourly Unbounded Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion Rule Applied Directly on Weighted_Momentum (Kalman 2)")
+st.set_page_config(page_title="BTC Raw K2 Top Row Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Absolute Top-Row Live Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + Velocity Useful_VWAP + ML Score $[-5,5]$ + Unbounded Open Expansion on Kalman 2 + **FIXED: Latest Active Candle Strictly On Top Row**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 1-Hour Temporal Triple Kalman Bitcoin Matrices..."):
+with st.spinner("Flipping Matrix Array to Lock Latest Hour on Top..."):
     # Bitcoin 1-HOUR Interval Data (Max historical period allowed by Yahoo Finance for 1h is 730 days)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
@@ -96,7 +96,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error. Hourly timeframe data split bounds mismatch.")
+    st.error("Prediction matrix error. Hourly data bounds split mismatch.")
 else:
     # RandomForest Model Training
     model_flow = RandomForestClassifier(
@@ -202,11 +202,10 @@ else:
             k2_unbounded_log.append(0)
             continue
             
-        # Directional checks directly tracked on Kalman 2 (Weighted Momentum Vector)
         if k2_values[idx] > k2_values[idx - 1]:
-            unbounded_accumulator += 1   # Open expansion upside
+            unbounded_accumulator += 1   # Open growth upside
         elif k2_values[idx] < k2_values[idx - 1]:
-            unbounded_accumulator -= 1   # Open expansion downside
+            unbounded_accumulator -= 1   # Open growth downside
             
         k2_unbounded_log.append(unbounded_accumulator)
         
@@ -220,4 +219,14 @@ else:
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
+    
+    # 🎯 FIX BLOCK: INVERTING THE DATAFRAME COMPLETELY VIA CHRONOLOGICAL INDEX FLIP
+    # isse absolute latest candle hamesha matrix ke pehle index (Top Row) par lock ho jayegi.
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Hourly BTC Standalone Engine (Latest Hour Locked on TOP Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
