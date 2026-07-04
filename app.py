@@ -1,13 +1,12 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
+import requests  # Directly fetching from Binance without yfinance glitches
 
 # Page Configuration
 st.set_page_config(page_title="BTC Original Core Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Engine")
-st.write("🎯 **Original Copy:** Strictly 50:50 Split + VWAP Removed + Strictly Past 25-Candle Target + Original Weighted Momentum Restored")
+st.write("🎯 **Original Copy:** Strictly 50:50 Split + Connected to Binance Core API (Zero Blank Screen Bug) + Original Score Restored")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,24 +27,39 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Restoring Your Original Data Engine..."):
-    # ⚡ CRITICAL FIX FOR 2026: multi_level_index=False prevents blank screen issue
-    raw_df = yf.download("BTC-USD", period="730d", interval="1h", multi_level_index=False)
+@st.cache_data(ttl=60)
+def fetch_btc_from_binance():
+    """Fetches stable 1-hour spot data directly from Binance public channels"""
+    url = "https://api.binance.com/api/v3/klines"
+    params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 750}
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        # Parse Binance structure: [Time, Open, High, Low, Close, Volume, ...]
+        parsed_data = []
+        for item in data:
+            parsed_data.append({
+                "Timestamp": pd.to_datetime(item[0], unit='ms'),
+                "Open": float(item[1]),
+                "High": float(item[2]),
+                "Low": float(item[3]),
+                "Close": float(item[4])
+            })
+        df = pd.DataFrame(parsed_data)
+        df.set_index("Timestamp", inplace=True)
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
+with st.spinner("Restoring Your Original Data Engine via Binance Global Node..."):
+    df_raw = fetch_btc_from_binance()
     
-    if len(raw_df) == 0:
-        st.error("YFinance API Timeout. Please refresh the dashboard.")
+    if df_raw.empty:
+        st.error("Binance Node Server Timeout. Internet connectivity issue or API restriction. Please reload.")
         st.stop()
         
-    if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = raw_df.columns.get_level_values(0)
-        
-    df = pd.DataFrame(index=raw_df.index)
-    df['Open'] = raw_df['Open']
-    df['High'] = raw_df['High']
-    df['Low'] = raw_df['Low']
-    df['Close'] = raw_df['Close']
-
-    df.index = pd.to_datetime(df.index)
+    df = df_raw.copy()
 
     # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
@@ -76,7 +90,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error.")
+    st.error("Prediction matrix error. Insufficient dataset elements.")
 else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
