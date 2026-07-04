@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Cleaned Vol-Momentum Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Volume / Weighted Momentum Ratio Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + ML Score $[-5,5]$ + Past 25-Candle Target + Volume divided by Weighted Momentum + **🔥 FIXED: Missing/Zero Volume Data-Gap Cleaner Filter Enabled** + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Purana Core Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone [Original Weighted Momentum Core Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + 50:50 Split + **VWAP REMOVED** + ML Score $[-5,5]$ + **Rollback to Past 25-Candle Target** + **Kalman 3 Completely Removed** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,8 +28,8 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Cleansing Yahoo Finance Data Gaps & Injecting Ratio Engine..."):
-    # Bitcoin 1-HOUR Interval Data
+with st.spinner("Restoring Original Weighted Momentum Core Engine Matrices..."):
+    # Bitcoin 1-HOUR Interval Data (730 Days max for hourly)
     raw_df = yf.download("BTC-USD", period="730d", interval="1h")
     
     if len(raw_df) == 0:
@@ -43,17 +43,12 @@ with st.spinner("Cleansing Yahoo Finance Data Gaps & Injecting Ratio Engine...")
 
     df.index = pd.to_datetime(df.index)
 
-    # -----------------------------------------------------------------
-    # 🔥 DATA-GAP CLEANER FILTER: Dropping rows where Volume is 0 or NaN
-    # -----------------------------------------------------------------
-    df = df[df['Volume'] > 0].copy()
-
     # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space
+    # Microstructure Features Space (VWAP parameters completely removed)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -61,7 +56,9 @@ with st.spinner("Cleansing Yahoo Finance Data Gaps & Injecting Ratio Engine...")
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Target Rule (Strict Past 25 Candles Core - Zero Leakage)
+    # -----------------------------------------------------------------
+    # TARGET RULE (STRICT PAST 25 CANDLES CORE - ZERO LEAKAGE)
+    # -----------------------------------------------------------------
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -111,29 +108,28 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum
+    # [Kalman 2 Execution] Runs on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # 🎯 RATIO CONFIGURATION: VOLUME / WEIGHTED MOMENTUM
-    df_predict['Vol_Mntm_Ratio'] = df_predict['Volume'] / (df_predict['Weighted_Momentum'] + 1e-5)
-
-    # Unbounded expansion tracking calculation
-    ratio_values = df_predict['Vol_Mntm_Ratio'].to_numpy()
-    ratio_unbounded_log = []
+    # -----------------------------------------------------------------
+    # UNBOUNDED EXPANSION ENGINE DIRECT ON PURA KALMAN 2 (WEIGHTED MOMENTUM)
+    # -----------------------------------------------------------------
+    k2_values = df_predict['Weighted_Momentum'].to_numpy()
+    k2_unbounded_log = []
     unbounded_accumulator = 0  
 
-    for idx in range(len(ratio_values)):
+    for idx in range(len(k2_values)):
         if idx == 0:
-            ratio_unbounded_log.append(0)
+            k2_unbounded_log.append(0)
             continue
-        if ratio_values[idx] > ratio_values[idx - 1]: unbounded_accumulator += 1
-        elif ratio_values[idx] < ratio_values[idx - 1]: unbounded_accumulator -= 1
-        ratio_unbounded_log.append(unbounded_accumulator)
+        if k2_values[idx] > k2_values[idx - 1]: unbounded_accumulator += 1
+        elif k2_values[idx] < k2_values[idx - 1]: unbounded_accumulator -= 1
+        k2_unbounded_log.append(unbounded_accumulator)
         
-    df_predict['K2_Open_Score'] = ratio_unbounded_log
+    df_predict['K2_Open_Score'] = k2_unbounded_log
 
     # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Vol_Mntm_Ratio', 'K2_Open_Score', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'K2_Open_Score', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -141,12 +137,11 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Vol_Mntm_Ratio'] = display_df['Vol_Mntm_Ratio'].round(2) 
     display_df['K2_Open_Score'] = display_df['K2_Open_Score'].astype(int)
     
-    # Inverting via index flip sequence to lock the absolute latest candle on Top Row
+    # Strictly flip index rows to freeze latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Cleaned Volume/Weighted Momentum Ratio Dashboard (No Zero-Volume Gaps)")
+    st.subheader(f"📋 Live Original Weighted Momentum Core Engine (Latest Active Hour on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
