@@ -6,8 +6,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Probability-VWAP Matrix]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Kalman on Close-Kalman1 | K3: Kalman 0.50 on [(Prob_Up - Prob_Down) * (Close - VWAP)])")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Cascade K2-VWAP]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Kalman on Close-Kalman1 | K3: Kalman 0.50 on strictly [Kalman2 - VWAP] vector)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -114,7 +114,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (TRIPLE KALMAN SIGNAL SIGNALING)
+    # LIVE TREND-LOCK CIRCUIT (TRIPLE KALMAN SIGNAL PROCESSING)
     # =====================================================================
     final_signals = []
     scores_log = []
@@ -185,16 +185,13 @@ else:
     )
 
     # -----------------------------------------------------------------
-    # [Kalman 3] NEW CORE: (Prob_Up - Prob_Down) * (Close - VWAP)
+    # [Kalman 3] STRICT CASCADING BASE: (Kalman 2 - VWAP) Vector
     # -----------------------------------------------------------------
-    prob_differential = df_predict['Prob_Up'] - df_predict['Prob_Down']
-    close_minus_vwap = df_predict['a_Close'] - df_predict['VWAP']
+    df_predict['K2_Minus_VWAP_Strict'] = df_predict['Weighted_Momentum'] - df_predict['VWAP']
     
-    df_predict['Prob_VWAP_Hybrid_Base'] = prob_differential * close_minus_vwap
-    
-    # Kalman Filter assigned with initial_p=0.50 on the hybrid vector base
+    # Applying standard Kalman Filter with initial_p=0.50 on the correct base vector
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
-        df_predict['Prob_VWAP_Hybrid_Base'].values, 
+        df_predict['K2_Minus_VWAP_Strict'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
@@ -208,11 +205,11 @@ else:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Triple_Kalman_Discovery'] = display_df['Triple_Kalman_Discovery'].round(4) # Extended decimal for sensitive product values
+    display_df['Triple_Kalman_Discovery'] = display_df['Triple_Kalman_Discovery'].round(2) 
     
     # Sorting to get latest ticks on top
     display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Hybrid Momentum Mode)")
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Cascade Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
