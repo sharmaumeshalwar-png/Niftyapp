@@ -4,15 +4,21 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="BTC Fixed Machine Engine", layout="wide")
-st.title("🧠 BTC Live 1-Hour [1,000-Fold Kalman Vector Engine]")
+# Page Configuration
+st.set_page_config(page_title="BTC Original Core Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Engine")
+st.write("🎯 **Original Copy:** Strictly 50:50 Split + VWAP Removed + Strictly Past 25-Candle Target + Original Weighted Momentum Restored")
 
 # =====================================================================
-# FLEXIBLE KALMAN FILTER FUNCTION
+# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0: return np.array([])
-    x, p, q, r = data_array[0], initial_p, q_val, r_val
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = initial_p  
+    q = q_val      
+    r = r_val        
     filtered_values = []
     for z in data_array:
         p = p + q
@@ -20,127 +26,106 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values.append(x)
-    return np.array(filtered_values)
+    return filtered_values
 
-with st.spinner("Executing Super-Fast Multi-Index Grid Extraction..."):
-    # Download data
-    raw_df = yf.download("BTC-USD", period="365d", interval="1h")
+with st.spinner("Restoring Your Original Data Engine..."):
+    # ⚡ CRITICAL FIX FOR 2026: multi_level_index=False prevents blank screen issue
+    raw_df = yf.download("BTC-USD", period="730d", interval="1h", multi_level_index=False)
     
-    if raw_df.empty:
-        st.error("Market API Error. Please reload.")
+    if len(raw_df) == 0:
+        st.error("YFinance API Timeout. Please refresh the dashboard.")
         st.stop()
         
-    # Standardizing multi-index structure to absolute single indices
     if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
-    else:
-        raw_df.columns = [str(col).upper() for col in raw_df.columns]
+        raw_df.columns = raw_df.columns.get_level_values(0)
         
     df = pd.DataFrame(index=raw_df.index)
-    df['Open'] = pd.to_numeric(raw_df['OPEN'].values.flatten(), errors='coerce')
-    df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
-    df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
-    df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
+    df['Open'] = raw_df['Open']
+    df['High'] = raw_df['High']
+    df['Low'] = raw_df['Low']
+    df['Close'] = raw_df['Close']
 
-    df.ffill(inplace=True)
-    df.bfill(inplace=True)
+    df.index = pd.to_datetime(df.index)
 
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # 5 Big Parameters Taught to Model
+    # Microstructure Features Space
+    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Target Rule
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
-# 50:50 Dynamic Partitions
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
-df_train = df.iloc[:split_idx].copy()
+df_train = df.iloc[:split_idx]
+X_train = df_train[features_matrix].copy()
+y_train = df_train['Target'].copy()
+
 df_predict = df.iloc[split_idx:].copy()
+X_predict = df_predict[features_matrix].copy()
 
-model_flow = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=42)
-model_flow.fit(df_train[features_matrix], df_train['Target'])
+if len(X_predict) == 0:
+    st.error("Prediction matrix error.")
+else:
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
+    model_flow.fit(X_train, y_train)
 
-probabilities = model_flow.predict_proba(df_predict[features_matrix])
-df_predict['Prob_Down'] = probabilities[:, 0]
-df_predict['Prob_Up'] = probabilities[:, 1]
+    probabilities = model_flow.predict_proba(X_predict)
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
 
-raw_weighted_momentum = (df_predict['a_Close'] - df_predict['b_Kalman_Price']).to_numpy()
-target_v = df_predict['Target'].to_numpy()
-
-# =====================================================================
-# ⚙️ FAST VECTOR SIMULATION Engine (Replaces 1,000 slow loops)
-# =====================================================================
-# Grid size: 10 * 100 = 1,000 configurations simulated inside mathematical array
-q_grid = np.logspace(-4, -1, 10)
-r_grid = np.logspace(-2, 1, 100)
-
-best_accuracy = 0.0
-best_weighted_momentum_series = np.zeros_like(raw_weighted_momentum)
-best_q, best_r = 0.001, 0.1
-
-for q_sim in q_grid:
-    for r_sim in r_grid:
-        candidate_kalman = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=q_sim, r_val=r_sim)
-        if len(candidate_kalman) == 0: continue
-        sim_accuracy = np.mean((candidate_kalman > 0).astype(int) == target_v)
-        if sim_accuracy > best_accuracy:
-            best_accuracy = sim_accuracy
-            best_weighted_momentum_series = candidate_kalman
-            best_q = q_sim
-            best_r = r_sim
-
-# =====================================================================
-# SIGNAL OUTPUT FIELD
-# =====================================================================
-view_log, brain_notes, accumulator_log = [], [], []
-accumulator = 0
-last_valid_view = "⚪ HOLD"
-
-prob_ups = df_predict['Prob_Up'].to_numpy()
-prob_downs = df_predict['Prob_Down'].to_numpy()
-
-for i in range(len(prob_ups)):
-    p_up, p_down = prob_ups[i], prob_downs[i]
-    k2_val = best_weighted_momentum_series[i]
+    # Live Signals & Accumulators
+    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
+    accumulator = 0
     
-    # Strictly checks both ML probability and Best Kalman Variance Match
-    if p_up >= 0.60 and k2_val > 0:
-        last_valid_view = f"📈 UP (Confidence: {p_up*100:.1f}%)"
-        accumulator = min(5, accumulator + 1)
-        note = f"🎯 [95% TARGET LOCK] Sim Node Matched -> Q:{best_q:.4f} | R:{best_r:.2f}"
-    elif p_down >= 0.60 and k2_val < 0:
-        last_valid_view = f"📉 DOWN (Confidence: {p_down*100:.1f}%)"
-        accumulator = max(-5, accumulator - 1)
-        note = f"🎯 [95% TARGET LOCK] Sim Node Matched -> Q:{best_q:.4f} | R:{best_r:.2f}"
-    else:
-        last_valid_view = f"⚪ HOLD (Up: {p_up*100:.0f}% | Dn: {p_down*100:.0f}%)"
-        note = "⚡ Micro-variance filtering. Tracking baseline parameters."
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
-    view_log.append(last_valid_view)
-    brain_notes.append(note)
-    accumulator_log.append(accumulator)
+    for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+        
+        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+        else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
 
-df_predict['Live_View'] = view_log
-df_predict['Accumulator_Score'] = accumulator_log
-df_predict['ML_Simulation_Notes'] = brain_notes
-df_predict['Weighted_Momentum'] = np.round(best_weighted_momentum_series, 2)
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-# Column processing for layout
-clean_cols = ['a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 'Accumulator_Score', 'Live_View', 'ML_Simulation_Notes']
-display_df = df_predict[clean_cols].copy().iloc[::-1]
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-display_df['a_Close'] = display_df['a_Close'].round(2)
-display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+    # Formatting UI Structure
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    # Inverting via index flip to freeze the latest active hour on Top Row
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Ultra-Precise Matrix Table (Latest Row On Top)")
-st.dataframe(display_df, use_container_width=True, height=600)
+    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
