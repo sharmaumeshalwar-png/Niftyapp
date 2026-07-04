@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Triple Kalman [Cascade K2-VWAP]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Kalman on Close-Kalman1 | K3: Kalman 0.50 on strictly [Kalman2 - VWAP] vector)")
+st.set_page_config(page_title="BTC Standalone Daily Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Day Standalone Triple Kalman [The Daily Alpha Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Daily Data + Price Kalman + Fixed 25-Day Target Window + Pure Raw Accumulator + Parallel Dual Momentum (K2: Smooth Momentum | K3: Kalman 0.50 on [Kalman2 - VWAP] * Absolute Prob Differential Discovery Vector)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,9 +28,9 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrices..."):
-    # Bitcoin Hourly 2 Years Window
-    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
+with st.spinner("Aligning 25-Day Triple Kalman Bitcoin Microstructure Matrices..."):
+    # Bitcoin DAILY 2 Years Window
+    raw_df = yf.download("BTC-USD", period="2y", interval="1d")
     
     if len(raw_df) == 0:
         st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
@@ -54,7 +54,7 @@ with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrice
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
     
     # -----------------------------------------------------------------
-    # INTRADAY VWAP COMPUTATION BLOCK
+    # DAILY INTERIM VWAP COMPUTATION BLOCK
     # -----------------------------------------------------------------
     typical_price = (df['High'] + df['Low'] + df['a_Close']) / 3
     df['TP_Vol'] = typical_price * df['Volume']
@@ -77,7 +77,7 @@ with st.spinner("Aligning 25-Candle Triple Kalman Bitcoin Microstructure Matrice
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Strictly Fixed 25-Candle Directional Lookahead Target Logic
+    # Strictly Fixed 25-Day Directional Lookahead Target Logic
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -178,20 +178,27 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Standard Tuning)
+    # [Kalman 2] Runs on Raw_Weighted_Momentum (P=0.50 Standard Daily Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(
         df_predict['Raw_Weighted_Momentum'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
     # -----------------------------------------------------------------
-    # [Kalman 3] STRICT CASCADING BASE: (Kalman 2 - VWAP) Vector
+    # [Kalman 3] DAILY PROBABILITY DISCOVERY CASCADE CORE
     # -----------------------------------------------------------------
-    df_predict['K2_Minus_VWAP_Strict'] = df_predict['Weighted_Momentum'] - df_predict['VWAP']
+    # 1. Structural Deviation Vector (Kalman 2 - VWAP)
+    df_predict['K2_Minus_VWAP'] = df_predict['Weighted_Momentum'] - df_predict['VWAP']
     
-    # Applying standard Kalman Filter with initial_p=0.50 on the correct base vector
+    # 2. Absolute Probability Bias: |Prob_Up - Prob_Down|
+    df_predict['Abs_Prob_Bias'] = (df_predict['Prob_Up'] - df_predict['Prob_Down']).abs()
+    
+    # 3. Dynamic Alpha Base Vector Generation
+    df_predict['Alpha_Discovery_Base'] = df_predict['K2_Minus_VWAP'] * df_predict['Abs_Prob_Bias']
+    
+    # 4. Applying standard Kalman Filter with initial_p=0.50 on the Discovery vector
     df_predict['Triple_Kalman_Discovery'] = apply_kalman_filter_custom(
-        df_predict['K2_Minus_VWAP_Strict'].values, 
+        df_predict['Alpha_Discovery_Base'].values, 
         initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
@@ -207,9 +214,9 @@ else:
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['Triple_Kalman_Discovery'] = display_df['Triple_Kalman_Discovery'].round(2) 
     
-    # Sorting to get latest ticks on top
+    # Sorting to get latest ticks on top (Most Recent Days First)
     display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d')
 
-    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Parallel Cascade Mode)")
+    st.subheader(f"📋 Live 1-Day BTC Standalone Engine (Parallel Alpha Discovery Mode)")
     st.dataframe(display_df, use_container_width=True, height=750)
