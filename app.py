@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Dual Momentum Engine", layout="wide")
+st.set_page_config(page_title="BTC Triple Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Dual Momentum Matrix Setup:** 2 Years Data + Strict 50:50 Split + Isolated Volumetric Expansion Column")
+st.write("🎯 **Triple Kalman Matrix Setup:** 2 Years Data + Strict 50:50 Split + Kalman 3 on Volumetric Momentum Layer")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -73,7 +73,7 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Matrix Framework with Isolated Volume Column..."):
+with st.spinner("Processing Matrix Framework with Triple Kalman Tracking..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
         st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
@@ -88,7 +88,7 @@ with st.spinner("Processing Matrix Framework with Isolated Volume Column..."):
     df['Vol_Multiplier'] = df['Volume'] / (df['Vol_MA_24'] + 1e-10)
     df['Vol_Multiplier'] = df['Vol_Multiplier'].clip(lower=0.5, upper=3.0)
 
-    # Base Matrix Definition (Price Kalman 1 Active - Isolated from Volume)
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
@@ -151,14 +151,17 @@ if len(X_predict) != 0:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     
-    # 1. Standard Price-Based Weighted Momentum (Jaise aapne manga tha, bilkul unchanged)
+    # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # 2. Next Column Engine: Volume Multiplied directly on the smooth Weighted_Momentum layer
+    # 2. Raw Volume Multiplied Momentum
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
+    
+    # 💥 3. Kalman 3: Smooth Tracking Filter Layer applied on top of Vol_Multiplied_Momentum with initial_p=0.50
+    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Vol_Multiplied_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # Formatting Output Presentation Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Kalman_Vol_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -166,10 +169,4 @@ if len(X_predict) != 0:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
-    
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Volumetric Divergence Matrix Frame (Latest Hour Active on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df['Vol_Multiplied_Momentum'] = display_df
