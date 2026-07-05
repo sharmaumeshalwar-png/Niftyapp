@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Momentum ATR Engine", layout="wide")
+st.set_page_config(page_title="BTC Volumetric Core Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Dynamic ATR Momentum Setup:** 2 Years Data + Strict 50:50 Split + 25-Candle Target + Adaptive ATR Momentum Bands")
+st.write("🎯 **Volumetric Momentum Setup:** 2 Years Data + Strict 50:50 Split + Live Candle Volume Multiplier")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -45,6 +45,7 @@ def pull_historical_data_failsafe():
             df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
             df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
             df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
+            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce') # 📊 EXTRACTED LIVE VOLUME
             return df
     except Exception:
         pass
@@ -63,7 +64,8 @@ def pull_historical_data_failsafe():
                     "Open": float(item[1]),
                     "High": float(item[2]),
                     "Low": float(item[3]),
-                    "Close": float(item[4])
+                    "Close": float(item[4]),
+                    "Volume": float(item[6]) # 📊 EXTRACTED KRAKEN VOLUME NODE
                 })
             df = pd.DataFrame(parsed_data)
             df.set_index("Timestamp", inplace=True)
@@ -71,7 +73,7 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Matrix Framework with Adaptive ATR Momentum Engine..."):
+with st.spinner("Processing Matrix Framework with Volume Scaling..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
         st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
@@ -81,17 +83,18 @@ with st.spinner("Processing Matrix Framework with Adaptive ATR Momentum Engine..
     df.ffill(inplace=True)
     df.bfill(inplace=True)
 
+    # 💥 VOLUME ENGINE: Calculate Dynamic Multiplier
+    df['Vol_MA_24'] = df['Volume'].rolling(window=24).mean()
+    df['Vol_Multiplier'] = df['Volume'] / (df['Vol_MA_24'] + 1e-10)
+    # Clip bounds to prevent absurd spikes during extreme anomalies
+    df['Vol_Multiplier'] = df['Vol_Multiplier'].clip(lower=0.5, upper=3.0)
+
     # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Calculate True Range (TR) for ATR Calculations
-    df['H-L'] = df['High'] - df['Low']
-    df['H-PC'] = np.abs(df['High'] - df['a_Close'].shift(1))
-    df['L-PC'] = np.abs(df['Low'] - df['a_Close'].shift(1))
-    df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
-    df['ATR'] = df['TR'].rolling(window=14).mean() # Standard 14 Period ATR
+    # Apply Volume Multiplier directly to the Raw Price/Kalman gap delta
+    df['c_Combined'] = (df['a_Close'] - df['b_Kalman_Price']) * df['Vol_Multiplier']
     
     # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
@@ -105,7 +108,7 @@ with st.spinner("Processing Matrix Framework with Adaptive ATR Momentum Engine..
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target', 'ATR'], inplace=True)
+    df.dropna(subset=features_matrix + ['Target', 'Vol_Multiplier'], inplace=True)
 
 # EXACT 50:50 MATRIX RATIO SPLIT
 split_idx = int(len(df) * 0.50)
@@ -128,7 +131,7 @@ if len(X_predict) != 0:
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    atrs = df_predict['ATR'].to_numpy()
+    vol_mults = df_predict['Vol_Multiplier'].to_numpy()
 
     final_signals, scores_log, raw_weighted_momentum_log = [], [], []
     accumulator = 0
@@ -139,7 +142,9 @@ if len(X_predict) != 0:
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
+        
+        # Keep Raw Momentum volume-weighted
+        raw_weighted_momentum_log.append((c_val - k_price_val) * vol_mults[i])
         
         if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
         elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
@@ -150,37 +155,8 @@ if len(X_predict) != 0:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # =====================================================================
-    # 💥 DYNAMIC VOLATILITY ENGINE: ATR BANDS ON WEIGHTED MOMENTUM
-    # =====================================================================
-    w_moms = df_predict['Weighted_Momentum'].to_numpy()
-    
-    momentum_atr_bands = []
-    momentum_breakout_signals = []
-
-    for i in range(len(w_moms)):
-        # Calculate ATR scale factor specifically for the Momentum delta (divided by 50 to scale down to momentum level)
-        current_momentum_atr = atrs[i] / 50.0 
-        
-        # Upper and Lower ATR bands on top of 0-line momentum baseline
-        upper_band = current_momentum_atr
-        lower_band = -current_momentum_atr
-
-        momentum_atr_bands.append(f"🍏 Up:{upper_band:.2f} | 🍎 Low:{lower_band:.2f}")
-
-        # Check if Weighted Momentum violates the ATR Volatility bands with ML backing
-        if w_moms[i] > upper_band and prob_ups[i] > 0.52:
-            momentum_breakout_signals.append("🚀 MOMENTUM BREAKOUT (Bullish Velocity)")
-        elif w_moms[i] < lower_band and prob_downs[i] > 0.52:
-            momentum_breakout_signals.append("🩸 MOMENTUM BREAKDOWN (Bearish Velocity)")
-        else:
-            momentum_breakout_signals.append("⚖️ Normal Volatility Range")
-
-    df_predict['Momentum_ATR_Bands'] = momentum_atr_bands
-    df_predict['Momentum_ATR_Signal'] = momentum_breakout_signals
-
     # Formatting Output Presentation Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Momentum_ATR_Bands', 'Momentum_ATR_Signal', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -192,5 +168,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live ATR Momentum Breakout Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Volumetric Momentum Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
