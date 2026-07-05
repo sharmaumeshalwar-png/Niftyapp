@@ -7,18 +7,17 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty 2Y VIX-Sync Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour [2-Year Data | VIX-Sync Engine]")
-st.write("🎯 **Settings:** Full 2Y Data | 50:50 Train-Test | 25-Candle Window | VIX-Synced Accumulator")
+st.write("🎯 **Settings:** 2Y Data | 50:50 Train-Test | 25-Candle Lookback | VIX-Adjusted Accumulator")
 
 # =====================================================================
 # VIX FETCHING & MATH ENGINE
 # =====================================================================
 def get_vix_factor():
     try:
-        # VIX ka latest value fetch
         vix_df = yf.download("^INDIAVIX", period="1d", interval="1h")
         if not vix_df.empty:
-            current_vix = vix_df['Close'].iloc[-1].item()
-            return current_vix / 15.0 # 15 is base normalization
+            # Current VIX level divided by base 15
+            return vix_df['Close'].iloc[-1].item() / 15.0
         return 1.0
     except:
         return 1.0
@@ -36,7 +35,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Processing 2-Years of Nifty Microstructure..."):
+with st.spinner("Processing 2-Years Nifty Microstructure & VIX Syncing..."):
     # 2 Years Data
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     vix_multiplier = get_vix_factor()
@@ -59,7 +58,7 @@ with st.spinner("Processing 2-Years of Nifty Microstructure..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Fixed 25-Candle Target
+    # Target
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     df.dropna(inplace=True)
 
@@ -88,10 +87,10 @@ for p_up, p_down in zip(df_predict['Prob_Up'], df_predict['Prob_Down']):
     elif p_down >= 0.55: accumulator -= 1
     accumulator = max(-5, min(5, accumulator))
     
-    # Store Raw
+    # Raw Score
     scores_log.append(accumulator)
     
-    # Store VIX Adjusted
+    # VIX Adjusted Score (Multiplier)
     synced_score = int(accumulator * vix_multiplier)
     synced_score = max(-5, min(5, synced_score))
     vix_adj_scores_log.append(synced_score)
