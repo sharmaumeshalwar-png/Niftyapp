@@ -53,7 +53,6 @@ def pull_historical_data_failsafe():
     # Node B: Backup Kraken Array (If Node A returns blank/blocked)
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
-        # Pulling max available nodes safely
         params = {"pair": "XBTUSD", "interval": 60} 
         response = requests.get(kraken_url, params=params, timeout=10)
         if response.status_code == 200:
@@ -120,5 +119,79 @@ if len(X_predict) != 0:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
+    # ⚡ FIXED TYPO LINE BELOW: Changed 'prob_downss' back to exact 'prob_downs'
     prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    highs = df_predict['High'].to_numpy()
+    lows = df_predict['Low'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+
+    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
+    accumulator = 0
+    
+    for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+        
+        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+        else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
+
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # =====================================================================
+    # 💥 CRITICAL STATE ENGINE: UNTOUCHED ZONE PERSISTENCE LOGIC
+    # =====================================================================
+    w_moms = df_predict['Weighted_Momentum'].to_numpy()
+    
+    tracked_buying_low = lows[0]
+    tracked_selling_high = highs[0]
+    
+    zone_status_log = []
+    breakout_signals = []
+
+    for i in range(len(closes)):
+        if w_moms[i] > 0:
+            if closes[i] >= tracked_buying_low:  
+                tracked_buying_low = lows[i]    
+        elif w_moms[i] < 0:
+            if closes[i] <= tracked_selling_high: 
+                tracked_selling_high = highs[i]   
+
+        zone_status_log.append(f"🟢 Untouched Buy:{tracked_buying_low:.0f} | 🔴 Untouched Sell:{tracked_selling_high:.0f}")
+
+        if closes[i] > tracked_selling_high:
+            breakout_signals.append("💥 BREAKOUT BUY (Major Resistance Obliterated)")
+            tracked_selling_high = highs[i]
+        elif closes[i] < tracked_buying_low:
+            breakout_signals.append("💥 BREAKOUT SELL (Major Support Obliterated)")
+            tracked_buying_low = lows[i]
+        else:
+            breakout_signals.append("⚖️ Inside Untouched Zone Tracking")
+
+    df_predict['Live_Tracked_Zones'] = zone_status_log
+    df_predict['Zone_Break_Signal'] = breakout_signals
+
+    # Formatting Output Matrix View Frame
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Live_Tracked_Zones', 'Zone_Break_Signal', 'd_ML_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Untouched Breakout Matrix Frame (Latest Hour Active on Top Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
