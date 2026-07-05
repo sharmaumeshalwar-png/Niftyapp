@@ -2,13 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Clean Kalman Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + 50-Candle Volume Momentum Average Cross Engine")
+st.write("🎯 **Clean Setup:** Strictly Fixed 50:50 Data Split Framework")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -31,12 +30,11 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Optimized data fetch engine for Nifty 50 index mapping"""
+    """Strict 730d Hourly Data Pull Strategy for Nifty 50"""
     requested_period = "730d" 
     try:
-        # 🔥 CHANGED: BTC-USD to Nifty 50 Ticker (^NSEI)
         raw_df = yf.download("^NSEI", period=requested_period, interval="1h", multi_level_index=False)
-        if not raw_df.empty and len(raw_df) > 500:
+        if not raw_df.empty and len(raw_df) > 100:
             if isinstance(raw_df.columns, pd.MultiIndex):
                 raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
             else:
@@ -56,7 +54,7 @@ def pull_historical_data_failsafe():
 with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Nifty Data Endpoint is unreachable or returned empty frames. Please refresh.")
+        st.error("🚨 Nifty Data Endpoint is unreachable or empty. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
@@ -87,8 +85,9 @@ with st.spinner("Processing Matrix Framework..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target', 'Vol_Multiplier'], inplace=True)
 
-# EXACT 50:50 MATRIX RATIO SPLIT
+# 🔒 FIXED STRICT 50:50 MATRIX RATIO SPLIT AS REQUESTED
 split_idx = int(len(df) * 0.50)
+
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['Target'].copy()
@@ -175,5 +174,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Nifty Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Nifty Strict 50:50 Kalman Matrix Frame")
     st.dataframe(display_df, use_container_width=True, height=750)
