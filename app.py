@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Yahoo 1-Hour Engine", layout="wide")
+st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Original Volumetric Setup:** Optimized Historical Window + Strict 50:50 Split + Custom Momentum Crossover Signal")
+st.write("🎯 **Clean Setup:** Optimized Historical Data Window (2 Years) + Strict 50:50 Split + Custom Momentum Cross Signal")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -31,9 +31,11 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Dual-Node Network: Pulls from Yahoo Finance with automatic Kraken fallback"""
+    """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
+    # 2 Years Data Request (730 days)
+    requested_period = "730d" 
     try:
-        raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
+        raw_df = yf.download("BTC-USD", period=requested_period, interval="1h", multi_level_index=False)
         if not raw_df.empty and len(raw_df) > 500:
             if isinstance(raw_df.columns, pd.MultiIndex):
                 raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
@@ -51,6 +53,7 @@ def pull_historical_data_failsafe():
         pass
 
     try:
+        # Kraken Fallback Layer
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
         response = requests.get(kraken_url, params=params, timeout=10)
@@ -73,10 +76,10 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Yahoo Matrix Framework..."):
+with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Cloud Data Streams from Yahoo are currently full. Please refresh.")
+        st.error("🚨 Both Data Endpoints are unreachable or returned empty frames. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
@@ -124,13 +127,26 @@ if len(X_predict) != 0:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
     vol_mults = df_predict['Vol_Multiplier'].to_numpy()
 
-    # Original Price-Momentum calculations
-    raw_weighted_momentum_log = closes - kalmans_price
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
+    
+    for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
@@ -141,29 +157,19 @@ if len(X_predict) != 0:
     # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
     df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # CUSTOM SIGNAL ENGINE: (Weighted_Momentum - Kalman_Vol_Momentum) Crossover Logic
-    wm_vals = df_predict['Weighted_Momentum'].to_numpy()
-    kvm_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
-    
+    # NEW DYNAMIC SIGNAL ENGINE (Weighted_Momentum - Kalman_Vol_Momentum Logic)
     final_signals = []
-    scores_log = []
-    accumulator = 0
-    
+    wm_vals = df_predict['Weighted_Momentum'].to_numpy()
+    k3_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
+
     for i in range(len(wm_vals)):
-        diff_value = wm_vals[i] - kvm_vals[i]
-        
-        if diff_value > 0:
-            accumulator += 1
-            final_signals.append("🟢 BUY")
+        diff = wm_vals[i] - k3_vals[i]
+        if diff > 0:
+            final_signals.append(f"🟢 STRONG BUY (Diff: +{round(diff, 2)})")
         else:
-            accumulator -= 1
-            final_signals.append("🔴 SELL")
-            
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
+            final_signals.append(f"🔴 STRONG SELL (Diff: {round(diff, 2)})")
 
     df_predict['d_ML_Signal'] = final_signals
-    df_predict['Accumulator_Score'] = scores_log  
 
     # Formatting Clean Output Frame
     clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_Vol_Momentum', 'd_ML_Signal']
@@ -179,5 +185,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Volumetric 1-Hour Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
