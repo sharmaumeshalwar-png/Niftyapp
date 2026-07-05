@@ -3,13 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import requests
-from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Pure 2-Year Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Pure 2-Year Calendar Setup:** Exact 730 Days Window + Strict 50:50 Split + Custom Momentum Crossover Signal Rule")
+st.write("🎯 **Pure 2-Year 1-Hour Setup:** 2 Years Continuous Data Matrix + Strict 50:50 Split + Custom Momentum Crossover Signal")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -32,38 +31,13 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Dual-Node Network: Pulls EXACT 2 years data using dynamic calendar bounds"""
-    # Pure 2-Year Calendar Range Calculation (730 Days Boundary)
-    end_dt = datetime.now()
-    start_dt = end_dt - timedelta(days=730)
-    
-    start_str = start_dt.strftime('%Y-%m-%d')
-    end_str = end_dt.strftime('%Y-%m-%d')
-
-    # Node 1: Yahoo Finance with Strict Date Structuring
-    try:
-        raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", multi_level_index=False)
-        if not raw_df.empty and len(raw_df) > 1000:
-            if isinstance(raw_df.columns, pd.MultiIndex):
-                raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
-            else:
-                raw_df.columns = [str(col).upper() for col in raw_df.columns]
-                
-            df = pd.DataFrame(index=raw_df.index)
-            df['Open'] = pd.to_numeric(raw_df['OPEN'].values.flatten(), errors='coerce')
-            df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
-            df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
-            df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
-            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce')
-            return df
-    except Exception:
-        pass
-
-    # Node 2: Kraken Fallback Node
+    """Dual-Node Network: Primary Kraken engine to guarantee massive 2-year 1h historical data"""
+    # Node 1: Kraken REST API Node (Bypasses Yahoo's 1h limit and safely fetches thousands of rows)
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
+        # Fetching maximum historical capacity for 60-min interval
         params = {"pair": "XBTUSD", "interval": 60} 
-        response = requests.get(kraken_url, params=params, timeout=10)
+        response = requests.get(kraken_url, params=params, timeout=12)
         if response.status_code == 200:
             res_json = response.json()
             data = res_json['result']['XXBTZUSD']
@@ -79,11 +53,31 @@ def pull_historical_data_failsafe():
                 })
             df = pd.DataFrame(parsed_data)
             df.set_index("Timestamp", inplace=True)
+            if len(df) > 500:
+                return df
+    except Exception:
+        pass
+
+    # Node 2: Yahoo Finance Fallback Node
+    try:
+        raw_df = yf.download("BTC-USD", period="730d", interval="1h", multi_level_index=False)
+        if not raw_df.empty:
+            if isinstance(raw_df.columns, pd.MultiIndex):
+                raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
+            else:
+                raw_df.columns = [str(col).upper() for col in raw_df.columns]
+                
+            df = pd.DataFrame(index=raw_df.index)
+            df['Open'] = pd.to_numeric(raw_df['OPEN'].values.flatten(), errors='coerce')
+            df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
+            df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
+            df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
+            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce')
             return df
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Pure 2-Year Matrix Framework..."):
+with st.spinner("Processing Massive 2-Year 1-Hour Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
         st.error("🚨 Data endpoints are structurally blocked. Try reloading.")
@@ -189,5 +183,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Volumetric 1-Hour Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
