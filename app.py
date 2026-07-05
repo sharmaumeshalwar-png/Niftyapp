@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Untouched Zone Engine", layout="wide")
+st.set_page_config(page_title="BTC Momentum ATR Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Anti-Blank Fallback Engine:** Yahoo Finance + Kraken Multi-Node Network + Untouched Dynamic Zone Tracker")
+st.write("🎯 **Dynamic ATR Momentum Setup:** 2 Years Data + Strict 50:50 Split + 25-Candle Target + Adaptive ATR Momentum Bands")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -32,7 +32,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
     """Dual-Node Network: Pulls 2-years data from YFinance with automatic Kraken fallback"""
-    # Node A: Yahoo Finance Setup
     try:
         raw_df = yf.download("BTC-USD", period="730d", interval="1h", multi_level_index=False)
         if not raw_df.empty and len(raw_df) > 1000:
@@ -50,7 +49,6 @@ def pull_historical_data_failsafe():
     except Exception:
         pass
 
-    # Node B: Backup Kraken Array (If Node A returns blank/blocked)
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
@@ -73,10 +71,10 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Executing Anti-Blank Network Diagnostic & Training Model..."):
+with st.spinner("Processing Matrix Framework with Adaptive ATR Momentum Engine..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Both Data Endpoints are unreachable due to server firewall blocks. Please check your internet connectivity.")
+        st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
         st.stop()
         
     df = df_raw.copy()
@@ -87,6 +85,13 @@ with st.spinner("Executing Anti-Blank Network Diagnostic & Training Model..."):
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+    
+    # Calculate True Range (TR) for ATR Calculations
+    df['H-L'] = df['High'] - df['Low']
+    df['H-PC'] = np.abs(df['High'] - df['a_Close'].shift(1))
+    df['L-PC'] = np.abs(df['Low'] - df['a_Close'].shift(1))
+    df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+    df['ATR'] = df['TR'].rolling(window=14).mean() # Standard 14 Period ATR
     
     # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
@@ -100,7 +105,7 @@ with st.spinner("Executing Anti-Blank Network Diagnostic & Training Model..."):
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target'], inplace=True)
+    df.dropna(subset=features_matrix + ['Target', 'ATR'], inplace=True)
 
 # EXACT 50:50 MATRIX RATIO SPLIT
 split_idx = int(len(df) * 0.50)
@@ -119,13 +124,11 @@ if len(X_predict) != 0:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # ⚡ FIXED TYPO LINE BELOW: Changed 'prob_downss' back to exact 'prob_downs'
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
-    highs = df_predict['High'].to_numpy()
-    lows = df_predict['Low'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    atrs = df_predict['ATR'].to_numpy()
 
     final_signals, scores_log, raw_weighted_momentum_log = [], [], []
     accumulator = 0
@@ -138,8 +141,8 @@ if len(X_predict) != 0:
         scores_log.append(accumulator)
         raw_weighted_momentum_log.append(c_val - k_price_val)
         
-        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
-        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
+        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
         else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
 
     df_predict['d_ML_Signal'] = final_signals
@@ -148,40 +151,36 @@ if len(X_predict) != 0:
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # =====================================================================
-    # 💥 CRITICAL STATE ENGINE: UNTOUCHED ZONE PERSISTENCE LOGIC
+    # 💥 DYNAMIC VOLATILITY ENGINE: ATR BANDS ON WEIGHTED MOMENTUM
     # =====================================================================
     w_moms = df_predict['Weighted_Momentum'].to_numpy()
     
-    tracked_buying_low = lows[0]
-    tracked_selling_high = highs[0]
-    
-    zone_status_log = []
-    breakout_signals = []
+    momentum_atr_bands = []
+    momentum_breakout_signals = []
 
-    for i in range(len(closes)):
-        if w_moms[i] > 0:
-            if closes[i] >= tracked_buying_low:  
-                tracked_buying_low = lows[i]    
-        elif w_moms[i] < 0:
-            if closes[i] <= tracked_selling_high: 
-                tracked_selling_high = highs[i]   
+    for i in range(len(w_moms)):
+        # Calculate ATR scale factor specifically for the Momentum delta (divided by 50 to scale down to momentum level)
+        current_momentum_atr = atrs[i] / 50.0 
+        
+        # Upper and Lower ATR bands on top of 0-line momentum baseline
+        upper_band = current_momentum_atr
+        lower_band = -current_momentum_atr
 
-        zone_status_log.append(f"🟢 Untouched Buy:{tracked_buying_low:.0f} | 🔴 Untouched Sell:{tracked_selling_high:.0f}")
+        momentum_atr_bands.append(f"🍏 Up:{upper_band:.2f} | 🍎 Low:{lower_band:.2f}")
 
-        if closes[i] > tracked_selling_high:
-            breakout_signals.append("💥 BREAKOUT BUY (Major Resistance Obliterated)")
-            tracked_selling_high = highs[i]
-        elif closes[i] < tracked_buying_low:
-            breakout_signals.append("💥 BREAKOUT SELL (Major Support Obliterated)")
-            tracked_buying_low = lows[i]
+        # Check if Weighted Momentum violates the ATR Volatility bands with ML backing
+        if w_moms[i] > upper_band and prob_ups[i] > 0.52:
+            momentum_breakout_signals.append("🚀 MOMENTUM BREAKOUT (Bullish Velocity)")
+        elif w_moms[i] < lower_band and prob_downs[i] > 0.52:
+            momentum_breakout_signals.append("🩸 MOMENTUM BREAKDOWN (Bearish Velocity)")
         else:
-            breakout_signals.append("⚖️ Inside Untouched Zone Tracking")
+            momentum_breakout_signals.append("⚖️ Normal Volatility Range")
 
-    df_predict['Live_Tracked_Zones'] = zone_status_log
-    df_predict['Zone_Break_Signal'] = breakout_signals
+    df_predict['Momentum_ATR_Bands'] = momentum_atr_bands
+    df_predict['Momentum_ATR_Signal'] = momentum_breakout_signals
 
-    # Formatting Output Matrix View Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Live_Tracked_Zones', 'Zone_Break_Signal', 'd_ML_Signal']
+    # Formatting Output Presentation Frame
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Momentum_ATR_Bands', 'Momentum_ATR_Signal', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -193,5 +192,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Untouched Breakout Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live ATR Momentum Breakout Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
