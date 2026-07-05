@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + Kalman 3 Shifted to Momentum Difference Raw")
+st.write("🎯 **Clean Setup:** 2-Year Window + Vol_Multiplied_Momentum Binary Capped Signal Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -152,31 +152,23 @@ if len(X_predict) != 0:
     # 2. Volume Multiplied Momentum Layer (Raw)
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
     
-    # 3. Difference between Weighted Momentum and Volume Multiplied Momentum
-    df_predict['Momentum_Diff_Raw'] = df_predict['Weighted_Momentum'] - df_predict['Vol_Multiplied_Momentum']
-    
-    # 🔥 MODIFIED: Kalman 3 is now calculated directly on Momentum_Diff_Raw
-    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Momentum_Diff_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Dynamic Signal Engine (Baaki sab copy paste)
+    # 🔥 MODIFIED SIGNAL ENGINE: Capped at +5 / -5 based on Vol_Multiplied_Momentum sign
     final_signals = []
-    wm_vals = df_predict['Weighted_Momentum'].to_numpy()
-    k3_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
+    vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
 
-    for i in range(len(wm_vals)):
-        diff = wm_vals[i] - k3_vals[i]
-        if diff > 0:
-            final_signals.append(f"🟢 STRONG BUY (Diff: +{round(diff, 2)})")
+    for i in range(len(vmm_vals)):
+        vmm_val = vmm_vals[i]
+        if vmm_val > 0:
+            final_signals.append("🟢 STRONG BUY (Max [5/5])")
         else:
-            final_signals.append(f"🔴 STRONG SELL (Diff: {round(diff, 2)})")
+            final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
 
     df_predict['d_ML_Signal'] = final_signals
 
-    # Formatting Clean Output Frame
+    # Formatting Clean Output Frame (Removed Diff and Kalman 3 columns)
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Momentum_Diff_Raw', 
-        'Kalman_Vol_Momentum', 'd_ML_Signal'
+        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'd_ML_Signal'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
@@ -186,8 +178,6 @@ if len(X_predict) != 0:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
-    display_df['Momentum_Diff_Raw'] = display_df['Momentum_Diff_Raw'].round(2) 
-    display_df['Kalman_Vol_Momentum'] = display_df['Kalman_Vol_Momentum'].round(2) 
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
