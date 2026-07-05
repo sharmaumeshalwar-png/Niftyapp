@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2 Years Data + Strict 50:50 Split + Kalman 3 on Volume Weighted Momentum Layer")
+st.write("🎯 **Clean Setup:** Optimized Historical Data Window + Strict 50:50 Split + Kalman 3 on Volume Weighted Momentum Layer")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -31,10 +31,11 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Dual-Node Network: Pulls 2-years data from YFinance with automatic Kraken fallback"""
+    """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
+    # Node 1: Yahoo Finance with safe 600d boundary for hourly data stability
     try:
-        raw_df = yf.download("BTC-USD", period="730d", interval="1h", multi_level_index=False)
-        if not raw_df.empty and len(raw_df) > 1000:
+        raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
+        if not raw_df.empty and len(raw_df) > 500:
             if isinstance(raw_df.columns, pd.MultiIndex):
                 raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
             else:
@@ -50,6 +51,7 @@ def pull_historical_data_failsafe():
     except Exception:
         pass
 
+    # Node 2: Kraken REST Fallback Node
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
@@ -76,7 +78,7 @@ def pull_historical_data_failsafe():
 with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
+        st.error("🚨 Both Data Endpoints are unreachable or returned empty frames. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
@@ -119,3 +121,28 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) != 0:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model_flow.fit(X_train, y_train)
+
+    probabilities = model_flow.predict_proba(X_predict)
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
+
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    vol_mults = df_predict['Vol_Multiplier'].to_numpy()
+
+    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
+    accumulator = 0
+    
+    for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+        
+        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
+        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max
