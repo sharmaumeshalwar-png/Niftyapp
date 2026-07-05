@@ -152,21 +152,4 @@ if len(X_predict) != 0:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-    
-    # 2. Raw Volume Multiplied Momentum
-    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
-    
-    # 💥 3. Kalman 3: Smooth Tracking Filter Layer applied on top of Vol_Multiplied_Momentum with initial_p=0.50
-    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Vol_Multiplied_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting Output Presentation Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Kalman_Vol_Momentum', 'd_ML_Signal']
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Vol_Multiplied_Momentum'] = display_df
+    df_predict
