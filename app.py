@@ -32,7 +32,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
     """Dual-Node Network: Pulls from Yahoo Finance with automatic Kraken fallback"""
-    # Node 1: Pure Yahoo Finance Network Node
     try:
         # 1-Hour interval data optimized to pull Yahoo's absolute maximum stable history
         raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
@@ -52,7 +51,6 @@ def pull_historical_data_failsafe():
     except Exception:
         pass
 
-    # Node 2: Backup REST Node if Yahoo gets restricted
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
@@ -138,11 +136,11 @@ if len(X_predict) != 0:
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # 2. Background Volume Multiplied System
-    vol_multiplied_momentum_raw = df_predict['Weighted_Momentum'] * vol_mults
+    # 2. Background Volume Multiplied System (Raw Vector creation)
+    vol_multiplied_momentum_raw = df_predict['Weighted_Momentum'].to_numpy() * vol_mults
     
-    # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
-    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    # 🔥 3. Kalman 3 Column applied DIRECTLY on Volume Multiplied Momentum Layer
+    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # CUSTOM SIGNAL ENGINE: (Weighted_Momentum - Kalman_Vol_Momentum) Crossover Logic
     wm_vals = df_predict['Weighted_Momentum'].to_numpy()
