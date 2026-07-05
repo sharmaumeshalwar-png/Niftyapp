@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + Volume Multiplied Momentum Layer Split")
+st.write("🎯 **Clean Setup:** 2-Year Window + Kalman 3 Shifted to Momentum Difference Raw")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -149,16 +149,16 @@ if len(X_predict) != 0:
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # NEW COLUMN 1: Volume Multiplied Momentum Layer (Raw)
+    # 2. Volume Multiplied Momentum Layer (Raw)
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
     
-    # NEW COLUMN 2: Difference between Weighted Momentum and Volume Multiplied Momentum
+    # 3. Difference between Weighted Momentum and Volume Multiplied Momentum
     df_predict['Momentum_Diff_Raw'] = df_predict['Weighted_Momentum'] - df_predict['Vol_Multiplied_Momentum']
     
-    # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
-    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Vol_Multiplied_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    # 🔥 MODIFIED: Kalman 3 is now calculated directly on Momentum_Diff_Raw
+    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Momentum_Diff_Raw'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Dynamic Signal Engine (Baki sab copy paste)
+    # Dynamic Signal Engine (Baaki sab copy paste)
     final_signals = []
     wm_vals = df_predict['Weighted_Momentum'].to_numpy()
     k3_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
@@ -172,7 +172,7 @@ if len(X_predict) != 0:
 
     df_predict['d_ML_Signal'] = final_signals
 
-    # Formatting Clean Output Frame with New Columns
+    # Formatting Clean Output Frame
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
         'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Momentum_Diff_Raw', 
