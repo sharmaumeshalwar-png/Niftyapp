@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + Vol_Multiplied_Momentum Binary Capped Signal Engine")
+st.write("🎯 **Clean Setup:** 2-Year Window + Dynamic Expanding Dynamic Accumulator Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -152,20 +152,41 @@ if len(X_predict) != 0:
     # 2. Volume Multiplied Momentum Layer (Raw)
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
     
-    # 🔥 MODIFIED SIGNAL ENGINE: Capped at +5 / -5 based on Vol_Multiplied_Momentum sign
-    final_signals = []
+    # 🔥 DYNAMIC ENGINE: Peak-Valley Trailing Engine (Uncapped Expansion + Fast Reversal)
     vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
-
+    
+    dynamic_signals = []
+    current_direction = 0  # 1 for Up, -1 for Down
+    
     for i in range(len(vmm_vals)):
-        vmm_val = vmm_vals[i]
-        if vmm_val > 0:
-            final_signals.append("🟢 STRONG BUY (Max [5/5])")
+        if i == 0:
+            dynamic_signals.append("⚪ INITIALIZING")
+            continue
+            
+        current_val = vmm_vals[i]
+        prev_val = vmm_vals[i-1]
+        
+        # Pure direction shift check (Jaise hi ghume)
+        if current_val > prev_val:
+            # Momentum badh raha hai (Upar expand hone do)
+            current_direction = 1
+            dynamic_signals.append(f"🟢 EXPANDING UP (Value: {round(current_val, 2)})")
+        elif current_val < prev_val:
+            # Jaise hi ghume, instant niche ki taraf signal shift
+            current_direction = -1
+            dynamic_signals.append(f"🔴 DROPPING DOWN (Value: {round(current_val, 2)})")
         else:
-            final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
+            # Steady state
+            if current_direction == 1:
+                dynamic_signals.append(f"🟢 HOLD HIGH (Value: {round(current_val, 2)})")
+            elif current_direction == -1:
+                dynamic_signals.append(f"🔴 HOLD LOW (Value: {round(current_val, 2)})")
+            else:
+                dynamic_signals.append("⚪ NEUTRAL")
 
-    df_predict['d_ML_Signal'] = final_signals
+    df_predict['d_ML_Signal'] = dynamic_signals
 
-    # Formatting Clean Output Frame (Removed Diff and Kalman 3 columns)
+    # Formatting Clean Output Frame
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
         'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'd_ML_Signal'
