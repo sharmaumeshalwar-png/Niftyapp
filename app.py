@@ -112,25 +112,4 @@ if len(X_predict) != 0:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # =====================================================================
-    # 💥 CRITICAL STATE ENGINE: UNTOUCHED ZONE PERSISTENCE LOGIC
-    # =====================================================================
-    w_moms = df_predict['Weighted_Momentum'].to_numpy()
-    
-    # Initialize zones with first candle data
-    tracked_buying_low = lows[0]
-    tracked_selling_high = highs[0]
-    
-    zone_status_log = []
-    breakout_signals = []
-
-    for i in range(len(closes)):
-        # Dynamic update ONLY if momentum shifts and old zone was already breached
-        if w_moms[i] > 0:
-            if closes[i] >= tracked_buying_low:  # Check if previous untouched floor is safe
-                tracked_buying_low = lows[i]    # Keep trail locked to pristine levels
-        elif w_moms[i] < 0:
-            if closes[i] <= tracked_selling_high: # Check if previous untouched ceiling is safe
-                tracked_selling_high = highs[i]   # Keep trail locked to pristine levels
-
-        zone_status_log.append(f"🟢 Untouched Buy:{tracked_buying_low:.0f} | 🔴 Untouched Sell:{tracked_selling_high:.0
+    # =================
