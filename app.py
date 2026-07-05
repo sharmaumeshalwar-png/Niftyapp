@@ -134,5 +134,68 @@ if len(X_predict) != 0:
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
     
+    # 🔥 FIXED LINE 138-145: Correct explicit indexing inside the loop matrix
     for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+        c_val = closes[i]
+        k_price_val = kalmans_price[i]
+        
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    
+    # 1. Kalman 2: Standard Price-Based Weighted Momentum
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    # 2. Volume Multiplied Momentum Layer (Raw)
+    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
+    
+    # 50-Candle Average Calculation
+    df_predict['Vol_Momentum_50Avg'] = df_predict['Vol_Multiplied_Momentum'].rolling(window=50).mean()
+    
+    vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
+    avg_50_vals = df_predict['Vol_Momentum_50Avg'].to_numpy()
+    
+    new_signals = []
+    for i in range(len(vmm_vals)):
+        if np.isnan(avg_50_vals[i]):
+            new_signals.append("⚪ CALIBRATING (Need 50 Candles)")
+            continue
+            
+        current_vmm = vmm_vals[i]
+        prior_avg = avg_50_vals[i]
+        
+        if current_vmm >= prior_avg:
+            new_signals.append(f"🟢 BUY (Above Avg: +{round(current_vmm - prior_avg, 2)})")
+        else:
+            new_signals.append(f"🔴 SELL (Below Avg: {round(current_vmm - prior_avg, 2)})")
+            
+    df_predict['d_ML_Signal'] = new_signals
+
+    # Formatting Clean Output Frame
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Vol_Momentum_50Avg', 'd_ML_Signal'
+    ]
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
+    display_df['Vol_Momentum_50Avg'] = display_df['Vol_Momentum_50Avg'].round(2) 
+    
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
