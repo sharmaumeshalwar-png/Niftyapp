@@ -1,125 +1,188 @@
-import pandas as pd
-import numpy as np
 import streamlit as st
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from sklearn.ensemble import RandomForestClassifier
 
-# ------------------------------------------------------------------
-# 🛠️ UTILITY FUNCTIONS
-# ------------------------------------------------------------------
-def apply_kalman_filter_custom(data, initial_p=0.50):
-    n = len(data)
-    smoothed = np.zeros(n)
-    if n == 0:
-        return smoothed
-        
-    x_est = data[0]
-    p = initial_p
-    q = 1e-5  # Process variance
-    r = 0.1   # Measurement variance
+# Page Configuration
+st.set_page_config(page_title="BTC Standalone 0.50 Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour Standalone Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
+
+# =====================================================================
+# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
+# =====================================================================
+def apply_kalman_filter_custom(data_array, initial_p=50.0):
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = initial_p  
+    q = 0.001      # Process noise
+    r = 0.1        # Measurement noise
+    filtered_values = []
+    for z in data_array:
+        p = p + q
+        k = p / (p + r)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
+
+with st.spinner("Aligning 25-Candle Double Kalman Bitcoin Microstructure Matrices..."):
+    # Bitcoin Hourly 2 Years Window
+    raw_df = yf.download("BTC-USD", period="2y", interval="1h")
     
-    smoothed[0] = x_est
-    for i in range(1, n):
-        p_prior = p + q
-        k_gain = p_prior / (p_prior + r)
-        x_est = x_est + k_gain * (data[i] - x_est)
-        p = (1 - k_gain) * p_prior
-        smoothed[i] = x_est
+    if len(raw_df) == 0:
+        st.error("YFinance API Timeout or Market Closed. Please refresh the dashboard.")
+        st.stop()
         
-    return smoothed
-
-# ------------------------------------------------------------------
-# 📊 DATA INITIALIZATION (Fixing Pandas Frequency ValueError)
-# ------------------------------------------------------------------
-
-# ⚠️ NOTE: Agar aap excel/csv se data la rahe hain, toh is line ko uncomment karein:
-# df_predict = pd.read_csv("your_nifty_data.csv")
-
-if 'df_predict' not in locals() and 'df_predict' not in globals():
-    # 🔥 FIX: 'H' ki jagah 'h' (lowercase) use kiya hai naye pandas convention ke mutabik
-    dates = pd.date_range(end="2026-07-05 19:00", periods=20, freq="h")
-    df_predict = pd.DataFrame({
-        'a_Close': np.random.uniform(23000, 23500, size=20),
-        'b_Kalman_Price': np.random.uniform(23000, 23500, size=20),
-        'Prob_Up': np.random.uniform(0.1, 0.9, size=20),
-        'Prob_Down': np.random.uniform(0.1, 0.9, size=20)
-    }, index=dates)
-
-# ------------------------------------------------------------------
-# ⚙️ MAIN ENGINE LOOP
-# ------------------------------------------------------------------
-
-MAX_BUCKET = 5
-MIN_BUCKET = -5
-
-scores_log = []
-raw_weighted_momentum_log = []
-final_signals = []
-
-current_state = None  
-accumulator = 0       
-
-for idx, row in df_predict.iterrows():
-    c_val = row['a_Close']
-    k_price_val = row['b_Kalman_Price']
-    p_up = row['Prob_Up']
-    p_down = row['Prob_Down']
+    # MultiIndex Framework Elimination
+    df = pd.DataFrame(index=raw_df.index)
     
-    if p_up > p_down:
-        accumulator += 1
-    elif p_down > p_up:
-        accumulator -= 1
-        
-    accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
-    scores_log.append(accumulator)
-
-    calc_raw_weighted = c_val - k_price_val
-    raw_weighted_momentum_log.append(calc_raw_weighted)
-
-    if accumulator == MAX_BUCKET:
-        current_state = "BUY"
-        final_signals.append("🟢 STRONG BUY TREND (Max Locked [5/5])")
-        
-    elif accumulator == MIN_BUCKET:
-        current_state = "SELL"
-        final_signals.append("🔴 STRONG SELL TREND (Max Locked [-5/-5])")
-        
-    else:
-        if current_state == "BUY":
-            if accumulator > 0:
-                final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in raw_df.columns:
+            if isinstance(raw_df[col], pd.DataFrame):
+                df[col] = raw_df[col].iloc[:, 0]
             else:
-                final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
-                
-        elif current_state == "SELL":
-            if accumulator < 0:
-                final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
-            else:
-                final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
-                
+                df[col] = raw_df[col]
+
+    df.index = pd.to_datetime(df.index)
+
+    # Base Matrix Definition (Price Kalman 1 Active)
+    df['a_Close'] = df['Close']
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
+    
+    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
+    df['Sign_Change'] = df['Sign_Change'].astype(int)
+    
+    # Microstructure Features
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    
+    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
+    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
+    
+    # Strictly Fixed 25-Candle Directional Lookahead Target Logic
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=features_matrix + ['Target'], inplace=True)
+
+# =====================================================================
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
+# =====================================================================
+split_idx = int(len(df) * 0.50)
+
+df_train = df.iloc[:split_idx]
+X_train = df_train[features_matrix].copy()
+y_train = df_train['Target'].copy()
+
+df_predict = df.iloc[split_idx:].copy()
+X_predict = df_predict[features_matrix].copy()
+
+if len(X_predict) == 0:
+    st.error("Prediction matrix error. Dataframe split bounds mismatch.")
+else:
+    # RandomForest Model Training
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        max_depth=3,            
+        min_samples_leaf=1,     
+        random_state=42
+    )
+    model_flow.fit(X_train, y_train)
+
+    # Raw Probabilities Prediction
+    probabilities = model_flow.predict_proba(X_predict)
+    
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # =====================================================================
+    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL PROCESSING)
+    # =====================================================================
+    final_signals = []
+    scores_log = []
+    raw_weighted_momentum_log = [] 
+    current_state = "HOLD"
+    
+    accumulator = 0
+    MAX_BUCKET = 5     
+    MIN_BUCKET = -5    
+
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+        c_val = closes[i]
+        k_price_val = kalmans_price[i]
+
+        # Raw Accumulator Calculation
+        if p_up >= 0.55:
+            accumulator += 1  
+        elif p_down >= 0.55:
+            accumulator -= 1  
+        
+        accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
+        scores_log.append(accumulator)
+
+        # Raw Weighted Momentum (Close - Kalman)
+        calc_raw_weighted = c_val - k_price_val
+        raw_weighted_momentum_log.append(calc_raw_weighted)
+
+        if accumulator == MAX_BUCKET:
+            current_state = "BUY"
+            final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            
+        elif accumulator == MIN_BUCKET:
+            current_state = "SELL"
+            final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            
         else:
-            final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+            if current_state == "BUY":
+                if accumulator > 0:
+                    final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+                else:
+                    final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    
+            elif current_state == "SELL":
+                if accumulator < 0:
+                    final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
+                else:
+                    final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    
+            else:
+                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-# Mapping data back to dataframe
-df_predict['d_ML_Signal'] = final_signals
-df_predict['Accumulator_Score'] = scores_log  
-df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    # Mapping secure array data back to pandas
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-# Double Kalman Execution
-df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
+    # Weighted Momentum ke upar ALAG se Kalman filter chalaya strictly 0.50 se
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-# Display Formatting
-clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
-display_df = df_predict[clean_display_cols].copy()
+    # Display Configuration
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    # Sorting to get latest ticks on top
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-display_df['a_Close'] = display_df['a_Close'].round(2)
-display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-
-# Sort Latest on Top
-display_df = display_df.sort_index(ascending=False)
-display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-st.subheader(f"📋 Live 1-Hour Nifty Index Engine (Double Kalman 0.50 Setup)")
-st.dataframe(display_df, use_container_width=True, height=750)
+    st.subheader(f"📋 Live 1-Hour BTC Standalone Engine (Kalman 0.50 Matrix Mode)")
+    st.dataframe(display_df, use_container_width=True, height=750)
