@@ -32,7 +32,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
     """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
-    # Node 1: Yahoo Finance with safe 600d boundary for hourly data stability
     try:
         raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
         if not raw_df.empty and len(raw_df) > 500:
@@ -51,7 +50,6 @@ def pull_historical_data_failsafe():
     except Exception:
         pass
 
-    # Node 2: Kraken REST Fallback Node
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
@@ -144,5 +142,25 @@ if len(X_predict) != 0:
         
         raw_weighted_momentum_log.append(c_val - k_price_val)
         
-        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
-        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max
+        if accumulator == 5: 
+            final_signals.append("🟢 STRONG BUY (Max [5/5])")
+        elif accumulator == -5: 
+            final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
+        else: 
+            final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
+
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    
+    # 1. Kalman 2: Standard Price-Based Weighted Momentum
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    # 2. Background Volume Multiplied System
+    vol_multiplied_momentum_raw = df_predict['Weighted_Momentum'] * vol_mults
+    
+    # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
+    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Formatting Clean Output Frame
+    clean_display_cols =
