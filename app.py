@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + 3-Candle Volume Momentum Average Cross Engine")
+st.write("🎯 **Clean Setup:** 2-Year Window + 50-Candle Volume Momentum Average Cross Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -95,105 +95,4 @@ with st.spinner("Processing Matrix Framework..."):
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
     # Microstructure Features Space
-    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
-    
-    # Target Rule
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-    
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target', 'Vol_Multiplier'], inplace=True)
-
-# EXACT 50:50 MATRIX RATIO SPLIT
-split_idx = int(len(df) * 0.50)
-df_train = df.iloc[:split_idx]
-X_train = df_train[features_matrix].copy()
-y_train = df_train['Target'].copy()
-
-df_predict = df.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix].copy()
-
-if len(X_predict) != 0:
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
-    model_flow.fit(X_train, y_train)
-
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
-
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
-    closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    vol_mults = df_predict['Vol_Multiplier'].to_numpy()
-
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
-    
-    for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    
-    # 1. Kalman 2: Standard Price-Based Weighted Momentum
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-    
-    # 2. Volume Multiplied Momentum Layer (Raw)
-    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
-    
-    # 🔥 🔥 NEW 3-CANDLE AVERAGE CALCULATION & ENGINE 🔥 🔥
-    # Rolling mean window=3 lag lekar (pichli 3 candles ka sum / 3)
-    df_predict['Vol_Momentum_3Avg'] = df_predict['Vol_Multiplied_Momentum'].rolling(window=3).mean()
-    
-    vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
-    avg_3_vals = df_predict['Vol_Momentum_3Avg'].to_numpy()
-    
-    new_signals = []
-    for i in range(len(vmm_vals)):
-        # Pehli 3 candles me jab tak data calculate na ho jaye
-        if np.isnan(avg_3_vals[i]):
-            new_signals.append("⚪ CALIBRATING")
-            continue
-            
-        current_vmm = vmm_vals[i]
-        prior_avg = avg_3_vals[i] # Current value ko mila kar ya shift karke comparison logic
-        
-        # Check if current value is higher than 3-candle average
-        if current_vmm >= prior_avg:
-            new_signals.append(f"🟢 BUY (Above Avg: +{round(current_vmm - prior_avg, 2)})")
-        else:
-            new_signals.append(f"🔴 SELL (Below Avg: {round(current_vmm - prior_avg, 2)})")
-            
-    df_predict['d_ML_Signal'] = new_signals
-
-    # Formatting Clean Output Frame
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Vol_Momentum_3Avg', 'd_ML_Signal'
-    ]
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
-    display_df['Vol_Momentum_3Avg'] = display_df['Vol_Momentum_3Avg'].round(2) 
-    
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).
