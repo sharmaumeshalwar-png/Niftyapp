@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** Optimized Historical Data Window + Strict 50:50 Split + Kalman 3 on Volume Weighted Momentum Layer")
+st.write("🎯 **Pure Math Signal Setup:** 2 Years Data + Strict 50:50 Split + Custom Momentum Crossover Signal Rule")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -124,34 +124,13 @@ if len(X_predict) != 0:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
     vol_mults = df_predict['Vol_Multiplier'].to_numpy()
 
-    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
-    accumulator = 0
-    
-    for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-        
-        if accumulator == 5: 
-            final_signals.append("🟢 STRONG BUY (Max [5/5])")
-        elif accumulator == -5: 
-            final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
-        else: 
-            final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
-
-    df_predict['d_ML_Signal'] = final_signals
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    # Base raw price-momentum calculations
+    raw_weighted_momentum_arr = closes - kalmans_price
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_arr
     
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
@@ -162,7 +141,32 @@ if len(X_predict) != 0:
     # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
     df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting Clean Output Frame (Inside the conditional block)
+    # 💥 CUSTOM SIGNAL ENGINE: (Weighted_Momentum - Kalman_Vol_Momentum) Crossover Logic
+    wm_vals = df_predict['Weighted_Momentum'].to_numpy()
+    kvm_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
+    
+    final_signals = []
+    scores_log = []
+    accumulator = 0
+    
+    for i in range(len(wm_vals)):
+        diff_value = wm_vals[i] - kvm_vals[i]
+        
+        # Signal assignment based on your plus/minus criteria
+        if diff_value > 0:
+            accumulator += 1
+            final_signals.append("🟢 BUY")
+        else:
+            accumulator -= 1
+            final_signals.append("🔴 SELL")
+            
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log  
+
+    # Formatting Clean Output Frame
     clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_Vol_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
