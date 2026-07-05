@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Triple Kalman Engine", layout="wide")
+st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Triple Kalman Matrix Setup:** 2 Years Data + Strict 50:50 Split + Kalman 3 on Volumetric Momentum Layer")
+st.write("🎯 **Clean Setup:** 2 Years Data + Strict 50:50 Split + Kalman 3 on Volume Weighted Momentum Layer")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -73,7 +73,7 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Matrix Framework with Triple Kalman Tracking..."):
+with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
         st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
@@ -119,37 +119,3 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) != 0:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model_flow.fit(X_train, y_train)
-
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
-
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
-    closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    vol_mults = df_predict['Vol_Multiplier'].to_numpy()
-
-    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
-    accumulator = 0
-    
-    for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        
-        # Pure Price-Based Momentum Raw Matrix Data
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-        
-        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
-        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
-        else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
-
-    df_predict['d_ML_Signal'] = final_signals
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    
-    # 1. Kalman 2: Standard Price-Based Weighted Momentum
-    df_predict
