@@ -3,12 +3,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import requests
+from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
+st.set_page_config(page_title="BTC Pure 2-Year Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Pure Math Signal Setup:** 2 Years Data + Strict 50:50 Split + Custom Momentum Crossover Signal Rule")
+st.write("🎯 **Pure 2-Year Calendar Setup:** Exact 730 Days Window + Strict 50:50 Split + Custom Momentum Crossover Signal Rule")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -31,10 +32,18 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
+    """Dual-Node Network: Pulls EXACT 2 years data using dynamic calendar bounds"""
+    # Pure 2-Year Calendar Range Calculation (730 Days Boundary)
+    end_dt = datetime.now()
+    start_dt = end_dt - timedelta(days=730)
+    
+    start_str = start_dt.strftime('%Y-%m-%d')
+    end_str = end_dt.strftime('%Y-%m-%d')
+
+    # Node 1: Yahoo Finance with Strict Date Structuring
     try:
-        raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
-        if not raw_df.empty and len(raw_df) > 500:
+        raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", multi_level_index=False)
+        if not raw_df.empty and len(raw_df) > 1000:
             if isinstance(raw_df.columns, pd.MultiIndex):
                 raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
             else:
@@ -50,6 +59,7 @@ def pull_historical_data_failsafe():
     except Exception:
         pass
 
+    # Node 2: Kraken Fallback Node
     try:
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
@@ -73,10 +83,10 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Matrix Framework..."):
+with st.spinner("Processing Pure 2-Year Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Both Data Endpoints are unreachable or returned empty frames. Please refresh.")
+        st.error("🚨 Data endpoints are structurally blocked. Try reloading.")
         st.stop()
         
     df = df_raw.copy()
@@ -128,7 +138,7 @@ if len(X_predict) != 0:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
     vol_mults = df_predict['Vol_Multiplier'].to_numpy()
 
-    # Base raw price-momentum calculations
+    # Raw Price-Momentum calculations
     raw_weighted_momentum_arr = closes - kalmans_price
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_arr
     
@@ -141,7 +151,7 @@ if len(X_predict) != 0:
     # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
     df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # 💥 CUSTOM SIGNAL ENGINE: (Weighted_Momentum - Kalman_Vol_Momentum) Crossover Logic
+    # CUSTOM SIGNAL ENGINE: (Weighted_Momentum - Kalman_Vol_Momentum) Crossover Logic
     wm_vals = df_predict['Weighted_Momentum'].to_numpy()
     kvm_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
     
@@ -152,7 +162,6 @@ if len(X_predict) != 0:
     for i in range(len(wm_vals)):
         diff_value = wm_vals[i] - kvm_vals[i]
         
-        # Signal assignment based on your plus/minus criteria
         if diff_value > 0:
             accumulator += 1
             final_signals.append("🟢 BUY")
