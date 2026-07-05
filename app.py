@@ -1,15 +1,14 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import yfinance as yf
 import requests
-import ccxt  # ⚡ Bypasses Yahoo limits completely
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Pure 2-Year Engine", layout="wide")
+st.set_page_config(page_title="BTC Yahoo 1-Hour Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Pure 2-Year 1-Hour Setup:** Deep CCXT Crypto Database + Strict 50:50 Split + Custom Momentum Crossover Signal")
+st.write("🎯 **Yahoo Finance Setup:** Optimized Historical Window + Strict 50:50 Split + Custom Momentum Crossover Signal")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -32,67 +31,55 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Fetches clean 2-Year 1-Hour historical data via direct exchange connectivity"""
+    """Dual-Node Network: Pulls from Yahoo Finance with automatic Kraken fallback"""
+    # Node 1: Pure Yahoo Finance Network Node
     try:
-        # Initialize CCXT exchange node (Binance or Kraken public database)
-        exchange = ccxt.binance({
-            'rateLimit': 1200,
-            'enableRateLimit': True,
-        })
-        
-        # Calculate start time for exact 2 years ago (730 days)
-        since = exchange.milliseconds() - 730 * 24 * 60 * 60 * 1000
-        
-        all_ohlcv = []
-        symbol = 'BTC/USDT'
-        timeframe = '1h'
-        
-        # Pagination loop to grab full historical block safely
-        while since < exchange.milliseconds():
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since, limit=1000)
-            if not ohlcv:
-                break
-            all_ohlcv.extend(ohlcv)
-            # Move pointer forward past the last fetched timestamp
-            since = ohlcv[-1][0] + 1000 
-            
-        if len(all_ohlcv) > 500:
-            df = pd.DataFrame(all_ohlcv, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms')
-            df.set_index('Timestamp', inplace=True)
+        # 1-Hour interval data optimized to pull Yahoo's absolute maximum stable history
+        raw_df = yf.download("BTC-USD", period="600d", interval="1h", multi_level_index=False)
+        if not raw_df.empty and len(raw_df) > 500:
+            if isinstance(raw_df.columns, pd.MultiIndex):
+                raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
+            else:
+                raw_df.columns = [str(col).upper() for col in raw_df.columns]
+                
+            df = pd.DataFrame(index=raw_df.index)
+            df['Open'] = pd.to_numeric(raw_df['OPEN'].values.flatten(), errors='coerce')
+            df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
+            df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
+            df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
+            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce')
             return df
-            
     except Exception:
-        # Emergency REST Fallback
-        try:
-            kraken_url = "https://api.kraken.com/0/public/OHLC"
-            params = {"pair": "XBTUSD", "interval": 60} 
-            response = requests.get(kraken_url, params=params, timeout=12)
-            if response.status_code == 200:
-                res_json = response.json()
-                data = res_json['result']['XXBTZUSD']
-                parsed_data = []
-                for item in data:
-                    parsed_data.append({
-                        "Timestamp": pd.to_datetime(item[0], unit='s'),
-                        "Open": float(item[1]),
-                        "High": float(item[2]),
-                        "Low": float(item[3]),
-                        "Close": float(item[4]),
-                        "Volume": float(item[6])
-                    })
-                fallback_df = pd.DataFrame(parsed_data)
-                fallback_df.set_index("Timestamp", inplace=True)
-                return fallback_df
-        except Exception:
-            pass
-            
-    return pd.DataFrame()
+        pass
 
-with st.spinner("Processing Deep 2-Year 1-Hour Matrix Framework..."):
+    # Node 2: Backup REST Node if Yahoo gets restricted
+    try:
+        kraken_url = "https://api.kraken.com/0/public/OHLC"
+        params = {"pair": "XBTUSD", "interval": 60} 
+        response = requests.get(kraken_url, params=params, timeout=10)
+        if response.status_code == 200:
+            res_json = response.json()
+            data = res_json['result']['XXBTZUSD']
+            parsed_data = []
+            for item in data:
+                parsed_data.append({
+                    "Timestamp": pd.to_datetime(item[0], unit='s'),
+                    "Open": float(item[1]),
+                    "High": float(item[2]),
+                    "Low": float(item[3]),
+                    "Close": float(item[4]),
+                    "Volume": float(item[6])
+                })
+            df = pd.DataFrame(parsed_data)
+            df.set_index("Timestamp", inplace=True)
+            return df
+    except Exception:
+        return pd.DataFrame()
+
+with st.spinner("Processing Yahoo Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Cloud Data Streams are currently full. Please refresh the matrix.")
+        st.error("🚨 Cloud Data Streams from Yahoo are currently full. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
