@@ -6,8 +6,8 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
-st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
+st.set_page_config(page_title="Nifty Clean Kalman Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour Standalone Breakout Engine")
 st.write("🎯 **Clean Setup:** 2-Year Window + 50-Candle Volume Momentum Average Cross Engine")
 
 # =====================================================================
@@ -31,10 +31,11 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
+    """Optimized data fetch engine for Nifty 50 index mapping"""
     requested_period = "730d" 
     try:
-        raw_df = yf.download("BTC-USD", period=requested_period, interval="1h", multi_level_index=False)
+        # 🔥 CHANGED: BTC-USD to Nifty 50 Ticker (^NSEI)
+        raw_df = yf.download("^NSEI", period=requested_period, interval="1h", multi_level_index=False)
         if not raw_df.empty and len(raw_df) > 500:
             if isinstance(raw_df.columns, pd.MultiIndex):
                 raw_df.columns = [str(col[0]).upper() for col in raw_df.columns]
@@ -50,34 +51,12 @@ def pull_historical_data_failsafe():
             return df
     except Exception:
         pass
-
-    try:
-        kraken_url = "https://api.kraken.com/0/public/OHLC"
-        params = {"pair": "XBTUSD", "interval": 60} 
-        response = requests.get(kraken_url, params=params, timeout=10)
-        if response.status_code == 200:
-            res_json = response.json()
-            data = res_json['result']['XXBTZUSD']
-            parsed_data = []
-            for item in data:
-                parsed_data.append({
-                    "Timestamp": pd.to_datetime(item[0], unit='s'),
-                    "Open": float(item[1]),
-                    "High": float(item[2]),
-                    "Low": float(item[3]),
-                    "Close": float(item[4]),
-                    "Volume": float(item[6])
-                })
-            df = pd.DataFrame(parsed_data)
-            df.set_index("Timestamp", inplace=True)
-            return df
-    except Exception:
-        return pd.DataFrame()
+    return pd.DataFrame()
 
 with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Both Data Endpoints are unreachable or returned empty frames. Please refresh.")
+        st.error("🚨 Nifty Data Endpoint is unreachable or returned empty frames. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
@@ -134,7 +113,6 @@ if len(X_predict) != 0:
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
     
-    # 🔥 FIXED LINE 138-145: Correct explicit indexing inside the loop matrix
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
@@ -197,5 +175,5 @@ if len(X_predict) != 0:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Nifty Volumetric Kalman Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
