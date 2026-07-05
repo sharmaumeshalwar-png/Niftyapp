@@ -6,9 +6,9 @@ import requests
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Volumetric Core Engine", layout="wide")
+st.set_page_config(page_title="BTC Dual Momentum Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Volumetric Momentum Setup:** 2 Years Data + Strict 50:50 Split + Live Candle Volume Multiplier")
+st.write("🎯 **Dual Momentum Matrix Setup:** 2 Years Data + Strict 50:50 Split + Isolated Volumetric Expansion Column")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -45,7 +45,7 @@ def pull_historical_data_failsafe():
             df['High'] = pd.to_numeric(raw_df['HIGH'].values.flatten(), errors='coerce')
             df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
             df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
-            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce') # 📊 EXTRACTED LIVE VOLUME
+            df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce')
             return df
     except Exception:
         pass
@@ -65,7 +65,7 @@ def pull_historical_data_failsafe():
                     "High": float(item[2]),
                     "Low": float(item[3]),
                     "Close": float(item[4]),
-                    "Volume": float(item[6]) # 📊 EXTRACTED KRAKEN VOLUME NODE
+                    "Volume": float(item[6])
                 })
             df = pd.DataFrame(parsed_data)
             df.set_index("Timestamp", inplace=True)
@@ -73,7 +73,7 @@ def pull_historical_data_failsafe():
     except Exception:
         return pd.DataFrame()
 
-with st.spinner("Processing Matrix Framework with Volume Scaling..."):
+with st.spinner("Processing Matrix Framework with Isolated Volume Column..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
         st.error("🚨 Both Data Endpoints are unreachable. Check connectivity.")
@@ -83,18 +83,15 @@ with st.spinner("Processing Matrix Framework with Volume Scaling..."):
     df.ffill(inplace=True)
     df.bfill(inplace=True)
 
-    # 💥 VOLUME ENGINE: Calculate Dynamic Multiplier
+    # VOLUME ENGINE: Dynamic Multiplier (24 Hour Baseline Setup)
     df['Vol_MA_24'] = df['Volume'].rolling(window=24).mean()
     df['Vol_Multiplier'] = df['Volume'] / (df['Vol_MA_24'] + 1e-10)
-    # Clip bounds to prevent absurd spikes during extreme anomalies
     df['Vol_Multiplier'] = df['Vol_Multiplier'].clip(lower=0.5, upper=3.0)
 
-    # Base Matrix Definition (Price Kalman 1 Active)
+    # Base Matrix Definition (Price Kalman 1 Active - Isolated from Volume)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
-    
-    # Apply Volume Multiplier directly to the Raw Price/Kalman gap delta
-    df['c_Combined'] = (df['a_Close'] - df['b_Kalman_Price']) * df['Vol_Multiplier']
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
     # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
@@ -143,8 +140,8 @@ if len(X_predict) != 0:
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
         
-        # Keep Raw Momentum volume-weighted
-        raw_weighted_momentum_log.append((c_val - k_price_val) * vol_mults[i])
+        # Pure Price-Based Momentum Raw Matrix Data
+        raw_weighted_momentum_log.append(c_val - k_price_val)
         
         if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max [5/5])")
         elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
@@ -153,10 +150,15 @@ if len(X_predict) != 0:
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    
+    # 1. Standard Price-Based Weighted Momentum (Jaise aapne manga tha, bilkul unchanged)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    # 2. Next Column Engine: Volume Multiplied directly on the smooth Weighted_Momentum layer
+    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
 
     # Formatting Output Presentation Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -164,9 +166,10 @@ if len(X_predict) != 0:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Volumetric Momentum Matrix Frame (Latest Hour Active on Top Row)")
+    st.subheader(f"📋 Live Volumetric Divergence Matrix Frame (Latest Hour Active on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
