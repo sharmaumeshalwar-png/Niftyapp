@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** Optimized Historical Data Window (2 Years) + Strict 50:50 Split + Custom Momentum Cross Signal")
+st.write("🎯 **Clean Setup:** 2-Year Window + Volume Multiplied Momentum Layer Split")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -32,7 +32,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
     """Dual-Node Network: Pulls optimized historical data from YFinance with automatic Kraken fallback"""
-    # 2 Years Data Request (730 days)
     requested_period = "730d" 
     try:
         raw_df = yf.download("BTC-USD", period=requested_period, interval="1h", multi_level_index=False)
@@ -53,7 +52,6 @@ def pull_historical_data_failsafe():
         pass
 
     try:
-        # Kraken Fallback Layer
         kraken_url = "https://api.kraken.com/0/public/OHLC"
         params = {"pair": "XBTUSD", "interval": 60} 
         response = requests.get(kraken_url, params=params, timeout=10)
@@ -151,13 +149,16 @@ if len(X_predict) != 0:
     # 1. Kalman 2: Standard Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # 2. Background Volume Multiplied System
-    vol_multiplied_momentum_raw = df_predict['Weighted_Momentum'] * vol_mults
+    # NEW COLUMN 1: Volume Multiplied Momentum Layer (Raw)
+    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
+    
+    # NEW COLUMN 2: Difference between Weighted Momentum and Volume Multiplied Momentum
+    df_predict['Momentum_Diff_Raw'] = df_predict['Weighted_Momentum'] - df_predict['Vol_Multiplied_Momentum']
     
     # 3. Kalman 3 Column on Volume Multiplied Momentum Layer
-    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(vol_multiplied_momentum_raw.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    df_predict['Kalman_Vol_Momentum'] = apply_kalman_filter_custom(df_predict['Vol_Multiplied_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # NEW DYNAMIC SIGNAL ENGINE (Weighted_Momentum - Kalman_Vol_Momentum Logic)
+    # Dynamic Signal Engine (Baki sab copy paste)
     final_signals = []
     wm_vals = df_predict['Weighted_Momentum'].to_numpy()
     k3_vals = df_predict['Kalman_Vol_Momentum'].to_numpy()
@@ -171,8 +172,12 @@ if len(X_predict) != 0:
 
     df_predict['d_ML_Signal'] = final_signals
 
-    # Formatting Clean Output Frame
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Kalman_Vol_Momentum', 'd_ML_Signal']
+    # Formatting Clean Output Frame with New Columns
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Momentum_Diff_Raw', 
+        'Kalman_Vol_Momentum', 'd_ML_Signal'
+    ]
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
@@ -180,6 +185,8 @@ if len(X_predict) != 0:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
+    display_df['Momentum_Diff_Raw'] = display_df['Momentum_Diff_Raw'].round(2) 
     display_df['Kalman_Vol_Momentum'] = display_df['Kalman_Vol_Momentum'].round(2) 
     
     display_df = display_df.iloc[::-1]
