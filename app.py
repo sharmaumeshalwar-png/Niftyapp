@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Clean Kalman Engine", layout="wide")
 st.title("⚡ BTC Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** 2-Year Window + Dynamic Expanding Dynamic Accumulator Engine")
+st.write("🎯 **Clean Setup:** 2-Year Window + 3-Candle Volume Momentum Average Cross Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -152,44 +152,35 @@ if len(X_predict) != 0:
     # 2. Volume Multiplied Momentum Layer (Raw)
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
     
-    # 🔥 DYNAMIC ENGINE: Peak-Valley Trailing Engine (Uncapped Expansion + Fast Reversal)
+    # 🔥 🔥 NEW 3-CANDLE AVERAGE CALCULATION & ENGINE 🔥 🔥
+    # Rolling mean window=3 lag lekar (pichli 3 candles ka sum / 3)
+    df_predict['Vol_Momentum_3Avg'] = df_predict['Vol_Multiplied_Momentum'].rolling(window=3).mean()
+    
     vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
+    avg_3_vals = df_predict['Vol_Momentum_3Avg'].to_numpy()
     
-    dynamic_signals = []
-    current_direction = 0  # 1 for Up, -1 for Down
-    
+    new_signals = []
     for i in range(len(vmm_vals)):
-        if i == 0:
-            dynamic_signals.append("⚪ INITIALIZING")
+        # Pehli 3 candles me jab tak data calculate na ho jaye
+        if np.isnan(avg_3_vals[i]):
+            new_signals.append("⚪ CALIBRATING")
             continue
             
-        current_val = vmm_vals[i]
-        prev_val = vmm_vals[i-1]
+        current_vmm = vmm_vals[i]
+        prior_avg = avg_3_vals[i] # Current value ko mila kar ya shift karke comparison logic
         
-        # Pure direction shift check (Jaise hi ghume)
-        if current_val > prev_val:
-            # Momentum badh raha hai (Upar expand hone do)
-            current_direction = 1
-            dynamic_signals.append(f"🟢 EXPANDING UP (Value: {round(current_val, 2)})")
-        elif current_val < prev_val:
-            # Jaise hi ghume, instant niche ki taraf signal shift
-            current_direction = -1
-            dynamic_signals.append(f"🔴 DROPPING DOWN (Value: {round(current_val, 2)})")
+        # Check if current value is higher than 3-candle average
+        if current_vmm >= prior_avg:
+            new_signals.append(f"🟢 BUY (Above Avg: +{round(current_vmm - prior_avg, 2)})")
         else:
-            # Steady state
-            if current_direction == 1:
-                dynamic_signals.append(f"🟢 HOLD HIGH (Value: {round(current_val, 2)})")
-            elif current_direction == -1:
-                dynamic_signals.append(f"🔴 HOLD LOW (Value: {round(current_val, 2)})")
-            else:
-                dynamic_signals.append("⚪ NEUTRAL")
-
-    df_predict['d_ML_Signal'] = dynamic_signals
+            new_signals.append(f"🔴 SELL (Below Avg: {round(current_vmm - prior_avg, 2)})")
+            
+    df_predict['d_ML_Signal'] = new_signals
 
     # Formatting Clean Output Frame
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'd_ML_Signal'
+        'Weighted_Momentum', 'Vol_Multiplied_Momentum', 'Vol_Momentum_3Avg', 'd_ML_Signal'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
@@ -199,6 +190,7 @@ if len(X_predict) != 0:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['Vol_Multiplied_Momentum'] = display_df['Vol_Multiplied_Momentum'].round(2) 
+    display_df['Vol_Momentum_3Avg'] = display_df['Vol_Momentum_3Avg'].round(2) 
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
