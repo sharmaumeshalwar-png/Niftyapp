@@ -27,16 +27,15 @@ def apply_kalman_filter_custom(data, initial_p=0.50):
     return smoothed
 
 # ------------------------------------------------------------------
-# 📊 DATA INITIALIZATION (Fixing NameError: df_predict)
+# 📊 DATA INITIALIZATION (Fixing Pandas Frequency ValueError)
 # ------------------------------------------------------------------
 
 # ⚠️ NOTE: Agar aap excel/csv se data la rahe hain, toh is line ko uncomment karein:
 # df_predict = pd.read_csv("your_nifty_data.csv")
 
-# Agar upar se df_predict pehle se nahi aa raha hai, toh app ko crash se bachane ke liye safe setup:
 if 'df_predict' not in locals() and 'df_predict' not in globals():
-    # Yeh ek dummy data structure hai taaki aapka app direct run ho sake
-    dates = pd.date_range(end="2026-07-05 19:00", periods=20, freq="H")
+    # 🔥 FIX: 'H' ki jagah 'h' (lowercase) use kiya hai naye pandas convention ke mutabik
+    dates = pd.date_range(end="2026-07-05 19:00", periods=20, freq="h")
     df_predict = pd.DataFrame({
         'a_Close': np.random.uniform(23000, 23500, size=20),
         'b_Kalman_Price': np.random.uniform(23000, 23500, size=20),
@@ -58,7 +57,6 @@ final_signals = []
 current_state = None  
 accumulator = 0       
 
-# Line 19 Fix: Ab df_predict har haal mein available rahega
 for idx, row in df_predict.iterrows():
     c_val = row['a_Close']
     k_price_val = row['b_Kalman_Price']
