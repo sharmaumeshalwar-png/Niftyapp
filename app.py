@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Clean Kalman Engine", layout="wide")
+st.set_page_config(page_title="Nifty Fixed 50:50 Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone Breakout Engine")
-st.write("🎯 **Clean Setup:** Strictly Fixed 50:50 Data Split Framework")
+st.write("🎯 **Strict Fix:** Restored Data Pipelines + Strictly Enforced 50:50 Learning Split")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
 
 @st.cache_data(ttl=60)
 def pull_historical_data_failsafe():
-    """Strict 730d Hourly Data Pull Strategy for Nifty 50"""
+    """Strict Hourly Data Pull Strategy with Volume Drop Fix for Nifty Index"""
     requested_period = "730d" 
     try:
         raw_df = yf.download("^NSEI", period=requested_period, interval="1h", multi_level_index=False)
@@ -46,6 +46,9 @@ def pull_historical_data_failsafe():
             df['Low'] = pd.to_numeric(raw_df['LOW'].values.flatten(), errors='coerce')
             df['Close'] = pd.to_numeric(raw_df['CLOSE'].values.flatten(), errors='coerce')
             df['Volume'] = pd.to_numeric(raw_df['VOLUME'].values.flatten(), errors='coerce')
+            
+            # Failsafe: Agar index volume missing ya NaN ho to use 0 se handle karein
+            df['Volume'] = df['Volume'].fillna(0)
             return df
     except Exception:
         pass
@@ -54,16 +57,18 @@ def pull_historical_data_failsafe():
 with st.spinner("Processing Matrix Framework..."):
     df_raw = pull_historical_data_failsafe()
     if df_raw.empty:
-        st.error("🚨 Nifty Data Endpoint is unreachable or empty. Please refresh.")
+        st.error("🚨 Nifty Data Endpoint is unreachable. Please refresh.")
         st.stop()
         
     df = df_raw.copy()
     df.ffill(inplace=True)
     df.bfill(inplace=True)
 
-    # VOLUME ENGINE: Dynamic Multiplier (24 Hour Baseline Setup)
-    df['Vol_MA_24'] = df['Volume'].rolling(window=24).mean()
-    df['Vol_Multiplier'] = df['Volume'] / (df['Vol_MA_24'] + 1e-10)
+    # VOLUME ENGINE: Dynamic Multiplier (Handles Nifty Index 0-Volume structure safely)
+    df['Vol_MA_24'] = df['Volume'].rolling(window=24).mean().fillna(0)
+    
+    # Avoid division by zero, fill default multiplier as 1.0 if volume is absent
+    df['Vol_Multiplier'] = np.where(df['Vol_MA_24'] > 0, df['Volume'] / (df['Vol_MA_24'] + 1e-10), 1.0)
     df['Vol_Multiplier'] = df['Vol_Multiplier'].clip(lower=0.5, upper=3.0)
 
     # Base Matrix Definition (Price Kalman 1 Active)
@@ -82,10 +87,11 @@ with st.spinner("Processing Matrix Framework..."):
     # Target Rule
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
+    # Safe Fills instead of deleting rows
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target', 'Vol_Multiplier'], inplace=True)
+    df[features_matrix] = df[features_matrix].ffill().bfill()
 
-# 🔒 FIXED STRICT 50:50 MATRIX RATIO SPLIT AS REQUESTED
+# 🔒 STRICTLY ENFORCED FIXED 50:50 SPLIT
 split_idx = int(len(df) * 0.50)
 
 df_train = df.iloc[:split_idx]
@@ -128,10 +134,10 @@ if len(X_predict) != 0:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     
-    # 1. Kalman 2: Standard Price-Based Weighted Momentum
+    # 1. Kalman 2: Price-Based Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # 2. Volume Multiplied Momentum Layer (Raw)
+    # 2. Volume Multiplied Momentum Layer (Safe Multiplier Integrated)
     df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
     
     # 50-Candle Average Calculation
