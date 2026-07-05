@@ -94,7 +94,7 @@ with st.spinner("Processing Matrix Framework..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (FIXED SYNTAX HERE)
+    # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -135,28 +135,4 @@ if len(X_predict) != 0:
     accumulator = 0
     
     for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    
-    # 1. Kalman 2: Standard Price-Based Weighted Momentum
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-    
-    # 2. Volume Multiplied Momentum Layer (Raw)
-    df_predict['Vol_Multiplied_Momentum'] = df_predict['Weighted_Momentum'] * vol_mults
-    
-    # 50-Candle Average Calculation
-    df_predict['Vol_Momentum_50Avg'] = df_predict['Vol_Multiplied_Momentum'].rolling(window=50).mean()
-    
-    vmm_vals = df_predict['Vol_Multiplied_Momentum'].to_numpy()
-    avg_50_vals = df_predict['Vol_Momentum_50Avg'].to_numpy()
-    
-    new_signals = []
-    for
+        p_up, p_down, c_val, k_price_val = prob_ups
