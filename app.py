@@ -2,126 +2,114 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Standalone 0.50 Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Price Kalman + Fixed 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum (P=0.50 Responsive Mode)")
+st.set_page_config(page_title="Nifty Master Non-Linear Engine", layout="wide")
+st.title("🌀 Nifty 50 Live 1-Hour Master Non-Linear Chaos [0.50 Engine]")
+st.write("🎯 **Aapki Custom Master Setting:** 2 Years Data (50:50 Split) + 1-Hour Candles + Past 25-Candle Window + Accumulator + Weighted Momentum Layer + High/Low Trap Filter")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
+# MATHEMATICAL ENGINE (Non-Linear Sigmoid Filter Function)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0):
+def apply_non_linear_kalman(data_array, initial_p=50.0):
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
-    q = 0.001      # Process noise
-    r = 0.1        # Measurement noise
+    q = 0.005      # Process noise for non-linear spikes
+    r = 0.05       # Measurement noise
     filtered_values = []
+    
     for z in data_array:
         p = p + q
         k = p / (p + r)
-        x = x + k * (z - x)
+        innovation = z - x
+        # Non-Linear Sigmoid Mapping Layer
+        non_linear_scale = 2 / (1 + np.exp(-0.01 * innovation)) - 1
+        x = x + k * (innovation * (1 + np.abs(non_linear_scale)))
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Double Kalman Nifty Microstructure Matrices..."):
-    # Nifty 50 Hourly 2 Years Window
+with st.spinner("Aligning Master Microstructure Matrices (2 Years Chronological Window)..."):
+    # 1. 1-Hour Candlestick + 2 Years Historical Data
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
+        st.error("API Timeout or Indian Market Closed. Please refresh.")
         st.stop()
         
-    # MultiIndex Framework Elimination
     df = pd.DataFrame(index=raw_df.index)
-    
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
-            if isinstance(raw_df[col], pd.DataFrame):
-                df[col] = raw_df[col].iloc[:, 0]
-            else:
-                df[col] = raw_df[col]
+            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active)
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman)
+    df['b_NonLinear_Price'] = apply_non_linear_kalman(df['a_Close'].values, initial_p=50.0)
+    df['c_Combined'] = df['a_Close'] - df['b_NonLinear_Price']
     
-    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
-    df['Sign_Change'] = df['Sign_Change'].astype(int)
-    
-    # Microstructure Features
+    # Non-Linear Volatility Squashing & Structural Features
+    df['Log_Return'] = np.log(df['a_Close'] / df['a_Close'].shift(1))
+    df['NonLinear_Volatility'] = df['Log_Return'].rolling(window=24).std() * df['a_Close']
+    df['Normalized_Gap'] = df['c_Combined'] / (df['NonLinear_Volatility'] + 1e-10)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    
-    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
-    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Strictly Fixed 25-Candle Directional Lookahead Target Logic
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+
+    # 🎯 STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-    
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
 # =====================================================================
 # DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
 # =====================================================================
 split_idx = int(len(df) * 0.50)
 
-df_train = df.iloc[:split_idx]
-X_train = df_train[features_matrix].copy()
-y_train = df_train['Target'].copy()
+# 1. Training Set (Pehele 50%)
+df_train = df.iloc[:split_idx].copy()
+df_train.dropna(subset=features_matrix + ['Target'], inplace=True)
 
+X_train = df_train[features_matrix]
+y_train = df_train['Target']
+
+# 2. Prediction Set (Baad ke 50%)
 df_predict = df.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix].copy()
+df_predict.dropna(subset=features_matrix, inplace=True) 
 
-if len(X_predict) == 0:
-    st.error("Prediction matrix error. Dataframe split bounds mismatch.")
-else:
-    # RandomForest Model Training
-    model_flow = RandomForestClassifier(
-        n_estimators=150, 
-        max_depth=3,            
-        min_samples_leaf=1,     
-        random_state=42
-    )
+X_predict = df_predict[features_matrix]
+
+if len(X_predict) != 0:
+    # Gradient Boosting Training for Non-Linear Topologies
+    model_flow = GradientBoostingClassifier(n_estimators=100, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Raw Probabilities Prediction
+    # Live Probabilities Generation (Prob_Up and Prob_Down)
     probabilities = model_flow.predict_proba(X_predict)
-    
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Naye Columns: Pichli candle ke High aur Low ko Shift logic se pull kiya
+    # Price action capture (Previous Candle High/Low)
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
 
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT WITH TRAP-DETECTION FILTER (HIGH/LOW BREAK)
+    # LIVE TREND-LOCK CIRCUIT WITH ACCUMULATOR & TRAP DETECTION
     # =====================================================================
     final_signals = []
     scores_log = []
     raw_weighted_momentum_log = [] 
-    trap_status_log = [] 
+    trap_status_log = []
     current_state = "HOLD"
-    
     accumulator = 0
-    MAX_BUCKET = 5     
-    MIN_BUCKET = -5    
 
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    kalmans_price = df_predict['b_NonLinear_Price'].to_numpy()
     prev_highs = df_predict['Prev_High'].to_numpy()
     prev_lows = df_predict['Prev_Low'].to_numpy()
 
@@ -130,87 +118,75 @@ else:
         p_down = prob_downs[i]
         c_val = closes[i]
         k_price_val = kalmans_price[i]
-        
-        # Array bounds check 
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Raw Accumulator Calculation
+        # --- 1. ACCUMULATOR ENGINE COUNTER ---
         if p_up >= 0.55:
-            accumulator += 1  
+            accumulator += 1
         elif p_down >= 0.55:
-            accumulator -= 1  
-        
-        accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
+            accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
-        # Raw Weighted Momentum (Close - Kalman)
+        # --- 2. RAW WEIGHTED MOMENTUM VECTOR ---
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
-        # --- MATH LOGIC (KALMAN + PRICE ACTION TRACKING) ---
+        # --- 3. PRICE ACTION CONFIRMATION CIRCUIT ---
         trap_msg = "TREND VALID"
 
-        if accumulator == MAX_BUCKET:
+        if accumulator == 5:
             current_state = "BUY"
-            if c_val > p_high:
-                final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            if c_val > p_high: final_signals.append("🟢 NON-LINEAR STRONG BUY")
             else:
-                final_signals.append("❌ NO ENTRY (Wait for Breakout)")
+                final_signals.append("❌ NO ENTRY (Wait for High Break)")
                 trap_msg = "⚠️ BULL TRAP (High Not Broken)"
-            
-        elif accumulator == MIN_BUCKET:
+        elif accumulator == -5:
             current_state = "SELL"
-            if c_val < p_low:
-                final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            if c_val < p_low: final_signals.append("🔴 NON-LINEAR STRONG SELL")
             else:
                 final_signals.append("🟢 HOLD LONG (No Short Entry)")
                 trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
-            
         else:
             if current_state == "BUY":
-                if accumulator > 0:
-                    final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+                if accumulator > 0: final_signals.append(f"🟢 HOLD BUY (Score: {accumulator})")
                 else:
-                    if c_val < p_low:
-                        final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    if c_val < p_low: final_signals.append(f"⚠️ REVERSAL CRITICAL (Score: {accumulator})")
                     else:
-                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
-                        trap_msg = "⚠️ BEAR TRAP INSIDE BULL TREND"
-                        
+                        final_signals.append(f"🔄 FAKE DIP (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE TREND"
             elif current_state == "SELL":
-                if accumulator < 0:
-                    final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
+                if accumulator < 0: final_signals.append(f"🔴 HOLD SELL (Score: {accumulator})")
                 else:
-                    if c_val > p_high:
-                        final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    if c_val > p_high: final_signals.append(f"⚠️ REVERSAL CRITICAL (Score: {accumulator})")
                     else:
-                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
-                        trap_msg = "⚠️ BULL TRAP INSIDE BEAR TREND"
+                        final_signals.append(f"🔄 FAKE PUMP (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE TREND"
             else:
-                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+                final_signals.append(f"⚪ NEUTRAL (Score: {accumulator})")
 
         trap_status_log.append(trap_msg)
 
-    # Mapping variables back to pandas dataframe
+    # Mapping variables to dataframe layout
     df_predict['d_ML_Signal'] = final_signals
-    df_predict['Trap_Status'] = trap_status_log 
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    df_predict['Trap_Status'] = trap_status_log
+    df_predict['Accumulator_Score'] = scores_log
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log
 
-    # Weighted Momentum ke upar ALAG se Kalman filter
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
+    # --- 4. DOUBLE KALMAN FILTER FOR WEIGHTED MOMENTUM ---
+    df_predict['Weighted_Momentum'] = apply_non_linear_kalman(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # Display Configuration WITH HIGH LOW VISIBILITY
+    # Display Configuration Layout
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
+        'a_Close', 'b_NonLinear_Price', 'Prev_High', 'Prev_Low', 
         'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
         'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
     ]
-    display_df = df_predict[clean_display_cols].copy()
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['b_NonLinear_Price'] = display_df['b_NonLinear_Price'].round(2)
     display_df['Prev_High'] = display_df['Prev_High'].round(2)
     display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
@@ -218,9 +194,7 @@ else:
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Sorting to get latest ticks on top
-    display_df = display_df.sort_index(ascending=False)
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Standalone Engine (Kalman 0.50 Matrix Mode)")
+    st.subheader(f"📋 Live Master Non-Linear Matrix Output")
     st.dataframe(display_df, use_container_width=True, height=750)
