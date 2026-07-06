@@ -17,45 +17,50 @@ def apply_non_linear_kalman(data_array, initial_p=100.0):
         return []
     x = data_array[0]
     p = initial_p  
-    
-    # 🎯 SMOOTH DISTANCE PARAMETERS: Line ko price se door rakhne ke liye
-    q = 0.0001     # Process noise kam kiya (Line jhatke nahi maregi, smooth chalegi)
-    r = 2.5        # Measurement noise badhaya (Line close price se door, gap banakar chalegi)
-    
+    q = 0.0001     
+    r = 2.5        
     filtered_values = []
     
     for z in data_array:
         p = p + q
         k = p / (p + r)
         innovation = z - x
-        
-        # Sigmoid scale ko thoda mild kiya extra smoothing ke liye
         non_linear_scale = 2 / (1 + np.exp(-0.005 * innovation)) - 1
-        
         x = x + k * (innovation * (1 + np.abs(non_linear_scale)))
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning Master Microstructure Matrices (2 Years Chronological Window)..."):
-    # 1. 1-Hour Candlestick + 2 Years Historical Data
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+with st.spinner("Aligning Master Microstructure Matrices (2 Years Window)..."):
+    # 🛑 FAIL-SAFE DATA FETCHING (MultiIndex and Empty Check Handled)
+    raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
-    if len(raw_df) == 0:
-        st.error("API Timeout or Indian Market Closed. Please refresh.")
+    if raw_df.empty:
+        # Backup fetch if 2y fails due to weekend/API limits
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
+        
+    if raw_df.empty:
+        st.error("🚨 YFinance API se data nahi mil raha hai. Kripya thodi der baad refresh karein.")
         st.stop()
         
+    # Standardizing Columns (Collapsing MultiIndex if any)
     df = pd.DataFrame(index=raw_df.index)
+    
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
-            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+            if isinstance(raw_df[col], pd.DataFrame):
+                df[col] = raw_df[col].iloc[:, 0].ffill()
+            else:
+                df[col] = raw_df[col].ffill()
 
+    # Drop any remaining NaNs in raw price
+    df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
     # Base Matrix Definition via Smooth Non-Linear Kalman
     df['a_Close'] = df['Close']
     df['b_NonLinear_Price'] = apply_non_linear_kalman(df['a_Close'].values, initial_p=100.0)
-    df['c_Combined'] = df['a_Close'] - df['b_NonLinear_Price'] # Isme ab badhiya gap dikhega
+    df['c_Combined'] = df['a_Close'] - df['b_NonLinear_Price']
     
     # Non-Linear Volatility Squashing & Structural Features
     df['Log_Return'] = np.log(df['a_Close'] / df['a_Close'].shift(1))
@@ -66,33 +71,39 @@ with st.spinner("Aligning Master Microstructure Matrices (2 Years Chronological 
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-    # 🎯 STRICT PAST 25-CANDLE TARGET WINDOW
+    # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    
+    # Drop rows with NaNs only in training features to prevent massive data loss
+    df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
 # =====================================================================
 # DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
 # =====================================================================
-split_idx = int(len(df) * 0.50)
+split_idx = int(len(df_clean) * 0.50)
 
-# 1. Training Set (Pehele 50%)
-df_train = df.iloc[:split_idx].copy()
+# 1. Training Set
+df_train = df_clean.iloc[:split_idx].copy()
 df_train.dropna(subset=features_matrix + ['Target'], inplace=True)
 
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
-# 2. Prediction Set (Baad ke 50%)
-df_predict = df.iloc[split_idx:].copy()
+# 2. Prediction Set
+df_predict = df_clean.iloc[split_idx:].copy()
 df_predict.dropna(subset=features_matrix, inplace=True) 
 
 X_predict = df_predict[features_matrix]
 
-if len(X_predict) != 0:
-    # Gradient Boosting Training for Non-Linear Topologies
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error(f"⚠️ Data size insufficient for 50:50 split. Total rows available: {len(df_clean)}")
+    st.stop()
+else:
+    # Gradient Boosting Training
     model_flow = GradientBoostingClassifier(n_estimators=100, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Live Probabilities Generation (Prob_Up and Prob_Down)
+    # Live Probabilities Generation
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
@@ -126,19 +137,14 @@ if len(X_predict) != 0:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # --- 1. ACCUMULATOR ENGINE COUNTER ---
-        if p_up >= 0.55:
-            accumulator += 1
-        elif p_down >= 0.55:
-            accumulator -= 1
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
-        # --- 2. RAW WEIGHTED MOMENTUM VECTOR ---
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
-        # --- 3. PRICE ACTION CONFIRMATION CIRCUIT ---
         trap_msg = "TREND VALID"
 
         if accumulator == 5:
@@ -173,19 +179,30 @@ if len(X_predict) != 0:
 
         trap_status_log.append(trap_msg)
 
-    # Mapping variables to dataframe layout
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Trap_Status'] = trap_status_log
     df_predict['Accumulator_Score'] = scores_log
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log
 
-    # --- 4. DOUBLE KALMAN FILTER FOR WEIGHTED MOMENTUM ---
     df_predict['Weighted_Momentum'] = apply_non_linear_kalman(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # Display Configuration Layout
     clean_display_cols = [
         'a_Close', 'b_NonLinear_Price', 'Prev_High', 'Prev_Low', 
         'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
         'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
     ]
-    display_df = df
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_NonLinear_Price'] = display_df['b_NonLinear_Price'].round(2)
+    display_df['Prev_High'] = display_df['Prev_High'].round(2)
+    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Master Non-Linear Matrix Output (Optimized Distance Mode)")
+    st.dataframe(display_df, use_container_width=True, height=750)
