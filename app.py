@@ -101,12 +101,17 @@ else:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
+    # Naye Columns: Pichli candle ke High aur Low ko Shift logic se pull kiya
+    df_predict['Prev_High'] = df_predict['High'].shift(1)
+    df_predict['Prev_Low'] = df_predict['Low'].shift(1)
+
     # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT (DOUBLE KALMAN SIGNAL PROCESSING)
+    # LIVE TREND-LOCK CIRCUIT WITH TRAP-DETECTION FILTER (HIGH/LOW BREAK)
     # =====================================================================
     final_signals = []
     scores_log = []
     raw_weighted_momentum_log = [] 
+    trap_status_log = [] 
     current_state = "HOLD"
     
     accumulator = 0
@@ -117,12 +122,18 @@ else:
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
 
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
         c_val = closes[i]
         k_price_val = kalmans_price[i]
+        
+        # Array bounds check 
+        p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
+        p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
         # Raw Accumulator Calculation
         if p_up >= 0.55:
@@ -137,44 +148,71 @@ else:
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
+        # --- MATH LOGIC (KALMAN + PRICE ACTION TRACKING) ---
+        trap_msg = "TREND VALID"
+
         if accumulator == MAX_BUCKET:
             current_state = "BUY"
-            final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            if c_val > p_high:
+                final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            else:
+                final_signals.append("❌ NO ENTRY (Wait for Breakout)")
+                trap_msg = "⚠️ BULL TRAP (High Not Broken)"
             
         elif accumulator == MIN_BUCKET:
             current_state = "SELL"
-            final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            if c_val < p_low:
+                final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            else:
+                final_signals.append("🟢 HOLD LONG (No Short Entry)")
+                trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
             
         else:
             if current_state == "BUY":
                 if accumulator > 0:
                     final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
-                    
+                    if c_val < p_low:
+                        final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE BULL TREND"
+                        
             elif current_state == "SELL":
                 if accumulator < 0:
                     final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
                 else:
-                    final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
-                    
+                    if c_val > p_high:
+                        final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE BEAR TREND"
             else:
                 final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
 
-    # Mapping secure array data back to pandas
+        trap_status_log.append(trap_msg)
+
+    # Mapping variables back to pandas dataframe
     df_predict['d_ML_Signal'] = final_signals
+    df_predict['Trap_Status'] = trap_status_log 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Weighted Momentum ke upar ALAG se Kalman filter chalaya strictly 0.50 se
+    # Weighted Momentum ke upar ALAG se Kalman filter
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # Display Configuration
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    # Display Configuration WITH HIGH LOW VISIBILITY
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
+        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
+    ]
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prev_High'] = display_df['Prev_High'].round(2)
+    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
