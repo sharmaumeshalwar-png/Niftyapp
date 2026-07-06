@@ -5,28 +5,33 @@ import yfinance as yf
 from sklearn.ensemble import GradientBoostingClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Master Non-Linear Engine", layout="wide")
+st.set_page_config(page_title="Nifty Master Smooth Non-Linear Engine", layout="wide")
 st.title("🌀 Nifty 50 Live 1-Hour Master Non-Linear Chaos [0.50 Engine]")
-st.write("🎯 **Aapki Custom Master Setting:** 2 Years Data (50:50 Split) + 1-Hour Candles + Past 25-Candle Window + Accumulator + Weighted Momentum Layer + High/Low Trap Filter")
+st.write("🎯 **Aapki Custom Master Setting:** 2 Years Data (50:50 Split) + 1-Hour Candles + Past 25-Candle Window + Accumulator + Smooth Distance Kalman Layer + High/Low Trap Filter")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Non-Linear Sigmoid Filter Function)
+# MATHEMATICAL ENGINE (Smooth Distance Non-Linear Sigmoid Filter)
 # =====================================================================
-def apply_non_linear_kalman(data_array, initial_p=50.0):
+def apply_non_linear_kalman(data_array, initial_p=100.0):
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
-    q = 0.005      # Process noise for non-linear spikes
-    r = 0.05       # Measurement noise
+    
+    # 🎯 SMOOTH DISTANCE PARAMETERS: Line ko price se door rakhne ke liye
+    q = 0.0001     # Process noise kam kiya (Line jhatke nahi maregi, smooth chalegi)
+    r = 2.5        # Measurement noise badhaya (Line close price se door, gap banakar chalegi)
+    
     filtered_values = []
     
     for z in data_array:
         p = p + q
         k = p / (p + r)
         innovation = z - x
-        # Non-Linear Sigmoid Mapping Layer
-        non_linear_scale = 2 / (1 + np.exp(-0.01 * innovation)) - 1
+        
+        # Sigmoid scale ko thoda mild kiya extra smoothing ke liye
+        non_linear_scale = 2 / (1 + np.exp(-0.005 * innovation)) - 1
+        
         x = x + k * (innovation * (1 + np.abs(non_linear_scale)))
         p = (1 - k) * p
         filtered_values.append(x)
@@ -47,10 +52,10 @@ with st.spinner("Aligning Master Microstructure Matrices (2 Years Chronological 
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition
+    # Base Matrix Definition via Smooth Non-Linear Kalman
     df['a_Close'] = df['Close']
-    df['b_NonLinear_Price'] = apply_non_linear_kalman(df['a_Close'].values, initial_p=50.0)
-    df['c_Combined'] = df['a_Close'] - df['b_NonLinear_Price']
+    df['b_NonLinear_Price'] = apply_non_linear_kalman(df['a_Close'].values, initial_p=100.0)
+    df['c_Combined'] = df['a_Close'] - df['b_NonLinear_Price'] # Isme ab badhiya gap dikhega
     
     # Non-Linear Volatility Squashing & Structural Features
     df['Log_Return'] = np.log(df['a_Close'] / df['a_Close'].shift(1))
@@ -183,18 +188,4 @@ if len(X_predict) != 0:
         'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
         'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
     ]
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_NonLinear_Price'] = display_df['b_NonLinear_Price'].round(2)
-    display_df['Prev_High'] = display_df['Prev_High'].round(2)
-    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Master Non-Linear Matrix Output")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df = df
