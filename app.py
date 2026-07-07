@@ -7,20 +7,20 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Bank Nifty Linear Smooth 0.50 Engine", layout="wide")
 st.title("📊 Bank Nifty Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Bank Nifty Index Data + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Bank Nifty Index Data + High Uncertainty Initializer (`initial_p=10000.0`) + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Optimized for Distance)
+# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Bank Nifty Scale Optimized)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=100.0):
+def apply_kalman_filter_custom(data_array, initial_p=10000.0): # 🎯 Set to 10000.0 to eliminate startup gap
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
     
-    # 🎯 LINEAR DISTANCE PARAMETERS: Line ko price se door aur smooth rakhne ke liye
-    q = 0.0001     # Process noise bohot kam kiya (Line jhatke nahi maregi, stable chalegi)
-    r = 2.5        # Measurement noise badha diya (Line close price se door, gap banakar chalegi)
+    # LINEAR DISTANCE PARAMETERS: Price se safe distance aur smooth trend lock ke liye
+    q = 0.0001     # Process noise (Line ko stable aur noise-free rakhega)
+    r = 2.5        # Measurement noise (Close price se clean gap banakar chalega)
     
     filtered_values = []
     for z in data_array:
@@ -32,7 +32,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matrices..."):
-    # 🛑 BANK NIFTY DATA FETCHING (^NSEBANK) - Fail-safe Wrapper Active
+    # BANK NIFTY DATA FETCHING - Fail-safe Wrapper Active
     raw_df = yf.download("^NSEBANK", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -55,10 +55,10 @@ with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matr
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - With Safe Distance)
+    # Base Matrix Definition (Price Kalman 1 Active - With Instant Price Convergence)
     df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Proper Gap
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=10000.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Normal Healthy Gap
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
@@ -74,7 +74,7 @@ with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matr
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-    # 🎯 STRICT PAST 25-CANDLE TARGET WINDOW
+    # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
@@ -186,7 +186,7 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Weighted Momentum ke upar dubara filter mapping with 0.50 tuning
+    # Weighted Momentum filter mapping with 0.50 tuning
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Table View Layout Configuration
