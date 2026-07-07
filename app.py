@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Linear Smooth 0.50 Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum")
+st.set_page_config(page_title="Bank Nifty Linear Smooth 0.50 Engine", layout="wide")
+st.title("📊 Bank Nifty Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Bank Nifty Index Data + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Linear Kalman Filter Function - Optimized for Distance)
@@ -31,12 +31,12 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Linear Kalman Nifty Microstructure Matrices..."):
-    # Fail-safe data download to avoid Blank Data issue
-    raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
+with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matrices..."):
+    # 🛑 BANK NIFTY DATA FETCHING (^NSEBANK) - Fail-safe Wrapper Active
+    raw_df = yf.download("^NSEBANK", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
-        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
+        raw_df = yf.download("^NSEBANK", period="1mo", interval="1h")
         
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
@@ -55,7 +55,7 @@ with st.spinner("Aligning 25-Candle Linear Kalman Nifty Microstructure Matrices.
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - With New Safe Distance)
+    # Base Matrix Definition (Price Kalman 1 Active - With Safe Distance)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Proper Gap
@@ -208,5 +208,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Standalone Linear Engine (Distance Optimized)")
+    st.subheader(f"📋 Live 1-Hour Bank Nifty Standalone Linear Engine (Distance Optimized)")
     st.dataframe(display_df, use_container_width=True, height=750)
