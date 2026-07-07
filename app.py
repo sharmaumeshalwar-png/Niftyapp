@@ -5,14 +5,14 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Bank Nifty Linear Smooth 0.50 Engine", layout="wide")
-st.title("📊 Bank Nifty Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Bank Nifty Index Data + High Uncertainty Initializer (`initial_p=10000.0`) + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
+st.set_page_config(page_title="BTC Smooth 0.50 Engine", layout="wide")
+st.title("🪙 Bitcoin (BTC-USD) Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC-USD Crypto Data + Crypto Volatility Initializer + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Bank Nifty Scale Optimized)
+# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Crypto Scale Optimized)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=10000.0): # 🎯 Set to 10000.0 to eliminate startup gap
+def apply_kalman_filter_custom(data_array, initial_p=50000.0): # 🎯 High scale initialization for BTC volatility
     if len(data_array) == 0:
         return []
     x = data_array[0]
@@ -20,7 +20,7 @@ def apply_kalman_filter_custom(data_array, initial_p=10000.0): # 🎯 Set to 100
     
     # LINEAR DISTANCE PARAMETERS: Price se safe distance aur smooth trend lock ke liye
     q = 0.0001     # Process noise (Line ko stable aur noise-free rakhega)
-    r = 2.5        # Measurement noise (Close price se clean gap banakar chalega)
+    r = 2.5        # Measurement noise (Close price se clean gap banakar chalegi)
     
     filtered_values = []
     for z in data_array:
@@ -31,15 +31,15 @@ def apply_kalman_filter_custom(data_array, initial_p=10000.0): # 🎯 Set to 100
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matrices..."):
-    # BANK NIFTY DATA FETCHING - Fail-safe Wrapper Active
-    raw_df = yf.download("^NSEBANK", period="2y", interval="1h", group_by='column')
+with st.spinner("Aligning 25-Candle Linear Kalman BTC Microstructure Matrices..."):
+    # 🛑 CRYPTO FETCHING (BTC-USD) - 24/7 Framework
+    raw_df = yf.download("BTC-USD", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
-        raw_df = yf.download("^NSEBANK", period="1mo", interval="1h")
+        raw_df = yf.download("BTC-USD", period="1mo", interval="1h")
         
     if raw_df.empty:
-        st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
+        st.error("YFinance API Timeout or Crypto Feed Down. Please refresh the dashboard.")
         st.stop()
         
     # MultiIndex Framework Elimination
@@ -57,7 +57,7 @@ with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matr
 
     # Base Matrix Definition (Price Kalman 1 Active - With Instant Price Convergence)
     df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=10000.0)
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50000.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Normal Healthy Gap
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
@@ -74,7 +74,7 @@ with st.spinner("Aligning 25-Candle Linear Kalman Bank Nifty Microstructure Matr
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-    # STRICT PAST 25-CANDLE TARGET WINDOW
+    # 🎯 STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
@@ -208,5 +208,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Bank Nifty Standalone Linear Engine (Distance Optimized)")
+    st.subheader(f"📋 Live 1-Hour BTC-USD Standalone Linear Engine (Distance Optimized)")
     st.dataframe(display_df, use_container_width=True, height=750)
