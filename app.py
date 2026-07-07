@@ -5,22 +5,22 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="HDFC Bank Smooth 0.50 Engine", layout="wide")
-st.title("🏦 HDFC Bank Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only HDFC Bank Stock Data + Stock Scale Initializer (`initial_p=500.0`) + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
+st.set_page_config(page_title="Nifty Linear Smooth 0.50 Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Stock Scale Optimized)
+# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Optimized for Distance)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=500.0): # 🎯 Optimized for HDFC Bank price scale
+def apply_kalman_filter_custom(data_array, initial_p=100.0): # 🎯 Back to original perfect Nifty scale initializer
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
     
-    # LINEAR DISTANCE PARAMETERS: Price se safe distance aur smooth trend lock ke liye
-    q = 0.0001     # Process noise (Line ko stable aur noise-free rakhega)
-    r = 2.5        # Measurement noise (Close price se clean gap banakar chalegi)
+    # 🎯 LINEAR DISTANCE PARAMETERS: Line ko price se door aur smooth rakhne ke liye
+    q = 0.0001     # Process noise bohot kam kiya (Line jhatke nahi maregi, stable chalegi)
+    r = 2.5        # Measurement noise badha diya (Line close price se door, gap banakar chalegi)
     
     filtered_values = []
     for z in data_array:
@@ -31,12 +31,12 @@ def apply_kalman_filter_custom(data_array, initial_p=500.0): # 🎯 Optimized fo
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Linear Kalman HDFC Bank Microstructure Matrices..."):
-    # 🛑 HDFC BANK DATA FETCHING (HDFCBANK.NS) - Fail-safe Wrapper Active
-    raw_df = yf.download("HDFCBANK.NS", period="2y", interval="1h", group_by='column')
+with st.spinner("Aligning 25-Candle Linear Kalman Nifty Microstructure Matrices..."):
+    # Fail-safe data download to avoid Blank Data issue
+    raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
-        raw_df = yf.download("HDFCBANK.NS", period="1mo", interval="1h")
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
         
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
@@ -55,10 +55,10 @@ with st.spinner("Aligning 25-Candle Linear Kalman HDFC Bank Microstructure Matri
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - Perfect Stock Scale Fit)
+    # Base Matrix Definition (Price Kalman 1 Active - With New Safe Distance)
     df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=500.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Clean Gap
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Proper Gap
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
@@ -186,7 +186,7 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Weighted Momentum filter mapping with 0.50 tuning
+    # Weighted Momentum ke upar dubara filter mapping with 0.50 tuning
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Table View Layout Configuration
@@ -208,5 +208,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour HDFC Bank Standalone Linear Engine (Distance Optimized)")
+    st.subheader(f"📋 Live 1-Hour Nifty Standalone Linear Engine (Distance Optimized)")
     st.dataframe(display_df, use_container_width=True, height=750)
