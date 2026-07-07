@@ -5,22 +5,22 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="India VIX Smooth 0.50 Engine", layout="wide")
-st.title("📊 India VIX Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only India VIX Index Data + Small Scale VIX Initializer (`initial_p=10.0`) + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
+st.set_page_config(page_title="HDFC Bank Smooth 0.50 Engine", layout="wide")
+st.title("🏦 HDFC Bank Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only HDFC Bank Stock Data + Stock Scale Initializer (`initial_p=500.0`) + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Linear Kalman Filter Function - VIX Scale Optimized)
+# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Stock Scale Optimized)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=10.0): # 🎯 Set to 10.0 for India VIX small scale (10-30 range)
+def apply_kalman_filter_custom(data_array, initial_p=500.0): # 🎯 Optimized for HDFC Bank price scale
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
     
-    # LINEAR DISTANCE PARAMETERS: Small scale ke hisab se safe proportionate distance ke liye
+    # LINEAR DISTANCE PARAMETERS: Price se safe distance aur smooth trend lock ke liye
     q = 0.0001     # Process noise (Line ko stable aur noise-free rakhega)
-    r = 2.5        # Measurement noise (VIX price se clean gap banakar chalega)
+    r = 2.5        # Measurement noise (Close price se clean gap banakar chalegi)
     
     filtered_values = []
     for z in data_array:
@@ -31,12 +31,12 @@ def apply_kalman_filter_custom(data_array, initial_p=10.0): # 🎯 Set to 10.0 f
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Linear Kalman India VIX Microstructure Matrices..."):
-    # 🛑 INDIA VIX DATA FETCHING (^INDIAVIX) - Fail-safe Wrapper Active
-    raw_df = yf.download("^INDIAVIX", period="2y", interval="1h", group_by='column')
+with st.spinner("Aligning 25-Candle Linear Kalman HDFC Bank Microstructure Matrices..."):
+    # 🛑 HDFC BANK DATA FETCHING (HDFCBANK.NS) - Fail-safe Wrapper Active
+    raw_df = yf.download("HDFCBANK.NS", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
-        raw_df = yf.download("^INDIAVIX", period="1mo", interval="1h")
+        raw_df = yf.download("HDFCBANK.NS", period="1mo", interval="1h")
         
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
@@ -55,15 +55,15 @@ with st.spinner("Aligning 25-Candle Linear Kalman India VIX Microstructure Matri
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - Perfect VIX Small Scale Fit)
+    # Base Matrix Definition (Price Kalman 1 Active - Perfect Stock Scale Fit)
     df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=10.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Clean Proportionate Gap
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=500.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Clean Gap
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Microstructure Features (Volume dropped as VIX index doesn't have raw volume)
+    # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -150,13 +150,13 @@ else:
 
         if accumulator == 5:
             current_state = "BUY"
-            if c_val > p_high: final_signals.append("🟢 STRONG BUY (VIX Spike - Panic Rising)")
+            if c_val > p_high: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
             else:
                 final_signals.append("❌ NO ENTRY (Wait for Breakout)")
                 trap_msg = "⚠️ BULL TRAP (High Not Broken)"
         elif accumulator == -5:
             current_state = "SELL"
-            if c_val < p_low: final_signals.append("🔴 STRONG SELL (VIX Dropping - Cool Off)")
+            if c_val < p_low: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
             else:
                 final_signals.append("🟢 HOLD LONG (No Short Entry)")
                 trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
@@ -208,5 +208,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour India VIX Standalone Linear Engine (Distance Optimized)")
+    st.subheader(f"📋 Live 1-Hour HDFC Bank Standalone Linear Engine (Distance Optimized)")
     st.dataframe(display_df, use_container_width=True, height=750)
