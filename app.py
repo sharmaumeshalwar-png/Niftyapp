@@ -2,212 +2,195 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Hint Mapping Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Standalone Engine [Exact Hint Sheet Integrated]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Price Kalman + Fixed 25-Candle Target Window + **Aapki Written Sheet Hints (CE/PE Sell Constraints)** + Kalman Momentum (P=0.50)")
+st.set_page_config(page_title="Nifty Sheet Performance & Expiry Analyzer", layout="wide")
+st.title("🦅 Nifty 50 Institutional Sheet Performance Engine & Expiry Optimizer")
+st.write("🎯 **Core Objective:** Analytical evaluation of your hand-written sheet trades + 25-Hour execution point tracking + Adaptive Expiry Selection Matrix with Native Volatility correlation.")
 
 # =====================================================================
-# AAPKI SHEET KA EXACT DATA MAPPER (Soft-Matching Enabled)
+# HARDCODED IMAGE DATA MATRICES (Strictly Mapped)
 # =====================================================================
-hint_sheet_data = {
+sheet_records = [
     # Left Column (2025)
-    "2025-07-04": "CE_SELL", "2025-07-08": "PE_SELL",
-    "2025-07-09": "CE_SELL", "2025-02-18": "PE_SELL",
-    "2025-08-26": "CE_SELL", "2025-09-04": "PE_SELL",
-    "2025-09-08": "PE_SELL", "2025-09-25": "CE_SELL", 
-    "2025-10-06": "PE_SELL", "2025-11-04": "CE_SELL", 
-    "2025-11-11": "PE_SELL", "2025-11-25": "CE_SELL", 
-    "2025-11-26": "PE_SELL", "2025-12-02": "CE_SELL", 
-    "2025-12-05": "PE_SELL", "2025-12-08": "CE_SELL", 
-    "2025-12-22": "PE_SELL", "2025-12-24": "CE_SELL",
-    # Transition to 2026 (Left Column Bottom)
-    "2026-01-01": "PE_SELL",
-    
-    # Right Column (2025-2026 standard mappings)
-    "2025-01-01": "CE_SELL", "2025-01-02": "PE_SELL", 
-    "2025-01-06": "CE_SELL", "2025-02-03": "PE_SELL", 
-    "2025-02-05": "CE_SELL", "2025-02-06": "CE_SELL",
-    "2025-07-06": "PE_SELL", "2025-02-13": "CE_SELL",
-    "2025-02-16": "PE_SELL", "2025-02-19": "CE_SELL",
-    "2025-02-23": "CE_SELL", "2025-02-24": "CE_SELL",
-    "2025-04-08": "PE_SELL", "2025-05-12": "CE_SELL",
-    "2025-05-14": "PE_SELL", "2025-05-29": "CE_SELL",
-    "2025-06-12": "PE_SELL"
-}
+    {"Date": "2025-07-04", "Time": "12:15", "Type": "CE_SELL"},
+    {"Date": "2025-07-04", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-07-08", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-07-08", "Time": "13:15", "Type": "PE_SELL"},
+    {"Date": "2025-07-08", "Time": "14:15", "Type": "CE_SELL"},
+    {"Date": "2025-07-08", "Time": "15:15", "Type": "PE_SELL"},
+    {"Date": "2025-07-09", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-18", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-08-26", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-09-04", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-09-04", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-09-08", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-09-25", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-10-06", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-11-04", "Time": "14:15", "Type": "CE_SELL"},
+    {"Date": "2025-11-11", "Time": "15:15", "Type": "PE_SELL"},
+    {"Date": "2025-11-25", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-11-26", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-12-02", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-12-05", "Time": "12:15", "Type": "PE_SELL"},
+    {"Date": "2025-12-08", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-12-22", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-12-24", "Time": "09:15", "Type": "CE_SELL"},
+    # Left Column (2026 Entries)
+    {"Date": "2026-01-01", "Time": "11:15", "Type": "PE_SELL"},
+    {"Date": "2026-01-01", "Time": "12:15", "Type": "CE_SELL"},
+    # Right Column Mappings (2025 Data blocks)
+    {"Date": "2025-01-01", "Time": "14:15", "Type": "PE_SELL"},
+    {"Date": "2025-01-01", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-01-02", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-01-06", "Time": "11:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-03", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-05", "Time": "14:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-05", "Time": "15:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-06", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-07-06", "Time": "12:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-06", "Time": "13:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-06", "Time": "14:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-13", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-16", "Time": "15:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-19", "Time": "12:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-23", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-23", "Time": "13:15", "Type": "CE_SELL"},
+    {"Date": "2025-02-23", "Time": "15:15", "Type": "PE_SELL"},
+    {"Date": "2025-02-24", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-04-08", "Time": "10:15", "Type": "PE_SELL"},
+    {"Date": "2025-05-12", "Time": "10:15", "Type": "CE_SELL"},
+    {"Date": "2025-05-14", "Time": "12:15", "Type": "PE_SELL"},
+    {"Date": "2025-05-29", "Time": "15:15", "Type": "CE_SELL"},
+    {"Date": "2025-06-12", "Time": "11:15", "Type": "PE_SELL"}
+]
+
+hints_df = pd.DataFrame(sheet_records)
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Kalman Filter Function)
+# STRATEGY UTILITY FUNCTIONS
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0):
-    if len(data_array) == 0:
-        return []
-    x = data_array[0]
-    p = initial_p  
-    q = 0.001      # Process noise
-    r = 0.1        # Measurement noise
-    filtered_values = []
-    for z in data_array:
-        p = p + q
-        k = p / (p + r)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+def get_nearest_thursday(date_str):
+    """Calculates weekly Thursday contract target anchors for execution processing."""
+    base_date = pd.to_datetime(date_str)
+    days_ahead = 3 - base_date.weekday()
+    if days_ahead < 0: 
+        days_ahead += 7
+    return (base_date + pd.Timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
-with st.spinner("Aligning Your Hint Sheet Matrices onto Live Nifty 50 Grid..."):
-    # Download raw Nifty Data (Using period '2y' to guarantee baseline recovery)
+with st.spinner("Extracting Market Time Series and Volatility Arrays..."):
+    # Ingest 2 full years data for baseline tracking stabilization
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
-    
     if len(raw_df) == 0:
-        st.error("YFinance API Mismatch or Market Closed. Showing structural backup frame.")
+        st.error("Market API Endpoint Error. Please reload the computational application.")
         st.stop()
-        
-    # MultiIndex Framework Elimination
+
     df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in raw_df.columns:
-            if isinstance(raw_df[col], pd.DataFrame):
-                df[col] = raw_df[col].iloc[:, 0]
-            else:
-                df[col] = raw_df[col]
+    for col in ['Open', 'High', 'Low', 'Close']:
+        df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
     df.index = pd.to_datetime(df.index)
+    
+    # Internal Volatility Calculation Engine (Alternative VIX proxy)
+    df['Log_Ret'] = np.log(df['Close'] / df['Close'].shift(1))
+    df['Native_Volatility'] = df['Log_Ret'].rolling(window=25).std() * np.sqrt(24 * 365) * 100
+    df['Native_Volatility'] = df['Native_Volatility'].ffill().fillna(15.0)
 
-    # Base Matrix Pricing Structure
-    df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
-    
-    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
-    df['Sign_Change'] = df['Sign_Change'].astype(int)
-    
-    # Microstructure Calculations
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    
-    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
-    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
-    
-    # Target Horizon Mapping Lookahead Fixed at 25-Candles
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-    
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['Target'], inplace=True)
+    # Cross-matching reference index columns
+    df['Str_Date'] = df.index.strftime('%Y-%m-%d')
+    df['Str_Hour'] = df.index.strftime('%H')
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
+# CALCULATION LOOP & VECTOR CORRELATION ENGINE
 # =====================================================================
-split_idx = int(len(df) * 0.50)
+processed_logs = []
 
-df_train = df.iloc[:split_idx]
-X_train = df_train[features_matrix].copy()
-y_train = df_train['Target'].copy()
-
-df_predict = df.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix].copy()
-
-if len(X_predict) == 0:
-    st.error("Prediction matrix boundary mismatch tracking error.")
-else:
-    # Model Training Sequence
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
-    model_flow.fit(X_train, y_train)
-
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
-
-    # =====================================================================
-    # AAPKI HINT SHEET MAPPING LOGIC AND OVERRIDES
-    # =====================================================================
-    final_signals = []
-    scores_log = []
-    raw_weighted_momentum_log = [] 
-    current_state = "HOLD"
+for _, trade_row in hints_df.iterrows():
+    t_date = trade_row['Date']
+    t_hour = trade_row['Time'].split(':')[0]
+    t_type = trade_row['Type']
     
-    accumulator = 0
-    MAX_BUCKET = 5     
-    MIN_BUCKET = -5    
-
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
-    closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    timestamps = df_predict.index
-
-    for i in range(len(prob_ups)):
-        p_up = prob_ups[i]
-        p_down = prob_downs[i]
-        c_val = closes[i]
-        k_price_val = kalmans_price[i]
+    # Match structural price layers using the soft-hour matcher block
+    entry_slice = df[(df['Str_Date'] == t_date) & (df['Str_Hour'] == t_hour)]
+    
+    if len(entry_slice) > 0:
+        entry_idx = entry_slice.index[0]
+        entry_price = float(entry_slice['Close'].values[0])
+        current_vix = float(entry_slice['Native_Volatility'].values[0])
         
-        # Exact date check system without restrictive intraday minute traps
-        current_date_str = timestamps[i].strftime('%Y-%m-%d')
-
-        hint_match = hint_sheet_data.get(current_date_str, None)
-
-        if hint_match is not None:
-            if hint_match == "PE_SELL":   
-                accumulator = MAX_BUCKET
-                current_state = "BUY"
-                final_signals.append(f"🟢 SHEET HINT HIT: PE SELL [STRONG BUY]")
-            elif hint_match == "CE_SELL": 
-                accumulator = MIN_BUCKET
-                current_state = "SELL"
-                final_signals.append(f"🔴 SHEET HINT HIT: CE SELL [STRONG SELL]")
+        # Pull positional lookahead location for exit check (25 operational hours out)
+        all_subsequent_data = df.loc[entry_idx:]
+        
+        if len(all_subsequent_data) >= 25:
+            exit_slice = all_subsequent_data.iloc[24] # Lookahead operational coordinate index 25
+            exit_price = float(exit_slice['Close'].values[0])
+            exit_time_str = exit_slice.index.strftime('%Y-%m-%d %H:%M')[0]
         else:
-            if p_up >= 0.55:
-                accumulator += 1  
-            elif p_down >= 0.55:
-                accumulator -= 1  
-            
-            accumulator = max(MIN_BUCKET, min(MAX_BUCKET, accumulator))
-            
-            if accumulator == MAX_BUCKET:
-                current_state = "BUY"
-                final_signals.append("🟢 STRONG BUY (Engine Mode [5/5])")
-            elif min(prob_downs) and accumulator == MIN_BUCKET:
-                current_state = "SELL"
-                final_signals.append("🔴 STRONG SELL (Engine Mode [-5/-5])")
-            else:
-                if current_state == "BUY":
-                    final_signals.append(f"🟢 HOLD BUY | Engine (Score: {accumulator})")
-                elif current_state == "SELL":
-                    final_signals.append(f"🔴 HOLD SELL | Engine (Score: {accumulator})")
-                else:
-                    final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+            exit_slice = all_subsequent_data.iloc[-1]
+            exit_price = float(exit_slice['Close'].values[0])
+            exit_time_str = exit_slice.index.strftime('%Y-%m-%d %H:%M')[0] + " (Live/Open)"
 
-        scores_log.append(accumulator)
-        calc_raw_weighted = c_val - k_price_val
-        raw_weighted_momentum_log.append(calc_raw_weighted)
+        # Directional Point Math Execution Vector
+        if t_type == "PE_SELL": # Bullish Trade Strategy
+            points_delta = exit_price - entry_price
+            action_label = "🟢 PE SELL [Bullish]"
+        else: # CE_SELL Bearish Trade Strategy
+            points_delta = entry_price - exit_price
+            action_label = "🔴 CE SELL [Bearish]"
 
-    # Re-apply structural arrays data logs back onto the dashboard views
-    df_predict['d_ML_Signal'] = final_signals
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+        # Expiry Strategic Selection Rules
+        calculated_expiry = get_nearest_thursday(t_date)
+        days_to_expiry = (pd.to_datetime(calculated_expiry) - pd.to_datetime(t_date)).days
+        
+        # Adaptive Premium Selection Filters based on Volatility Matrix
+        if current_vix > 18.0:
+            recommended_strike = "Far OTM (Buffer for high swings)"
+            vix_regime = "💥 HIGH (Sell Premium Expansion Zone)"
+        elif current_vix < 13.0:
+            recommended_strike = "ATM / Close OTM (Premium compression zone)"
+            vix_regime = "😴 LOW (Tight Spreads Recommended)"
+        else:
+            recommended_strike = "Standard OTM (1-1.5% out of boundary)"
+            vix_regime = "⚖️ BALANCED"
 
-    # Smooth momentum layer applied with variance filter lock parameter execution P=0.50
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
+        processed_logs.append({
+            "Entry Time": f"{t_date} {trade_row['Time']}",
+            "Type": action_label,
+            "Entry Nifty": round(entry_price, 2),
+            "Exit Time (25h)": exit_time_str,
+            "Exit Nifty": round(exit_price, 2),
+            "Points Earned": round(points_delta, 2),
+            "Estimated Expiry": calculated_expiry,
+            "Days to Expiry": days_to_expiry,
+            "Native Volatility": round(current_vix, 2),
+            "VIX Regime": vix_regime,
+            "Optimized Strike Rule": recommended_strike
+        })
 
-    # Display Configuration Setup
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    # Re-sorting table array order index matrix
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+# Format tracking metrics back into display DataFrame
+analysis_master_df = pd.DataFrame(processed_logs)
+analysis_master_df = analysis_master_df.sort_values(by="Entry Time", ascending=False)
 
-    st.subheader(f"📋 Live 1-Hour Nifty Engine Tracker (Sheet Hints + Kalman 0.50 Logic)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+# Total Performance Aggregators
+total_points_captured = analysis_master_df['Points Earned'].sum()
+win_ratio = (analysis_master_df['Points Earned'] > 0).sum() / len(analysis_master_df) * 100
+
+# =====================================================================
+# DASHBOARD INTERFACE COMPILING
+# =====================================================================
+st.subheader("📊 Sheet Strategy Metrics Summary")
+col1, col2, col3 = st.columns(3)
+col1.metric("Gross Points Captured", f"{round(total_points_captured, 2)} Pts")
+col2.metric("Historical Strategy Win Ratio", f"{round(win_ratio, 2)}%")
+col3.metric("Evaluated Sheet Records Count", f"{len(analysis_master_df)} Trades")
+
+st.markdown("---")
+st.subheader("💡 Strategic Rules Checklist for Executing Sheet Hints Successfully")
+st.info("""
+1. **Expiry Contract Parameter:** Target date se check karein; agar **Days to Expiry <= 2** bache hain, toh **Next Weekly Contract** me trade shift karein taaki theta decay smooth mile aur gamma trap se bach sakein.
+2. **Volatility Correction Filter:** Agar **Native Volatility High (💥)** chal rahi ho, toh strike boundary ko current spots se minimum **1.5% out-of-the-money (OTM)** push karein. Low volatility ranges me **ATM ya close OTM** select karein.
+3. **Execution Window Validation:** Sheet entry logs hit hote hi price delta ko underlying asset directional momentum ke against mat lagayein. Check structural trends using the layout metrics table beneath.
+""")
+
+st.subheader("📋 Performance Audit Grid View")
+st.dataframe(analysis_master_df, use_container_width=True, height=650)
