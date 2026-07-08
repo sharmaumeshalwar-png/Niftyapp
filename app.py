@@ -5,22 +5,22 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Linear Smooth 0.50 Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Linear Standalone Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman + Past 25-Candle Target Window + Pure Raw Accumulator + Double Kalman Smoothed Weighted Momentum")
+st.set_page_config(page_title="Nifty Dual Momentum Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman (Price) + Original Linear Weighted Momentum + 🆕 Standalone Non-Linear Step Momentum Column")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Linear Kalman Filter Function - Optimized for Distance)
+# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Original Momentum Layer)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=100.0): # 🎯 Back to original perfect Nifty scale initializer
+def apply_kalman_filter_custom(data_array, initial_p=100.0): 
     if len(data_array) == 0:
         return []
     x = data_array[0]
     p = initial_p  
     
-    # 🎯 LINEAR DISTANCE PARAMETERS: Line ko price se door aur smooth rakhne ke liye
-    q = 0.0001     # Process noise bohot kam kiya (Line jhatke nahi maregi, stable chalegi)
-    r = 2.5        # Measurement noise badha diya (Line close price se door, gap banakar chalegi)
+    # LINEAR DISTANCE PARAMETERS: Line ko price se door aur smooth rakhne ke liye
+    q = 0.0001     # Process noise bohot kam kiya (Stable movement)
+    r = 2.5        # Measurement noise badha diya (Gap creation layer)
     
     filtered_values = []
     for z in data_array:
@@ -31,7 +31,27 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0): # 🎯 Back to orig
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Linear Kalman Nifty Microstructure Matrices..."):
+# =====================================================================
+# MATHEMATICAL ENGINE 2: NON-LINEAR FILTER (For the New Step Column Only)
+# =====================================================================
+def apply_non_linear_kalman_momentum(data_array):
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = 1.0  
+    q = 0.05   # High process noise = Real-time snap reaction without lag
+    r = 0.2    # Extremely low measurement noise = Instant breakout tracing
+    
+    filtered_values = []
+    for z in data_array:
+        p = p + q
+        k = p / (p + r)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
+
+with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
     # Fail-safe data download to avoid Blank Data issue
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -74,7 +94,7 @@ with st.spinner("Aligning 25-Candle Linear Kalman Nifty Microstructure Matrices.
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-    # 🎯 STRICT PAST 25-CANDLE TARGET WINDOW
+    # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
@@ -186,27 +206,12 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # Weighted Momentum ke upar dubara filter mapping with 0.50 tuning
+    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Jaisa pehle tha - Keep Decimals)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # Table View Layout Configuration
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
-        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
-    ]
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prev_High'] = display_df['Prev_High'].round(2)
-    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN (Points ko saaf karne ke liye)
+    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
+    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
-    st.subheader(f"📋 Live 1-Hour Nifty Standalone Linear Engine (Distance Optimized)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    # Table View Layout Configuration
+    clean_display_cols =
