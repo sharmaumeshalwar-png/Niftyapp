@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 3000-Tree Ultra Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Ultra-Ensemble Kalman Engine [3000 Expert Core]")
-st.write("🎯 **Maximum Precision Setting:** Only Nifty 50 Data + 🆕 3000 Deep Microstructure Trees (Depth=8, Leaves Guard) + Smooth Distance Price Kalman = Ultra Accurate Signals")
+st.set_page_config(page_title="Nifty Quantum Impact Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Quantum Microstructure Engine")
+st.write("🎯 **High-Impact Configuration:** Only Nifty 50 Data + Entropy Noise Filter + Dynamic Volatility Wave + Balanced Tree Grid (500 Trees, Depth=6)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -18,8 +18,8 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x = data_array[0]
     p = initial_p  
     
-    q = 0.0001     # Process noise (Stable movement)
-    r = 2.5        # Measurement noise (Gap creation layer)
+    q = 0.0001     # Process noise
+    r = 2.5        # Measurement noise
     
     filtered_values = []
     for z in data_array:
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("🚀 Launching 3000 Expert Trees Core... Heavy Mathematical Computation in Progress..."):
+with st.spinner("💥 Injecting High-Impact Quantum Microstructure Matrices..."):
     # Fail-safe data download
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -58,16 +58,23 @@ with st.spinner("🚀 Launching 3000 Expert Trees Core... Heavy Mathematical Com
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
-    # Microstructure Features (Inputs for the 3000 Trees)
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    # =====================================================================
+    # 🆕 HIGH-IMPACT QUANTUM FEATURES (Asli Game Changers)
+    # =====================================================================
+    # 1. Real-time Volatility Range Wave
+    high_low_range = df['High'] - df['Low']
+    df['Volatility_Wave'] = high_low_range.rolling(window=14).mean() + 1e-10
     
-    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
-    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
+    # 2. Market Noise Entropy (Price Momentum Variance)
+    df['Entropy_Noise'] = df['c_Combined'].rolling(window=10).var() / (df['Volatility_Wave'] + 1e-10)
+    
+    # 3. Microstructure Core Features
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (high_low_range + 1e-10)
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (high_low_range + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity', 'Volatility_Wave', 'Entropy_Noise']
 
     # Target Definition (Past 25 Candle Window)
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
@@ -90,17 +97,18 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split.")
 else:
-    # 🎯 THE 3000 DEEP TREE MONSTER ENGINE
+    # 🎯 HIGH-IMPACT BALANCED ENSEMBLE SYSTEM
     model_flow = RandomForestClassifier(
-        n_estimators=3000,      # 🆕 Upgraded to 3000 Trees for Maximum Precision Consensus
-        max_depth=8,            # Deep microstructure scanning
-        min_samples_leaf=5,     # Anti-noise block guard
+        n_estimators=500,       # 500 High-Impact Trees
+        max_depth=6,            # Reduced depth to avoid overfitting and boost live response
+        min_samples_leaf=3,     # Crisper entries on sharp shifts
+        criterion='entropy',    # Uses Entropy for cleaner split decisions
         random_state=42,
-        n_jobs=-1               # Uses 100% CPU Power to calculate 3000 trees fast
+        n_jobs=-1
     )
     model_flow.fit(X_train, y_train)
 
-    # High-Accuracy Probabilities Generation
+    # Dynamic Impact Probabilities Generation
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
@@ -132,9 +140,9 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Logic (Locked tightly with 3000 Tree stability)
-        if p_up >= 0.55: accumulator += 1  
-        elif p_down >= 0.55: accumulator -= 1  
+        # Accumulator Logic (Reactive directly to new High-Impact Probability Wave)
+        if p_up >= 0.53: accumulator += 1     # Sensitivity slightly boosted from 0.55 to 0.53 for faster alpha impact
+        elif p_down >= 0.53: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
@@ -202,5 +210,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Ultra 3000-Tree Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty Quantum Microstructure Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
