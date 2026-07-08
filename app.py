@@ -2,12 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.linear_model import LogisticRegression  # 🆕 Switched to Wave-Based Sigmoid Layer
+from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Sigmoid Wave Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Regularized Sigmoid Wave Engine")
-st.write("🎯 **Pure Mathematical Shift:** Only Nifty 50 Data + Non-Linear Sigmoid Core + Multi-Scale Volatility Grid + Smooth Distance Price Kalman")
+st.set_page_config(page_title="Nifty 1-Candle Fast Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour Ultra-Reactive 1-Candle Engine")
+st.write("🎯 **Micro-Shift Framework:** Only Nifty 50 Data + Trusted RandomForest Core + Strictly 1-Candle Target Window + Smooth Distance Price Kalman")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("🔮 Mapping Mathematical Sigmoid Waves & Multi-Scale Grid..."):
+with st.spinner("🚀 Aligning 1-Candle Micro-Target Neural Matrix..."):
     # Fail-safe data download
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -58,32 +58,22 @@ with st.spinner("🔮 Mapping Mathematical Sigmoid Waves & Multi-Scale Grid...")
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
-    # =====================================================================
-    # 🆕 MULTI-SCALE CONTINUOUS FEATURES (Sigmoid Wave Inputs)
-    # =====================================================================
-    raw_range = df['High'] - df['Low']
-    
-    # 1. Multi-scale Volatility Ratio
-    df['Vol_Ratio'] = raw_range.rolling(window=5).mean() / (raw_range.rolling(window=25).mean() + 1e-10)
-    
-    # 2. Continuous Microstructure Waves
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (raw_range + 1e-10)
+    # Microstructure Features
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (raw_range + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     
-    # 3. Standardized Gap Feature
     rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
-
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity', 'Vol_Ratio', 'Normalized_Gap']
-
-    # Target Definition (Strict Past 25 Candle Window)
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+
+    # 🎯 TARGET CHANGE: 25 candle hata kar ab sirf agali 1 candle check hogi
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0)
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
-# Dynamic Split Engine (Strict 50:50)
+# Dynamic Split Engine (50:50 Split)
 split_idx = int(len(df_clean) * 0.50)
 
 df_train = df_clean.iloc[:split_idx].copy()
@@ -100,16 +90,11 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split.")
 else:
-    # 🎯 MATHEMATICAL SIGMOID LAYER (Ridge Penalized for Maximum Alpha Impact)
-    model_flow = LogisticRegression(
-        penalty='l2',            # Ridge Regularization (noise ko crush karne ke liye)
-        C=0.5,                   # Controlled regularized strength to ensure smooth curve
-        max_iter=1000,
-        random_state=42
-    )
+    # 🌲 Puraana trusted RandomForest structure jaisa aapne bola
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Probabilities Generation via Continuous Sigmoid Functions
+    # Fast Probabilities Generation
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
@@ -141,75 +126,11 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Logic (Adapts smoothly to continuous curves)
-        if p_up >= 0.54: accumulator += 1  
-        elif p_down >= 0.54: accumulator -= 1  
+        # Accumulator Logic (Will respond sharply to 1-candle shifts)
+        if p_up >= 0.55: accumulator += 1  
+        elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
         calc_raw_weighted = c_val - k_price_val
-        raw_weighted_momentum_log.append(calc_raw_weighted)
-
-        trap_msg = "TREND VALID"
-
-        if accumulator == 5:
-            current_state = "BUY"
-            if c_val > p_high: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
-            else:
-                final_signals.append("❌ NO ENTRY (Wait for Breakout)")
-                trap_msg = "⚠️ BULL TRAP (High Not Broken)"
-        elif accumulator == -5:
-            current_state = "SELL"
-            if c_val < p_low: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
-            else:
-                final_signals.append("🟢 HOLD LONG (No Short Entry)")
-                trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
-        else:
-            if current_state == "BUY":
-                if accumulator > 0: final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
-                else:
-                    if c_val < p_low: final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
-                    else:
-                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
-                        trap_msg = "⚠️ BEAR TRAP INSIDE BULL TREND"
-            elif current_state == "SELL":
-                if accumulator < 0: final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
-                else:
-                    if c_val > p_high: final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
-                    else:
-                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
-                        trap_msg = "⚠️ BULL TRAP INSIDE BEAR TREND"
-            else:
-                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
-
-        trap_status_log.append(trap_msg)
-
-    df_predict['d_ML_Signal'] = final_signals
-    df_predict['Trap_Status'] = trap_status_log 
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-
-    # Momentum calculation
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
-
-    # Table View Layout Configuration
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
-        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
-    ]
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prev_High'] = display_df['Prev_High'].round(2)
-    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2)
-    
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 1-Hour Nifty Sigmoid Continuous Dashboard")
-    st.dataframe(display_df, use_container_width=True, height=750)
+        raw_weighted_momentum_log.append
