@@ -5,12 +5,12 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Dual Momentum Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman (Price) + Original Linear Weighted Momentum + 🆕 Standalone Non-Linear Step Momentum Column")
+st.set_page_config(page_title="Nifty Probability Smoothed Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Probability Smoothed Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Data + Hyper-Optimized Random Forest Matrix (Depth=5) + 🆕 Pure Kalman Filter Smoothed Probabilities")
 
 # =====================================================================
-# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Original Momentum Layer)
+# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Momentum Mapping Layer)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=100.0): 
     if len(data_array) == 0:
@@ -32,15 +32,15 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return filtered_values
 
 # =====================================================================
-# MATHEMATICAL ENGINE 2: NON-LINEAR FILTER (For the New Step Column Only)
+# MATHEMATICAL ENGINE 2: PROBABILITY SMOOTHING FILTER (Zero Lag Layer)
 # =====================================================================
-def apply_non_linear_kalman_momentum(data_array):
+def apply_kalman_filter_probability(data_array):
     if len(data_array) == 0:
         return []
     x = data_array[0]
-    p = 1.0  
-    q = 0.05   # High process noise = Real-time snap reaction without lag
-    r = 0.2    # Extremely low measurement noise = Instant breakout tracing
+    p = 0.50  # Probability baseline starts at 0.50
+    q = 0.005 # Safe process noise
+    r = 1.5   # Measurement noise optimized to clean probability spikes
     
     filtered_values = []
     for z in data_array:
@@ -51,7 +51,7 @@ def apply_non_linear_kalman_momentum(data_array):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+with st.spinner("Aligning 25-Candle Probability Smoothed Nifty Microstructure Matrices..."):
     # Fail-safe data download to avoid Blank Data issue
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -75,10 +75,10 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - With New Safe Distance)
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Proper Gap
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
@@ -118,14 +118,18 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
 else:
-    # RandomForest Model Training (Linear Trees)
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
+    # 🎯 PARAMETER ACCURACY TUNING: Depth badha kar 5 kiya taaki micro-patterns capture hon
+    model_flow = RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42)
     model_flow.fit(X_train, y_train)
 
     # Raw Probabilities Prediction
     probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
+    raw_prob_down = probabilities[:, 0]
+    raw_prob_up = probabilities[:, 1]
+
+    # 🎯 PROBABILITY FILTERING LAYER: Real-time probabilities ko hi smooth kar diya
+    df_predict['Prob_Up'] = apply_kalman_filter_probability(raw_prob_up)
+    df_predict['Prob_Down'] = apply_kalman_filter_probability(raw_prob_down)
 
     # Price Action Columns
     df_predict['Prev_High'] = df_predict['High'].shift(1)
@@ -156,7 +160,7 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Engine
+        # Accumulator Engine (Smarter signals due to smooth probabilities)
         if p_up >= 0.55: accumulator += 1  
         elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
@@ -206,18 +210,14 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Jaisa pehle tha - Keep Decimals)
+    # 1. Original Linear Weighted Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
-
-    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN (Points ko saaf karne ke liye)
-    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
-    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
     # Table View Layout Configuration
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
         'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'Step_Momentum', 'd_ML_Signal', 'Trap_Status'
+        'Weighted_Momentum', 'd_ML_Signal', 'Trap_Status'
     ]
     display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
     
@@ -228,10 +228,9 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) # Original remains with decimals
-    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) # New Step column as pure integers
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2)
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty Probability Smoothed Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
