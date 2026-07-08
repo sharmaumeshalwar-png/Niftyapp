@@ -9,7 +9,7 @@ st.set_page_config(page_title="Nifty Institutional VIX Dashboard", layout="wide"
 st.title("📊 Nifty ATM Reverse-Loop Dashboard (Original VIX Filter)")
 st.write("Hum se sell pr entry leni h, pe sell pr exit aur naye entry leni h (Only ATM) — Filtered by Actual NSE India VIX Database.")
 
-# 1. 100% Original Nifty Spot Data AND Real NSE India VIX levels for the exact trade execution points
+# 1. 100% Original Nifty Spot Data AND Real NSE India VIX levels
 nifty_vix_database = {
     "2025-07-04_1": {"spot": 24320.50, "vix": 13.50}, "2025-07-04_2": {"spot": 24365.10, "vix": 13.40},
     "2025-07-08_1": {"spot": 24390.20, "vix": 12.80}, "2025-07-08_2": {"spot": 24410.80, "vix": 12.90}, 
@@ -78,7 +78,7 @@ trade_schedule = [
 ]
 
 st.sidebar.header("🛡️ Institutional Logic Configuration")
-vix_execution_cutoff = st.sidebar.number_input("Solid VIX Filter Threshold", value=12.50, step=0.05, help="Is original VIX score se neeche system automatic order blocks block kr dega.")
+vix_execution_cutoff = st.sidebar.number_input("Solid VIX Filter Threshold", value=12.50, step=0.05, help="Is score se neeche system trades safely avoid karega.")
 hedging_on = st.sidebar.checkbox("Enable OTM Hedging (Spreads)", value=True)
 slippage_pct = st.sidebar.slider("Real Slippage Buffer (%)", 0.0, 0.2, 0.05, step=0.01)
 
@@ -102,10 +102,10 @@ if st.sidebar.button("🚀 Calculate with Real VIX Filter"):
         else:
             continue
             
-        # SOLID FIX LOGIC: Filter trades using pure historical database metrics
+        # FIXED VIX FILTER LOGIC: Filter trades using pure historical database metrics
         if current_vix < vix_execution_cutoff:
             avoided_whipsaw_trades += 1
-            continue  # Order execution safely avoided
+            continue  
             
         atm_strike = round(spot_price / 50) * 50
         target_date = datetime(y, m, d)
@@ -117,30 +117,4 @@ if st.sidebar.button("🚀 Calculate with Real VIX Filter"):
             entry_time = current_position['time']
             entry_t_str = current_position['time_str']
             
-            price_change = spot_price - entry_spot
-            
-            if entry_type == 'CE_SELL':
-                raw_pnl = -price_change * 0.5
-            else:
-                raw_pnl = price_change * 0.5
-            
-            days_held = (target_date - entry_time).days
-            theta_gain = entry_strike * 0.0012 * max(1, days_held)
-            
-            trade_pnl = raw_pnl + theta_gain
-            if hedging_on:
-                trade_pnl *= 0.85 
-                
-            trade_pnl -= (spot_price * (slippage_pct / 100))
-            total_pnl += trade_pnl
-            
-            # Risk Breakdown
-            if total_pnl > peak:
-                peak = total_pnl
-            dd = peak - total_pnl
-            if dd > max_drawdown:
-                max_drawdown = dd
-                
-            if trade_pnl < 0:
-                current_loss_streak += 1
-                if current_loss_streak >
+            price_change = spot_
