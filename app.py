@@ -5,12 +5,12 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Probability Smoothed Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Probability Smoothed Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Data + Hyper-Optimized Random Forest Matrix (Depth=5) + 🆕 Pure Kalman Filter Smoothed Probabilities")
+st.set_page_config(page_title="Nifty Pure Smooth Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Smooth Probability Engine")
+st.write("🎯 **Clean Setup:** Only Nifty 50 Data + Smooth Distance Price Kalman + Backend Probability Smoothing Filter (No Confusion Layer)")
 
 # =====================================================================
-# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Momentum Mapping Layer)
+# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price Mapping Layer)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=100.0): 
     if len(data_array) == 0:
@@ -18,9 +18,8 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x = data_array[0]
     p = initial_p  
     
-    # LINEAR DISTANCE PARAMETERS: Line ko price se door aur smooth rakhne ke liye
-    q = 0.0001     # Process noise bohot kam kiya (Stable movement)
-    r = 2.5        # Measurement noise badha diya (Gap creation layer)
+    q = 0.0001     # Process noise (Stable movement)
+    r = 2.5        # Measurement noise (Gap creation layer)
     
     filtered_values = []
     for z in data_array:
@@ -32,15 +31,15 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return filtered_values
 
 # =====================================================================
-# MATHEMATICAL ENGINE 2: PROBABILITY SMOOTHING FILTER (Zero Lag Layer)
+# MATHEMATICAL ENGINE 2: PROBABILITY SMOOTHING FILTER (Backend Noise Cutter)
 # =====================================================================
 def apply_kalman_filter_probability(data_array):
     if len(data_array) == 0:
         return []
     x = data_array[0]
-    p = 0.50  # Probability baseline starts at 0.50
-    q = 0.005 # Safe process noise
-    r = 1.5   # Measurement noise optimized to clean probability spikes
+    p = 0.50  
+    q = 0.005 # Chote fluctuations ko allow karega
+    r = 1.2   # Jhatko ko absorb karega (Smooth tracking)
     
     filtered_values = []
     for z in data_array:
@@ -51,8 +50,8 @@ def apply_kalman_filter_probability(data_array):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning 25-Candle Probability Smoothed Nifty Microstructure Matrices..."):
-    # Fail-safe data download to avoid Blank Data issue
+with st.spinner("Aligning 25-Candle Smooth Nifty Microstructure Matrices..."):
+    # Fail-safe data download
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -62,7 +61,6 @@ with st.spinner("Aligning 25-Candle Probability Smoothed Nifty Microstructure Ma
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # MultiIndex Framework Elimination
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
@@ -75,13 +73,10 @@ with st.spinner("Aligning 25-Candle Probability Smoothed Nifty Microstructure Ma
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active)
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
-    
-    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
-    df['Sign_Change'] = df['Sign_Change'].astype(int)
     
     # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -94,14 +89,11 @@ with st.spinner("Aligning 25-Candle Probability Smoothed Nifty Microstructure Ma
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
-    # STRICT PAST 25-CANDLE TARGET WINDOW
+    # Target Definition
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-    
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
-# =====================================================================
-# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
-# =====================================================================
+# Dynamic Split Engine
 split_idx = int(len(df_clean) * 0.50)
 
 df_train = df_clean.iloc[:split_idx].copy()
@@ -116,18 +108,18 @@ df_predict.dropna(subset=features_matrix, inplace=True)
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0 or len(X_train) == 0:
-    st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
+    st.error(f"⚠️ Data size insufficient for split.")
 else:
-    # 🎯 PARAMETER ACCURACY TUNING: Depth badha kar 5 kiya taaki micro-patterns capture hon
-    model_flow = RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42)
+    # Model Setup
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Raw Probabilities Prediction
+    # Raw Probabilities
     probabilities = model_flow.predict_proba(X_predict)
     raw_prob_down = probabilities[:, 0]
     raw_prob_up = probabilities[:, 1]
 
-    # 🎯 PROBABILITY FILTERING LAYER: Real-time probabilities ko hi smooth kar diya
+    # 🎯 BACKEND FILTERING: Raw probability ko smooth karke save kar rahe hain
     df_predict['Prob_Up'] = apply_kalman_filter_probability(raw_prob_up)
     df_predict['Prob_Down'] = apply_kalman_filter_probability(raw_prob_down)
 
@@ -135,9 +127,7 @@ else:
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
 
-    # =====================================================================
-    # LIVE TREND-LOCK CIRCUIT WITH TRAP-DETECTION FILTER (HIGH/LOW BREAK)
-    # =====================================================================
+    # Live Circuit Log Generation
     final_signals = []
     scores_log = []
     raw_weighted_momentum_log = [] 
@@ -160,13 +150,12 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Engine (Smarter signals due to smooth probabilities)
+        # Accumulator Logic based on Smoothed Probabilities
         if p_up >= 0.55: accumulator += 1  
         elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
-        # Raw Weighted Momentum (Close - Smooth Kalman)
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
@@ -204,13 +193,12 @@ else:
 
         trap_status_log.append(trap_msg)
 
-    # Mapping back to dataframe
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Trap_Status'] = trap_status_log 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # 1. Original Linear Weighted Momentum
+    # Original Momentum calculation kept clean
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
     # Table View Layout Configuration
@@ -232,5 +220,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Probability Smoothed Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty Clean Smoothed Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
