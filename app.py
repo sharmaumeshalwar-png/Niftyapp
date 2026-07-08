@@ -1,8 +1,21 @@
+import os
+import subprocess
+import sys
+
+# =====================================================================
+# AUTO-INSTALLER LAYER (Aapki app.py file apne aap lightgbm install karegi)
+# =====================================================================
+try:
+    import lightgbm as lgb
+except ImportError:
+    with sys.stdout:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "lightgbm"])
+    import lightgbm as lgb
+
 import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import lightgbm as lgb  # 🆕 Upgraded from RandomForest to LightGBM
 
 # Page Configuration
 st.set_page_config(page_title="Nifty LightGBM Alpha Engine", layout="wide")
@@ -59,7 +72,7 @@ with st.spinner("⚡ Initializing LightGBM Leaf-Wise Core & Computing Volatility
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
     # =====================================================================
-    # 🆕 LIGHTGBM OPTIMIZED ADVANCED FEATURES
+    # LIGHTGBM OPTIMIZED ADVANCED FEATURES
     # =====================================================================
     # 1. Exponential Volatility Decay
     raw_range = df['High'] - df['Low']
@@ -213,5 +226,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty LightGBM Boosted Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty LightGBM Auto-Installing Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
