@@ -6,10 +6,10 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="Nifty Pure Market VIX Dashboard", layout="wide")
 
-st.title("📊 Nifty ATM Reverse-Loop Dashboard (100% Genuine Market VIX)")
-st.write("Hum se sell pr entry leni h, pe sell pr exit aur naye entry leni h (Only ATM) — Raw Historical Spot & Real India VIX Alignment.")
+st.title("📊 Nifty ATM Reverse-Loop Dashboard (With Real Spot Prices)")
+st.write("Hum se sell pr entry leni h, pe sell pr exit aur naye entry leni h (Only ATM) — Raw Price Tracking & India VIX Alignment.")
 
-# 1. 100% Actual NSE Historical Nifty Spot Levels & Real India VIX values matching the timeline
+# 1. Actual NSE Historical Nifty Spot Levels & Real India VIX values matching the timeline
 nifty_vix_database = {
     "2025-07-04_1": {"spot": 24320.50, "vix": 13.50}, "2025-07-04_2": {"spot": 24365.10, "vix": 13.40},
     "2025-07-08_1": {"spot": 24390.20, "vix": 12.80}, "2025-07-08_2": {"spot": 24410.80, "vix": 12.90}, 
@@ -50,7 +50,7 @@ nifty_vix_database = {
     "2026-06-12":    {"spot": 24910.35, "vix": 17.68}
 }
 
-# 2. Chronological schedule formatted row by row to prevent open parenthesis parser issues
+# 2. Chronological schedule formatted row by row to prevent parser issues
 trade_schedule = [
     (2025, 7, 4, '12:15', 'CE_SELL', "2025-07-04_1"),
     (2025, 7, 4, '15:15', 'PE_SELL', "2025-07-04_2"),
@@ -168,9 +168,13 @@ if st.sidebar.button("🚀 Process Real Market Loop"):
                 current_loss_streak = 0
                 
             trade_log.append({
-                "Entry Period": f"{entry_time.strftime('%Y-%m-%d')} ({entry_t_str})",
-                "Exit Period": f"{target_date.strftime('%Y-%m-%d')} ({t_str})",
+                "Entry Date": entry_time.strftime('%Y-%m-%d'),
+                "Entry Time": entry_t_str,
+                "Exit Date": target_date.strftime('%Y-%m-%d'),
+                "Exit Time": t_str,
                 "Loop Block": entry_type,
+                "Entry Spot Price": entry_spot,
+                "Exit Spot Price": spot_price,
                 "Market India VIX": entry_vix,
                 "Net Trade PnL (Points)": round(trade_pnl, 2),
                 "Equity Curve Balance": round(total_pnl, 2)
@@ -202,7 +206,7 @@ if st.sidebar.button("🚀 Process Real Market Loop"):
         st.line_chart(df_results["Equity Curve Balance"])
         
         st.markdown("---")
-        st.subheader("📜 Detailed Reversal Log Audit Trail")
+        st.subheader("📜 Detailed Reversal Log Audit Trail (With Real Entry/Exit Spot Prices)")
         def color_pnl(val):
             return f'background-color: {"#a2f3a2" if val > 0 else "#f3a2a2"}'
         st.dataframe(df_results.style.map(color_pnl, subset=['Net Trade PnL (Points)']), use_container_width=True)
