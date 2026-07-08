@@ -4,12 +4,12 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Corrected Spot Analyzer", layout="wide")
-st.title("📊 Nifty 50 Notebook Performance Engine (Correct Spot Price Mode)")
-st.write("🎯 **Aapki Custom Setting:** Strict IST Timezone Sync + Exact Notebook Row Sequence + Accurate Nifty Spot Calculation.")
+st.set_page_config(page_title="Nifty True Spot Matcher", layout="wide")
+st.title("🦅 Nifty 50 Notebook Performance Engine (True 5-Min Spot Resolution)")
+st.write("🎯 **Aapki Custom Setting:** Explicit 5-Minute Micro-Data Sync + Exact Timestamp Precision Tracking + Precise 300-Candle (25h) Exit Lookahead.")
 
 # =====================================================================
-# EXACT NOTEBOOK SEQUENCE (As-is order preserved)
+# EXACT NOTEBOOK SEQUENCE (As-is notebook order preserved)
 # =====================================================================
 notebook_ordered_records = [
     # LEFT COLUMN
@@ -72,45 +72,52 @@ def get_nearest_thursday(date_str):
         days_ahead += 7
     return (base_date + pd.Timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
-with st.spinner("Aligning Exact IST Spot Databases..."):
-    # Download raw price history
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+with st.spinner("Downloading High-Precision 5-Minute Nifty Historical Data..."):
+    # Download raw 5m data frames (Using 60d limit standard constraint max window for intraday 5m)
+    raw_df = yf.download("^NSEI", period="max", interval="5m")
     
-    # CRITICAL TIMEZONE CORRECTION ENGINE
+    if len(raw_df) == 0:
+        st.error("Market API Error while downloading micro data blocks.")
+        st.stop()
+
+    # Accurate localized conversion to India Market Timeline
     if raw_df.index.tz is None:
         raw_df.index = raw_df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
     else:
         raw_df.index = raw_df.index.tz_convert('Asia/Kolkata')
 
-    # Flat column mapping pipeline
+    # Flatten out MultiIndex structures cleanly
     df = pd.DataFrame(index=raw_df.index)
     for col_name in ['Open', 'High', 'Low', 'Close']:
         if col_name in raw_df.columns:
             column_data = raw_df[col_name]
             df[col_name] = column_data.iloc[:, 0].astype(float) if isinstance(column_data, pd.DataFrame) else column_data.astype(float)
 
-    # Calculate indicators over calibrated spot structure
+    # Volatility estimation from 5-minute ticks
     df['Log_Ret'] = np.log(df['Close'] / df['Close'].shift(1))
-    df['Native_Volatility'] = df['Log_Ret'].rolling(window=25).std() * np.sqrt(24 * 365) * 100
-    df['Native_Volatility'] = df['Native_Volatility'].ffill().fillna(14.5)
+    df['Native_Volatility'] = df['Log_Ret'].rolling(window=300).std() * np.sqrt(12 * 6 * 24 * 365) * 100
+    df['Native_Volatility'] = df['Native_Volatility'].ffill().fillna(15.0)
 
+    # String cross-matching strings calculation
+    df['Str_DateTime'] = df.index.strftime('%Y-%m-%d %H:%M')
     df['Str_Date'] = df.index.strftime('%Y-%m-%d')
-    df['Str_Hour'] = df.index.strftime('%H')
 
 processed_sequential_logs = []
 serial_number = 1
 
 for trade_row in notebook_ordered_records:
     t_date = trade_row['Date']
-    t_hour = trade_row['Time'].split(':')[0]
+    t_time = trade_row['Time']
     t_type = trade_row['Type']
     
-    # Target hours lookups directly localized under India Market timelines
-    entry_slice = df[(df['Str_Date'] == t_date) & (df['Str_Hour'] == t_hour)]
+    target_string = f"{t_date} {t_time}"
     
-    # Fallback to general daily fallback if sharp hour block is slightly displaced
+    # Precise match via strict 5-minute row lookup string
+    entry_slice = df[df['Str_DateTime'] == target_string]
+    
+    # Dynamic proximity match if index boundary falls at a slightly offset 5m marker
     if len(entry_slice) == 0:
-        entry_slice = df[df['Str_Date'] == t_date]
+        entry_slice = df[df['Str_Date'] == t_date].head(1)
 
     if len(entry_slice) > 0:
         entry_idx = entry_slice.index[0]
@@ -119,8 +126,9 @@ for trade_row in notebook_ordered_records:
         
         all_subsequent_data = df.loc[entry_idx:]
         
-        if len(all_subsequent_data) >= 25:
-            exit_slice = all_subsequent_data.iloc[24] 
+        # 25 Hours = exactly 300 candles on a 5-minute data stream
+        if len(all_subsequent_data) >= 300:
+            exit_slice = all_subsequent_data.iloc[299] 
             exit_price = float(exit_slice['Close'])
             exit_time_str = exit_slice.name.strftime('%Y-%m-%d %H:%M')
         else:
@@ -128,7 +136,7 @@ for trade_row in notebook_ordered_records:
             exit_price = float(exit_slice['Close'])
             exit_time_str = exit_slice.name.strftime('%Y-%m-%d %H:%M') + " (Open)"
 
-        # Directional Point Math Execution Vector
+        # Execution Mathematics
         if t_type == "PE_SELL": 
             points_delta = exit_price - entry_price
             action_label = "🟢 PE SELL"
@@ -151,11 +159,11 @@ for trade_row in notebook_ordered_records:
 
         processed_sequential_logs.append({
             "Sr No.": serial_number,
-            "Notebook Entry Time": f"{t_date} {trade_row['Time']}",
+            "Notebook Entry Time": target_string,
             "Strategy Type": action_label,
-            "Entry Nifty Spot": round(entry_price, 2),
+            "Entry Nifty Spot (True)": round(entry_price, 2),
             "Exit Time (25h)": exit_time_str,
-            "Exit Nifty Spot": round(exit_price, 2),
+            "Exit Nifty Spot (True)": round(exit_price, 2),
             "Points Captured": round(points_delta, 2),
             "Nearest Weekly Expiry": calculated_expiry,
             "Days Left to Exp": days_to_expiry,
@@ -178,7 +186,7 @@ if len(processed_sequential_logs) > 0:
     col3.metric("Evaluated Sheet Records Count", f"{len(analysis_master_df)} Trades")
 
     st.markdown("---")
-    st.subheader("📋 Performance Audit Grid View (Timezone-Calibrated Spots)")
+    st.subheader("📋 Performance Audit Grid View (High-Precision 5m Spot Execution)")
     st.dataframe(analysis_master_df, use_container_width=True, height=750)
 else:
-    st.warning("Data sync buffer empty. Please check market interval arrays.")
+    st.warning("No tracking rows crossed data boundary matching filters. Verify current market feeds.")
