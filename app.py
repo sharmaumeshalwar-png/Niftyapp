@@ -78,19 +78,24 @@ def get_nearest_thursday(date_str):
     return (base_date + pd.Timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
 with st.spinner("Extracting Market Time Series and Volatility Arrays..."):
-    # Ingest 2 full years data for baseline tracking stabilization
+    # Ingest historical data for baseline tracking stabilization
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     if len(raw_df) == 0:
         st.error("Market API Endpoint Error. Please reload the computational application.")
         st.stop()
 
+    # CRITICAL MULTIINDEX REMOVAL ENGINE (Guarantees flattening of Multi-level Headers)
     df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close']:
-        if col in raw_df.columns:
-            if isinstance(raw_df[col], pd.DataFrame):
-                df[col] = raw_df[col].iloc[:, 0]
+    
+    # Extract only the first available index sequence item for each required data tier
+    for col_name in ['Open', 'High', 'Low', 'Close']:
+        if col_name in raw_df.columns:
+            column_data = raw_df[col_name]
+            if isinstance(column_data, pd.DataFrame):
+                # If MultiIndex DataFrame, extract the first ticker column series array directly
+                df[col_name] = column_data.iloc[:, 0].astype(float)
             else:
-                df[col] = raw_df[col]
+                df[col_name] = column_data.astype(float)
 
     df.index = pd.to_datetime(df.index)
     
@@ -104,7 +109,7 @@ with st.spinner("Extracting Market Time Series and Volatility Arrays..."):
     df['Str_Hour'] = df.index.strftime('%H')
 
 # =====================================================================
-# CALCULATION LOOP & VECTOR CORRELATION ENGINE (SAFE FIX EMBEDDED)
+# CALCULATION LOOP & MULTIINDEX-SAFE VECTOR CORRELATION ENGINE
 # =====================================================================
 processed_logs = []
 
@@ -117,7 +122,8 @@ for _, trade_row in hints_df.iterrows():
     
     if len(entry_slice) > 0:
         entry_idx = entry_slice.index[0]
-        # CRITICAL SAFE-FIX: Extraction via .iloc[0] prevents the AttributeError crash
+        
+        # Guaranteed Safe Scalar extraction from clean flat series
         entry_price = float(entry_slice['Close'].iloc[0])
         current_vix = float(entry_slice['Native_Volatility'].iloc[0])
         
@@ -125,12 +131,12 @@ for _, trade_row in hints_df.iterrows():
         
         if len(all_subsequent_data) >= 25:
             exit_slice = all_subsequent_data.iloc[24] 
-            exit_price = float(exit_slice['Close'].iloc[0])
-            exit_time_str = exit_slice.index.strftime('%Y-%m-%d %H:%M')
+            exit_price = float(exit_slice['Close'])
+            exit_time_str = exit_slice.name.strftime('%Y-%m-%d %H:%M')
         else:
             exit_slice = all_subsequent_data.iloc[-1]
-            exit_price = float(exit_slice['Close'].iloc[0])
-            exit_time_str = exit_slice.index.strftime('%Y-%m-%d %H:%M') + " (Live/Open)"
+            exit_price = float(exit_slice['Close'])
+            exit_time_str = exit_slice.name.strftime('%Y-%m-%d %H:%M') + " (Live/Open)"
 
         # Directional Point Math Execution Vector
         if t_type == "PE_SELL": 
