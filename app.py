@@ -2,12 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb  # 🆕 Upgraded from RandomForest to LightGBM
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Quantum Impact Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Quantum Microstructure Engine")
-st.write("🎯 **High-Impact Configuration:** Only Nifty 50 Data + Entropy Noise Filter + Dynamic Volatility Wave + Balanced Tree Grid (500 Trees, Depth=6)")
+st.set_page_config(page_title="Nifty LightGBM Alpha Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Gradient-Boosted Alpha Engine")
+st.write("🎯 **Next-Gen Framework:** Only Nifty 50 Data + LightGBM Leaf-Wise Core + Volatility Decay Core + Smooth Distance Price Kalman")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("💥 Injecting High-Impact Quantum Microstructure Matrices..."):
+with st.spinner("⚡ Initializing LightGBM Leaf-Wise Core & Computing Volatility Decay..."):
     # Fail-safe data download
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -59,28 +59,29 @@ with st.spinner("💥 Injecting High-Impact Quantum Microstructure Matrices...")
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
     # =====================================================================
-    # 🆕 HIGH-IMPACT QUANTUM FEATURES (Asli Game Changers)
+    # 🆕 LIGHTGBM OPTIMIZED ADVANCED FEATURES
     # =====================================================================
-    # 1. Real-time Volatility Range Wave
-    high_low_range = df['High'] - df['Low']
-    df['Volatility_Wave'] = high_low_range.rolling(window=14).mean() + 1e-10
+    # 1. Exponential Volatility Decay
+    raw_range = df['High'] - df['Low']
+    df['Vol_Decay'] = raw_range.ewm(span=25, adjust=False).mean()
     
-    # 2. Market Noise Entropy (Price Momentum Variance)
-    df['Entropy_Noise'] = df['c_Combined'].rolling(window=10).var() / (df['Volatility_Wave'] + 1e-10)
-    
-    # 3. Microstructure Core Features
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (high_low_range + 1e-10)
+    # 2. Microstructure Structural Ratios
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (raw_range + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (high_low_range + 1e-10)
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (raw_range + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity', 'Volatility_Wave', 'Entropy_Noise']
+    # 3. Normalized Distance
+    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
+    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
 
-    # Target Definition (Past 25 Candle Window)
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity', 'Vol_Decay', 'Normalized_Gap']
+
+    # Target Definition (Strict Past 25 Candle Window)
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
-# Dynamic Split Engine
+# Dynamic Split Engine (Strict 50:50)
 split_idx = int(len(df_clean) * 0.50)
 
 df_train = df_clean.iloc[:split_idx].copy()
@@ -97,18 +98,20 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split.")
 else:
-    # 🎯 HIGH-IMPACT BALANCED ENSEMBLE SYSTEM
-    model_flow = RandomForestClassifier(
-        n_estimators=500,       # 500 High-Impact Trees
-        max_depth=6,            # Reduced depth to avoid overfitting and boost live response
-        min_samples_leaf=3,     # Crisper entries on sharp shifts
-        criterion='entropy',    # Uses Entropy for cleaner split decisions
+    # 🎯 LIGHTGBM MODEL ARCHITECTURE (Highly Impactful)
+    model_flow = lgb.LGBMClassifier(
+        n_estimators=400,        # Optimized Boosted Trees
+        max_depth=5,             # Controlled depth to maintain structure
+        learning_rate=0.03,      # Stable learning steps for financial data
+        num_leaves=31,           # Leaf-wise growth for high impact
+        min_child_samples=15,    # Minimum samples in leaf to prevent small noise
         random_state=42,
+        verbosity=-1,
         n_jobs=-1
     )
     model_flow.fit(X_train, y_train)
 
-    # Dynamic Impact Probabilities Generation
+    # Probabilities Generation via LightGBM
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
@@ -140,9 +143,9 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Logic (Reactive directly to new High-Impact Probability Wave)
-        if p_up >= 0.53: accumulator += 1     # Sensitivity slightly boosted from 0.55 to 0.53 for faster alpha impact
-        elif p_down >= 0.53: accumulator -= 1  
+        # Accumulator Logic (Locked with Gradient Boosting Sensitivity)
+        if p_up >= 0.55: accumulator += 1  
+        elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
@@ -210,5 +213,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Quantum Microstructure Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty LightGBM Boosted Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
