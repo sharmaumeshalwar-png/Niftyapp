@@ -50,26 +50,159 @@ nifty_vix_database = {
     "2026-06-12":    {"spot": 24910.35, "vix": 17.68}
 }
 
-# Fixed Chronological ordered dataset list blocks
+# 2. Chronological schedule formatted row by row to prevent open parenthesis parser issues
 trade_schedule = [
-    (2025, 7, 4, '12:15', 'CE_SELL', "2025-07-04_1"), (2025, 7, 4, '15:15', 'PE_SELL', "2025-07-04_2"),
-    (2025, 7, 8, '10:15', 'CE_SELL', "2025-07-08_1"), (2025, 7, 8, '13:15', 'PE_SELL', "2025-07-08_2"),
-    (2025, 7, 8, '14:15', 'CE_SELL', "2025-07-08_3"), (2025, 7, 8, '15:15', 'PE_SELL', "2025-07-08_4"),
-    (2025, 7, 9, '15:15', 'CE_SELL', "2025-07-09"), (2025, 8, 18, '10:15', 'PE_SELL', "2025-08-18"),
-    (2025, 8, 26, '10:15', 'CE_SELL', "2025-08-26"), (2025, 9, 4, '10:15', 'PE_SELL', "2025-09-04_1"),
-    (2025, 9, 4, '15:15', 'CE_SELL', "2025-09-04_2"), (2025, 9, 8, '10:15', 'PE_SELL', "2025-09-08"),
-    (2025, 9, 25, '10:15', 'CE_SELL', "2025-09-25"), (2025, 10, 6, '10:15', 'PE_SELL', "2025-10-06"),
-    (2025, 11, 4, '14:15', 'CE_SELL', "2025-11-04"), (2025, 11, 11, '15:15', 'PE_SELL', "2025-11-11"),
-    (2025, 11, 25, '15:15', 'CE_SELL', "2025-11-25"), (2025, 11, 26, '10:15', 'PE_SELL', "2025-11-26"),
-    (2025, 12, 2, '10:15', 'CE_SELL', "2025-12-02"), (2025, 12, 5, '12:15', 'PE_SELL', "2025-12-05"),
-    (2025, 12, 8, '10:15', 'CE_SELL', "2025-12-08"), (2025, 12, 22, '10:15', 'PE_SELL', "2025-12-22"),
-    (2025, 12, 24, '09:15', 'CE_SELL', "2025-12-24"), (2026, 1, 1, '11:15', 'PE_SELL', "2026-01-01_1"),
-    (2026, 1, 1, '12:15', 'CE_SELL', "2026-01-01_2"), (2026, 1, 1, '14:15', 'PE_SELL', "2026-01-01_3"),
-    (2026, 1, 1, '15:15', 'CE_SELL', "2026-01-01_4"), (2026, 1, 2, '10:15', 'PE_SELL', "2026-01-02"),
-    (2026, 1, 6, '11:15', 'CE_SELL', "2026-01-06"), (2026, 2, 3, '10:15', 'PE_SELL', "2026-02-03"),
-    (2026, 2, 5, '14:15', 'CE_SELL', "2026-02-05_1"), (2026, 2, 5, '15:15', 'PE_SELL', "2026-02-05_2"),
-    (2026, 2, 6, '10:15', 'CE_SELL', "2026-02-06_1"), (2026, 2, 6, '12:15', 'PE_SELL', "2026-02-06_2"),
-    (2026, 2, 6, '13:15', 'CE_SELL', "2026-02-06_3"), (2026, 2, 6, '14:15', 'PE_SELL', "2026-02-06_4"),
-    (2026, 2, 13, '10:15', 'CE_SELL', "2026-02-13"), (2026, 2, 16, '15:15', 'PE_SELL', "2026-02-16"),
-    (2026, 2, 19, '12:15', 'CE_SELL', "2026-02-19"), (2026, 2, 23, '10:15', 'PE_SELL', "2026-02-23_1"),
-    (
+    (2025, 7, 4, '12:15', 'CE_SELL', "2025-07-04_1"),
+    (2025, 7, 4, '15:15', 'PE_SELL', "2025-07-04_2"),
+    (2025, 7, 8, '10:15', 'CE_SELL', "2025-07-08_1"),
+    (2025, 7, 8, '13:15', 'PE_SELL', "2025-07-08_2"),
+    (2025, 7, 8, '14:15', 'CE_SELL', "2025-07-08_3"),
+    (2025, 7, 8, '15:15', 'PE_SELL', "2025-07-08_4"),
+    (2025, 7, 9, '15:15', 'CE_SELL', "2025-07-09"),
+    (2025, 8, 18, '10:15', 'PE_SELL', "2025-08-18"),
+    (2025, 8, 26, '10:15', 'CE_SELL', "2025-08-26"),
+    (2025, 9, 4, '10:15', 'PE_SELL', "2025-09-04_1"),
+    (2025, 9, 4, '15:15', 'CE_SELL', "2025-09-04_2"),
+    (2025, 9, 8, '10:15', 'PE_SELL', "2025-09-08"),
+    (2025, 9, 25, '10:15', 'CE_SELL', "2025-09-25"),
+    (2025, 10, 6, '10:15', 'PE_SELL', "2025-10-06"),
+    (2025, 11, 4, '14:15', 'CE_SELL', "2025-11-04"),
+    (2025, 11, 11, '15:15', 'PE_SELL', "2025-11-11"),
+    (2025, 11, 25, '15:15', 'CE_SELL', "2025-11-25"),
+    (2025, 11, 26, '10:15', 'PE_SELL', "2025-11-26"),
+    (2025, 12, 2, '10:15', 'CE_SELL', "2025-12-02"),
+    (2025, 12, 5, '12:15', 'PE_SELL', "2025-12-05"),
+    (2025, 12, 8, '10:15', 'CE_SELL', "2025-12-08"),
+    (2025, 12, 22, '10:15', 'PE_SELL', "2025-12-22"),
+    (2025, 12, 24, '09:15', 'CE_SELL', "2025-12-24"),
+    (2026, 1, 1, '11:15', 'PE_SELL', "2026-01-01_1"),
+    (2026, 1, 1, '12:15', 'CE_SELL', "2026-01-01_2"),
+    (2026, 1, 1, '14:15', 'PE_SELL', "2026-01-01_3"),
+    (2026, 1, 1, '15:15', 'CE_SELL', "2026-01-01_4"),
+    (2026, 1, 2, '10:15', 'PE_SELL', "2026-01-02"),
+    (2026, 1, 6, '11:15', 'CE_SELL', "2026-01-06"),
+    (2026, 2, 3, '10:15', 'PE_SELL', "2026-02-03"),
+    (2026, 2, 5, '14:15', 'CE_SELL', "2026-02-05_1"),
+    (2026, 2, 5, '15:15', 'PE_SELL', "2026-02-05_2"),
+    (2026, 2, 6, '10:15', 'CE_SELL', "2026-02-06_1"),
+    (2026, 2, 6, '12:15', 'PE_SELL', "2026-02-06_2"),
+    (2026, 2, 6, '13:15', 'CE_SELL', "2026-02-06_3"),
+    (2026, 2, 6, '14:15', 'PE_SELL', "2026-02-06_4"),
+    (2026, 2, 13, '10:15', 'CE_SELL', "2026-02-13"),
+    (2026, 2, 16, '15:15', 'PE_SELL', "2026-02-16"),
+    (2026, 2, 19, '12:15', 'CE_SELL', "2026-02-19"),
+    (2026, 2, 23, '10:15', 'PE_SELL', "2026-02-23_1"),
+    (2026, 2, 23, '13:15', 'CE_SELL', "2026-02-23_2"),
+    (2026, 2, 23, '15:15', 'PE_SELL', "2026-02-23_3"),
+    (2026, 2, 24, '10:15', 'CE_SELL', "2026-02-24"),
+    (2026, 4, 8, '10:15', 'PE_SELL', "2026-04-08"),
+    (2026, 5, 12, '10:15', 'CE_SELL', "2026-05-12"),
+    (2026, 5, 14, '12:15', 'PE_SELL', "2026-05-14"),
+    (2026, 5, 29, '15:15', 'CE_SELL', "2026-05-29"),
+    (2026, 6, 12, '11:15', 'PE_SELL', "2026-06-12")
+]
+
+st.sidebar.header("⚙️ System Control")
+hedging_on = st.sidebar.checkbox("Enable OTM Hedging (Spreads)", value=True)
+slippage_pct = st.sidebar.slider("Real Slippage Buffer (%)", 0.0, 0.2, 0.05, step=0.01)
+
+if st.sidebar.button("🚀 Process Real Market Loop"):
+    trade_log = []
+    current_position = None
+    total_pnl = 0
+    
+    peak = -999999
+    max_drawdown = 0
+    max_loss_streak = 0
+    current_loss_streak = 0
+    
+    for i in range(len(trade_schedule)):
+        y, m, d, t_str, trade_type, data_key = trade_schedule[i]
+        
+        if data_key in nifty_vix_database:
+            spot_price = nifty_vix_database[data_key]["spot"]
+            current_vix = nifty_vix_database[data_key]["vix"]
+        else:
+            continue
+            
+        atm_strike = round(spot_price / 50) * 50
+        target_date = datetime(y, m, d)
+        
+        if current_position is not None:
+            entry_type = current_position['type']
+            entry_spot = current_position['spot']
+            entry_strike = current_position['strike']
+            entry_time = current_position['time']
+            entry_t_str = current_position['time_str']
+            entry_vix = current_position['vix']
+            
+            price_change = spot_price - entry_spot
+            
+            if entry_type == 'CE_SELL':
+                raw_pnl = -price_change * 0.5
+            else:
+                raw_pnl = price_change * 0.5
+            
+            days_held = (target_date - entry_time).days
+            theta_gain = entry_strike * 0.0012 * max(1, days_held)
+            
+            trade_pnl = raw_pnl + theta_gain
+            if hedging_on:
+                trade_pnl *= 0.85 
+                
+            trade_pnl -= (spot_price * (slippage_pct / 100))
+            total_pnl += trade_pnl
+            
+            # Risk Analytics
+            if total_pnl > peak:
+                peak = total_pnl
+            dd = peak - total_pnl
+            if dd > max_drawdown:
+                max_drawdown = dd
+                
+            if trade_pnl < 0:
+                current_loss_streak += 1
+                if current_loss_streak > max_loss_streak:
+                    max_loss_streak = current_loss_streak
+            else:
+                current_loss_streak = 0
+                
+            trade_log.append({
+                "Entry Period": f"{entry_time.strftime('%Y-%m-%d')} ({entry_t_str})",
+                "Exit Period": f"{target_date.strftime('%Y-%m-%d')} ({t_str})",
+                "Loop Block": entry_type,
+                "Market India VIX": entry_vix,
+                "Net Trade PnL (Points)": round(trade_pnl, 2),
+                "Equity Curve Balance": round(total_pnl, 2)
+            })
+            
+        current_position = {
+            "time": target_date, "time_str": t_str, "type": trade_type, "strike": atm_strike, "spot": spot_price, "vix": current_vix
+        }
+        
+    if len(trade_log) > 0:
+        df_results = pd.DataFrame(trade_log)
+        
+        st.subheader("🎯 Absolute Market Metrics")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Total Net PnL", f"{round(total_pnl, 2)} Pts")
+        win_rate = (df_results['Net Trade PnL (Points)'] > 0).sum() / len(df_results) * 100
+        col2.metric("📈 True Win Rate", f"{round(win_rate, 2)}%")
+        col3.metric("🔄 Executed Loops", len(df_results))
+        
+        st.markdown("---")
+        st.subheader("⚠️ Core Drawdown Risk Profile")
+        r1, r2, r3 = st.columns(3)
+        r1.metric("📉 Raw Max Drawdown", f"{round(max_drawdown, 2)} Points")
+        r2.metric("🔴 Pure Max Loss Streak", f"{max_loss_streak} Trades")
+        r3.metric("💼 Cash Capital Cushion", f"₹{round(max_drawdown * 25):,}")
+        
+        st.markdown("---")
+        st.subheader("📈 Absolute Performance Curve")
+        st.line_chart(df_results["Equity Curve Balance"])
+        
+        st.markdown("---")
+        st.subheader("📜 Detailed Reversal Log Audit Trail")
+        def color_pnl(val):
+            return f'background-color: {"#a2f3a2" if val > 0 else "#f3a2a2"}'
+        st.dataframe(df_results.style.map(color_pnl, subset=['Net Trade PnL (Points)']), use_container_width=True)
