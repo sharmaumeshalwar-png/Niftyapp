@@ -1,26 +1,13 @@
-import os
-import subprocess
-import sys
-
-# =====================================================================
-# AUTO-INSTALLER LAYER (Aapki app.py file apne aap lightgbm install karegi)
-# =====================================================================
-try:
-    import lightgbm as lgb
-except ImportError:
-    with sys.stdout:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "lightgbm"])
-    import lightgbm as lgb
-
 import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from sklearn.ensemble import GradientBoostingClassifier  # 🆕 Upgraded to High-Impact Gradient Boosting
 
 # Page Configuration
-st.set_page_config(page_title="Nifty LightGBM Alpha Engine", layout="wide")
-st.title("📊 Nifty 50 Live 1-Hour Gradient-Boosted Alpha Engine")
-st.write("🎯 **Next-Gen Framework:** Only Nifty 50 Data + LightGBM Leaf-Wise Core + Volatility Decay Core + Smooth Distance Price Kalman")
+st.set_page_config(page_title="Nifty Gradient Boost Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Pure Gradient-Boosted Alpha Engine")
+st.write("🎯 **High-Impact Native Framework:** Only Nifty 50 Data + Pure Gradient Boosting Trees (No External Files Required) + Volatility Decay Core + Smooth Distance Price Kalman")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -43,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("⚡ Initializing LightGBM Leaf-Wise Core & Computing Volatility Decay..."):
+with st.spinner("⚡ Initializing Native Gradient-Boosting Core & Computing Volatility Decay..."):
     # Fail-safe data download
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
@@ -72,7 +59,7 @@ with st.spinner("⚡ Initializing LightGBM Leaf-Wise Core & Computing Volatility
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
     # =====================================================================
-    # LIGHTGBM OPTIMIZED ADVANCED FEATURES
+    # GRADIENT BOOSTING OPTIMIZED ADVANCED FEATURES
     # =====================================================================
     # 1. Exponential Volatility Decay
     raw_range = df['High'] - df['Low']
@@ -111,20 +98,17 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split.")
 else:
-    # 🎯 LIGHTGBM MODEL ARCHITECTURE (Highly Impactful)
-    model_flow = lgb.LGBMClassifier(
-        n_estimators=400,        # Optimized Boosted Trees
-        max_depth=5,             # Controlled depth to maintain structure
-        learning_rate=0.03,      # Stable learning steps for financial data
-        num_leaves=31,           # Leaf-wise growth for high impact
-        min_child_samples=15,    # Minimum samples in leaf to prevent small noise
-        random_state=42,
-        verbosity=-1,
-        n_jobs=-1
+    # 🎯 HIGH-IMPACT GRADIENT BOOSTING ARCHITECTURE (Error-Free Native)
+    model_flow = GradientBoostingClassifier(
+        n_estimators=300,        # 300 Sequential correction trees
+        max_depth=5,             # Deep scanning matrix
+        learning_rate=0.05,      # Stable trend learning rate
+        min_samples_leaf=5,      # Anti-noise guard
+        random_state=42
     )
     model_flow.fit(X_train, y_train)
 
-    # Probabilities Generation via LightGBM
+    # Probabilities Generation via Boosting Engine
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
@@ -156,7 +140,7 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Logic (Locked with Gradient Boosting Sensitivity)
+        # Accumulator Logic (Locked with Boosting Sensitivity)
         if p_up >= 0.55: accumulator += 1  
         elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
@@ -226,5 +210,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty LightGBM Auto-Installing Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty Gradient Boost Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
