@@ -214,4 +214,24 @@ else:
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
     # Table View Layout Configuration
-    clean_display_cols =
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
+        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'Step_Momentum', 'd_ML_Signal', 'Trap_Status'
+    ]
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prev_High'] = display_df['Prev_High'].round(2)
+    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) # Original remains with decimals
+    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) # New Step column as pure integers
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
+    st.dataframe(display_df, use_container_width=True, height=750)
