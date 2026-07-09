@@ -18,7 +18,6 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x = data_array[0]
     p = initial_p  
     
-    # LINEAR DISTANCE PARAMETERS
     q = 0.0001     
     r = 2.5        
     
@@ -52,7 +51,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Download buffer to construct technical indicators properly before slicing
+    # Safe 1-year window for running initial indicators calculations smoothly
     raw_df = yf.download("^NSEI", period="1y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -96,7 +95,7 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
-    # STRICT 25-CANDLE MATRIX FORWARD FREEZE
+    # STRICT PAST 25 CANDLES ENGINE BOUNDARY LIMIT LOCK
     if len(df_clean) >= 25:
         df_clean = df_clean.tail(25)
 
@@ -115,28 +114,27 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
 else:
-    # 🎯 ANTI-CACHE HARD MATRIX INITIALIZATION (LINE 128 IS COMPLETELY ELIMINATED)
-    # Variable names completely changed so Streamlit cache is forced to break
-    safe_prob_up_array = np.full(len(df_predict), 0.50)
-    safe_prob_down_array = np.full(len(df_predict), 0.50)
+    # 🎯 LINE 128 RADICAL RECONSTRUCTION (Slicing logic entirely deleted)
+    final_output_up_matrix = np.full(len(df_predict), 0.50)
+    final_output_down_matrix = np.full(len(df_predict), 0.50)
 
     if len(np.unique(y_train)) > 1:
         model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
         model_flow.fit(X_train, y_train)
         
-        # Using completely clean 1D direct binary predictions to remove slicing issues permanently
-        direct_predictions = model_flow.predict(X_predict).astype(float)
-        safe_prob_up_array = direct_predictions
-        safe_prob_down_array = 1.0 - direct_predictions
+        # Hard 1D binary vectors to completely bypass IndexError multidimensional slicing
+        binary_predictions_1d = model_flow.predict(X_predict).astype(float)
+        final_output_up_matrix = binary_predictions_1d
+        final_output_down_matrix = 1.0 - binary_predictions_1d
     else:
         if len(y_train) > 0:
-            fallback_scalar = float(y_train.iloc[0])
-            safe_prob_up_array = np.full(len(df_predict), fallback_scalar)
-            safe_prob_down_array = np.full(len(df_predict), 1.0 - fallback_scalar)
+            fallback_scalar_value = float(y_train.iloc[0])
+            final_output_up_matrix = np.full(len(df_predict), fallback_scalar_value)
+            final_output_down_matrix = np.full(len(df_predict), 1.0 - fallback_scalar_value)
 
-    # Clean assignment without slice matrices
-    df_predict['Prob_Up'] = safe_prob_up_array
-    df_predict['Prob_Down'] = safe_prob_down_array
+    # Directly assigning 1D safe metrics to the final output blocks
+    df_predict['Prob_Up'] = final_output_up_matrix
+    df_predict['Prob_Down'] = final_output_down_matrix
 
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
@@ -219,7 +217,7 @@ else:
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
     # =====================================================================
-    # 🔥 SECOND LEVEL BATCH ARRAY ML (FOOLPROOF 1D VECTOR PROCESSING)
+    # 🔥 SECOND LEVEL BATCH ARRAY ML (1D COMPRESSION PROTECTION LAYER)
     # =====================================================================
     df_predict['WM_Velocity'] = df_predict['Weighted_Momentum'].diff(1).fillna(0)
     df_predict['WM_Acceleration'] = df_predict['WM_Velocity'].diff(1).fillna(0)
