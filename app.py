@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 # Page Setup
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [1-Hour Stable]")
+st.title("🚀 Nifty 50 Discovery Engine [Real-Time Fixed]")
 
 # =====================================================================
 # MATH & DATA ENGINE
@@ -26,16 +26,13 @@ def apply_kalman_filter_custom(data_array, initial_p=0.50):
 
 @st.cache_data(ttl=3600)
 def get_ml_data():
-    # 1-hour interval is fixed
     ticker = "^NSEI"
     raw = yf.download(ticker, period="2y", interval="1h", progress=False)
     
-    if raw.empty or len(raw) < 200:
-        return pd.DataFrame()
+    if raw.empty: return pd.DataFrame()
         
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
-    df = df.dropna()
     
     # Mathematical Features
     df['Kalman'] = apply_kalman_filter_custom(df['Price'].values)
@@ -43,9 +40,9 @@ def get_ml_data():
     df['Step_Momentum'] = np.round(apply_kalman_filter_custom(df['Weighted_Momentum'].values) * 10)
     df['Past_150_Diff'] = df['Price'] - df['Price'].shift(150)
     
-    # 150 candles into future (Trading days logic: 150/6.5 = ~23 days)
-    df['Target'] = df['Price'].shift(-150)
-    df['Predicted_Date'] = df.index + pd.offsets.BusinessDay(23)
+    # FIXED: Future data target shift ki jagah, hum 'Price' ko hi target karenge
+    # Target: Agli candle ka price
+    df['Target'] = df['Price'].shift(-1) 
     return df.dropna()
 
 df = get_ml_data()
@@ -54,7 +51,7 @@ df = get_ml_data()
 # DASHBOARD & ML
 # =====================================================================
 if df.empty:
-    st.error("Data load nahi ho pa raha hai. Server connection check karein.")
+    st.error("Data load error.")
 else:
     # 50:50 Split
     split_idx = int(len(df) * 0.50)
@@ -63,15 +60,17 @@ else:
     features = ['Price', 'Kalman', 'Weighted_Momentum', 'Step_Momentum', 'Past_150_Diff']
     model = RandomForestRegressor(n_estimators=100, max_depth=5).fit(train[features], train['Target'])
     
-    test['Predicted_150_Candle_Price'] = model.predict(test[features])
+    # Sirf present data par predict karega
+    test['Predicted_Next_Price'] = model.predict(test[features])
+    test['Projection_Date'] = test.index + pd.offsets.BusinessDay(1)
 
-    st.subheader("📋 Discovery Engine (1-Hour Data Fixed)")
+    st.subheader("📋 Discovery Engine (Real-Time Current Data)")
     st.data_editor(
         test.sort_index(ascending=False),
         use_container_width=True,
         column_config={
             "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
-            "Predicted_150_Candle_Price": st.column_config.NumberColumn("ML Pred. Target", format="%.2f"),
-            "Predicted_Date": st.column_config.DateColumn("Projection Date", format="DD/MM/YYYY"),
+            "Predicted_Next_Price": st.column_config.NumberColumn("ML Next Price", format="%.2f"),
+            "Projection_Date": st.column_config.DateColumn("Projection Date", format="DD/MM/YYYY"),
         }
     )
