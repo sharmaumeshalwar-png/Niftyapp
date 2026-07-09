@@ -5,49 +5,46 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Data Recovery Engine")
+st.title("🚀 Nifty 50 Discovery Engine [Date-Projected]")
 
 @st.cache_data(ttl=3600)
-def fetch_safe_data():
-    try:
-        # Ticker check: Kabhi kabhi sirf '^NSEI' ya 'NSEI.NS' kaam karta hai
-        data = yf.download("^NSEI", period="1y", interval="1h", progress=False)
-        
-        if data.empty:
-            return None
-        
-        # Data cleaning
-        df = data[['Close']].copy()
-        df.columns = ['Price']
-        df = df.ffill().dropna()
-        
-        # Features check
-        df['SMA_150'] = df['Price'].rolling(150).mean()
-        df['Volatility'] = df['Price'].rolling(150).std()
-        
-        # Drop NaN after rolling
-        df = df.dropna()
-        
-        return df
-    except Exception as e:
-        return str(e)
+def get_final_data():
+    raw = yf.download("^NSEI", period="1y", interval="1h", progress=False)
+    df = pd.DataFrame(index=raw.index)
+    df['Price'] = raw['Close'].ffill().squeeze()
+    
+    # Features
+    df['SMA_150'] = df['Price'].rolling(150).mean()
+    df['Volatility'] = df['Price'].rolling(150).std()
+    
+    # Target: Statistical projection (150 candles/23 days ahead)
+    df['Dynamic_Target'] = df['Price'] + (df['Price'] - df['SMA_150']) * 0.5
+    
+    # Cleaning
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    return df
 
-data_result = fetch_safe_data()
+df = get_final_data()
 
-if isinstance(data_result, str):
-    st.error(f"Data Fetch Error: {data_result}")
-elif data_result is None:
-    st.error("No data found for Nifty 50. Server response empty.")
-else:
-    st.success(f"Data successful! Loaded {len(data_result)} records.")
-    
-    # ML Prediction
-    data_result['Dynamic_Target'] = data_result['Price'] + (data_result['Price'] - data_result['SMA_150']) * 0.5
-    X = data_result[['Price', 'SMA_150', 'Volatility']]
-    y = data_result['Dynamic_Target']
-    
-    model = RandomForestRegressor(n_estimators=50).fit(X, y)
-    data_result['Prediction'] = model.predict(X)
-    
-    st.subheader("📋 Discovery Table")
-    st.data_editor(data_result.sort_index(ascending=False).head(20), use_container_width=True)
+# Model training
+X = df[['Price', 'SMA_150', 'Volatility']]
+y = df['Dynamic_Target']
+model = RandomForestRegressor(n_estimators=50).fit(X, y)
+
+# Prediction & Projection Date
+df['Prediction'] = model.predict(X)
+# 150 hours = 23 Business Days
+df['Projected_Date'] = df.index + pd.offsets.BusinessDay(23)
+
+st.subheader("📋 Discovery Table with Projected Dates")
+
+# Full view
+st.data_editor(
+    df.sort_index(ascending=False), 
+    use_container_width=True,
+    column_config={
+        "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
+        "Prediction": st.column_config.NumberColumn("ML Target", format="%.2f"),
+        "Projected_Date": st.column_config.DateColumn("Date 150 Candles Ahead", format="DD/MM/YYYY"),
+    }
+)
