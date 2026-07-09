@@ -52,7 +52,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Fail-safe data download to avoid Blank Data issue
+    # Fail-safe data download to avoid Blank Data/Freeze issue
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -100,3 +100,56 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
 # =====================================================================
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
+# =====================================================================
+split_idx = int(len(df_clean) * 0.50)
+
+df_train = df_clean.iloc[:split_idx].copy()
+df_train.dropna(subset=features_matrix + ['Target'], inplace=True)
+
+X_train = df_train[features_matrix]
+y_train = df_train['Target']
+
+df_predict = df_clean.iloc[split_idx:].copy()
+df_predict.dropna(subset=features_matrix, inplace=True) 
+
+X_predict = df_predict[features_matrix]
+
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
+else:
+    # RandomForest Model Training (Linear Trees)
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
+    model_flow.fit(X_train, y_train)
+
+    # Raw Probabilities Prediction
+    probabilities = model_flow.predict_proba(X_predict)
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # Price Action Columns
+    df_predict['Prev_High'] = df_predict['High'].shift(1)
+    df_predict['Prev_Low'] = df_predict['Low'].shift(1)
+
+    # =====================================================================
+    # LIVE TREND-LOCK CIRCUIT WITH TRAP-DETECTION FILTER (HIGH/LOW BREAK)
+    # =====================================================================
+    final_signals = []
+    scores_log = []
+    raw_weighted_momentum_log = [] 
+    trap_status_log = [] 
+    current_state = "HOLD"
+    accumulator = 0
+
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+        c_val = closes[i]
+        k_price
