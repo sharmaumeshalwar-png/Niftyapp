@@ -48,6 +48,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+    # Using 730d to ensure constant historical data backfill
     raw_df = yf.download("^NSEI", period="730d", interval="1h", progress=False)
     
     if raw_df.empty:
@@ -67,6 +68,7 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
+    # Timezone conversion layer
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -96,9 +98,7 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
-# =====================================================================
-# DYNAMIC SPLIT ENGINE
-# =====================================================================
+# Fallback protection layer to bypass blank page renders
 if len(df_clean) < 10:
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['c_Combined']).copy()
     df_clean['Target'] = np.where(df_clean['a_Close'] > df_clean['a_Close'].shift(1), 1, 0)
@@ -196,7 +196,6 @@ else:
 
         trap_msg = "TREND VALID"
 
-        # FIXED SYNTAX & LOGICAL CLOSURES
         if accumulator == 5:
             current_state = "BUY"
             if c_val > p_high: 
@@ -231,4 +230,48 @@ else:
                         final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
                         trap_msg = "⚠️ BULL TRAP INSIDE"
             else:
-                final_signals.append
+                final_signals.append(f"⚪ NEUTRAL (Score: {accumulator})")
+
+        trap_status_log.append(trap_msg)
+
+    # State Assignment Layer
+    df_predict['Prob_Up'] = np.array(corrected_prob_up_list, dtype=float)
+    df_predict['Prob_Down'] = np.array(corrected_prob_down_list, dtype=float)
+    df_predict['Prob_Sum'] = np.array(corrected_sum_list, dtype=float)
+    
+    df_predict['d_ML_Signal'] = np.array(final_signals, dtype=object)
+    df_predict['Trap_Status'] = np.array(trap_status_log, dtype=object)
+    df_predict['Accumulator_Score'] = np.array(scores_log, dtype=int)
+    df_predict['Raw_Weighted_Momentum'] = np.array(raw_weighted_momentum_log, dtype=float)
+    df_predict['Net_Prob_Flow'] = np.array(cum_prob_flow_log, dtype=float)
+    df_predict['Flow_State'] = np.array(flow_direction_log, dtype=object)
+
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].to_numpy(), initial_p=0.50)
+    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].to_numpy())
+    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
+
+    # Custom Multiplied Layer (Net_Prob_Flow * Step_Momentum)
+    df_predict['Flow_Momentum_Product'] = df_predict['Net_Prob_Flow'] * df_predict['Step_Momentum']
+
+    # Presentation Output Creation
+    display_df = pd.DataFrame(index=df_predict.index)
+    display_df['a_Close'] = df_predict['a_Close'].round(2)
+    display_df['Prob_Up'] = df_predict['Prob_Up'].round(3)
+    display_df['Prob_Down'] = df_predict['Prob_Down'].round(3)
+    display_df['Prob_Sum'] = df_predict['Prob_Sum'].round(2)
+    display_df['Net_Prob_Flow'] = df_predict['Net_Prob_Flow'].round(2)
+    display_df['Step_Momentum'] = df_predict['Step_Momentum'].astype(int)
+    display_df['Flow_Momentum_Product'] = df_predict['Flow_Momentum_Product'].round(3)
+    display_df['Flow_State'] = df_predict['Flow_State']
+    display_df['Accumulator_Score'] = df_predict['Accumulator_Score'].astype(int)
+    display_df['d_ML_Signal'] = df_predict['d_ML_Signal']
+    display_df['Trap_Status'] = df_predict['Trap_Status']
+    
+    display_df = display_df.sort_index(ascending=False)
+    
+    string_dates = display_df.index.to_series().dt.strftime('%Y-%m-%d %H:%M').values
+    display_df.index = string_dates
+    display_df.index.name = "Date (IST)"
+
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
+    st.dataframe(display_df, use_container_width=True, height=750)
