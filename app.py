@@ -9,7 +9,7 @@ st.set_page_config(page_title="Nifty Discovery Pro", layout="wide")
 st.title("🚀 Nifty 50 Discovery Momentum Engine")
 
 # =====================================================================
-# MATH ENGINES
+# MATHEMATICAL ENGINES
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x, p = data_array[0], initial_p
@@ -24,7 +24,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return res
 
 # =====================================================================
-# DATA ENGINE
+# DATA & DISCOVERY ENGINE
 # =====================================================================
 @st.cache_data(ttl=3600)
 def get_processed_data():
@@ -42,35 +42,37 @@ def get_processed_data():
 
 df = get_processed_data()
 split_idx = int(len(df) * 0.50)
-predict = df.iloc[split_idx:].copy()
+train, predict = df.iloc[:split_idx], df.iloc[split_idx:].copy()
 
-# Features & Model
+# Machine Learning
 features = ['c_Gap', 'Normalized_Gap', 'ATR']
-model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(df.iloc[:split_idx][features], df.iloc[:split_idx]['Target'])
+model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(train[features], train['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
+
+# Discovery Score (Base)
 predict['Discovery_Score'] = (predict['Prob_Up'] * predict['c_Gap']) / (predict['ATR'] + 1e-10)
-predict['Scaled_Discovery_Momentum'] = apply_kalman_filter_custom(predict['Discovery_Score'].values, initial_p=0.50) * 100
+
+# MOMENTUM ON DISCOVERY SCORE
+# Discovery Score par Kalman lagaya
+predict['Discovery_Momentum'] = apply_kalman_filter_custom(predict['Discovery_Score'].values, initial_p=0.50)
+# Scaled for visibility (100x)
+predict['Scaled_Discovery_Momentum'] = predict['Discovery_Momentum'] * 100
 
 # =====================================================================
-# DASHBOARD WITH DUAL CHART
+# DASHBOARD
 # =====================================================================
-st.subheader("📊 Price vs Scaled Discovery Momentum")
+st.subheader("📊 Discovery Score-Based Momentum")
+st.line_chart(predict[['Scaled_Discovery_Momentum', 'Discovery_Score']])
 
-# Streamlit line_chart automatically handle multiple columns
-# Agar values bahut alag hain (Price 20000 vs Momentum 50), 
-# toh aap "use_container_width" se zoom kar sakte hain.
-st.line_chart(predict[['a_Close', 'Scaled_Discovery_Momentum']])
-
-st.subheader("📋 Interactive Discovery Table")
-display_df = predict[['a_Close', 'Prob_Up', 'ATR', 'Scaled_Discovery_Momentum', 'Discovery_Score']].sort_index(ascending=False)
+display_df = predict[['a_Close', 'Prob_Up', 'Discovery_Score', 'Scaled_Discovery_Momentum']].sort_index(ascending=False)
 
 st.data_editor(
     display_df,
     use_container_width=True,
     column_config={
         "a_Close": st.column_config.NumberColumn("Close Price", format="%.2f"),
-        "Scaled_Discovery_Momentum": st.column_config.NumberColumn("Scaled Disc. Momentum", format="%.2f"),
-        "Discovery_Score": st.column_config.NumberColumn("Discovery_Score", format="%.4f"),
+        "Discovery_Score": st.column_config.NumberColumn("Discovery Score", format="%.4f"),
+        "Scaled_Discovery_Momentum": st.column_config.NumberColumn("Scaled Disc. Momentum (100x)", format="%.2f"),
     },
-    height=500
+    height=600
 )
