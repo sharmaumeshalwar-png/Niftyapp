@@ -52,7 +52,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Fail-safe data download to avoid Blank Data issue
+    # Base data collection frame (Download slightly more so we get 25 valid rows after dropna)
     raw_df = yf.download("^NSEI", period="1y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -95,7 +95,7 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 
     # STRICT PAST 25-CANDLE TARGET WINDOW
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0) # Fixed target to 1-period for 25-candle window scaling
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
@@ -118,7 +118,7 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
 else:
-    # 🎯 FIXING THE CLASS VARIANCE CRASH: Strict fallback verification check
+    # 🎯 STEP 4 VERIFICATION: Single Class Variance Safety Check to fix IndexError
     if len(np.unique(y_train)) > 1:
         model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
         model_flow.fit(X_train, y_train)
@@ -126,9 +126,10 @@ else:
         df_predict['Prob_Down'] = probabilities[:, 0]
         df_predict['Prob_Up'] = probabilities[:, 1]
     else:
-        # Fallback setting if data trends only in single direction within 12 candles
-        df_predict['Prob_Down'] = 0.50 if y_train.iloc[0] == 1 else 1.0
-        df_predict['Prob_Up'] = 0.50 if y_train.iloc[0] == 0 else 1.0
+        # Fallback tracking if target data is flat
+        fallback_val = 1.0 if (len(y_train) > 0 and y_train.iloc[0] == 1) else 0.0
+        df_predict['Prob_Down'] = 1.0 - fallback_val
+        df_predict['Prob_Up'] = fallback_val
 
     # Price Action Columns
     df_predict['Prev_High'] = df_predict['High'].shift(1)
@@ -228,7 +229,7 @@ else:
     X_wm = df_predict[wm_features]
     y_wm = df_predict['WM_Target']
     
-    # Second ML level multi-variance protection loop
+    # 🎯 STEP 5 VERIFICATION: Secondary ML Layer Multi-Variance Check
     if len(np.unique(y_wm)) > 1:
         # Linear Wave Classifier 
         model_linear_batch = RandomForestClassifier(n_estimators=50, max_depth=2, random_state=42, n_jobs=-1)
@@ -240,8 +241,8 @@ else:
         model_nonlinear_batch.fit(X_wm, y_wm)
         df_predict['ML_WM_NonLinear_Prob'] = model_nonlinear_batch.predict_proba(df_predict[wm_features])[:, 1]
     else:
-        df_predict['ML_WM_Linear_Prob'] = 0.50 if (len(y_wm) > 0 and y_wm.iloc[0] == 1) else 0.0
-        df_predict['ML_WM_NonLinear_Prob'] = 0.50 if (len(y_wm) > 0 and y_wm.iloc[0] == 1) else 0.0
+        df_predict['ML_WM_Linear_Prob'] = 0.50
+        df_predict['ML_WM_NonLinear_Prob'] = 0.50
 
     # Table View Layout Configuration
     clean_display_cols = [
