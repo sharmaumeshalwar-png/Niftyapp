@@ -44,11 +44,11 @@ def apply_non_linear_kalman_momentum(data_array):
 # =====================================================================
 # DATA ENGINE
 # =====================================================================
-with st.spinner("Aligning 2-Year Nifty Data..."):
+with st.spinner("Processing 2-Year Nifty Data..."):
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if raw_df.empty:
-        st.error("Data error.")
+        st.error("Data load failed. Check internet.")
         st.stop()
 
     df = pd.DataFrame(index=raw_df.index)
@@ -85,9 +85,13 @@ predict_df['Prob_Down'] = probs[:, 0]
 predict_df['Prob_Up'] = probs[:, 1]
 
 # Kalman Momentum (0.50 parameter as requested)
-predict_df['Raw_Momentum'] = predict_df['c_Combined']
-predict_df['Weighted_Momentum'] = apply_kalman_filter_custom(predict_df['Raw_Momentum'].values, initial_p=0.50)
+predict_df['Weighted_Momentum'] = apply_kalman_filter_custom(predict_df['c_Combined'].values, initial_p=0.50)
 predict_df['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(predict_df['Weighted_Momentum'].values))
 
-st.subheader("📋 Dashboard")
-st.dataframe(predict_df[['a_Close', 'Prob_Up', 'Prob_Down', 'Weighted_Momentum', 'Step_Momentum']].tail(20), use_container_width=True)
+# Display results
+st.subheader("📋 Dashboard (Full View)")
+st.dataframe(
+    predict_df[['a_Close', 'Prob_Up', 'Prob_Down', 'Weighted_Momentum', 'Step_Momentum']].sort_index(ascending=False), 
+    use_container_width=True, 
+    height=750
+)
