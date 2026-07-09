@@ -1,20 +1,18 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
 from sklearn.ensemble import IsolationForest
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50: Pattern Recognition Engine")
+st.title("🚀 Nifty 50: Pattern Recognition Engine [Fixed]")
 
 @st.cache_data(ttl=3600)
 def get_geometric_data():
-    # Last 2 years
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
-    # Geometry Features: Price Range aur Volatility
+    # Feature Engineering
     df['Range_10'] = df['Price'].rolling(10).max() - df['Price'].rolling(10).min()
     df['Std_Dev'] = df['Price'].rolling(20).std()
     df['Skew'] = df['Price'].rolling(20).skew()
@@ -22,15 +20,17 @@ def get_geometric_data():
     return df.dropna()
 
 data = get_geometric_data()
+features = ['Range_10', 'Std_Dev', 'Skew']
 
-# Model: Isolation Forest (Ye market ke "Anomaly" ya "Big Breakout" patterns dhundta hai)
-model = IsolationForest(n_estimators=200, contamination=0.05)
-model.fit(data)
+# Model Training
+model = IsolationForest(n_estimators=200, contamination=0.05, random_state=42)
+# Sirf features ko fit karo, Price column ko nahi
+model.fit(data[features])
 
-# Anomaly Score: -1 (Outlier/Big Move) to 1 (Normal)
-data['Anomaly_Score'] = model.decision_function(data)
-data['Signal'] = model.predict(data) # -1 means pattern shift
+# Prediction
+data['Anomaly_Score'] = model.decision_function(data[features])
+data['Signal'] = model.predict(data[features]) 
 
 st.subheader("📋 Pattern Discovery Audit")
-st.write("Jahan Signal '-1' hai, wahan market ka 'Pattern' badal raha hai (Breakout/Reversal).")
+st.write("Signal -1 = Pattern Shift / Breakout point")
 st.dataframe(data.sort_index(ascending=False).head(20), use_container_width=True)
