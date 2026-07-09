@@ -2,48 +2,61 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
+import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [Pure State Analysis]")
+st.title("🚀 Nifty 50 Recursive Learning Engine")
 
 @st.cache_data(ttl=3600)
-def get_clean_data():
+def get_data():
     raw = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
-    
-    # 1. Statistical Features (No lag, just current state)
-    df['SMA_150'] = df['Price'].rolling(150).mean()
-    df['Volatility'] = df['Price'].rolling(150).std()
-    df['Momentum'] = df['Price'] - df['SMA_150']
     return df.dropna()
 
-df = get_clean_data()
+df = get_data()
 
-# 2. Logic: Aaj ke features ke basis par next target predict karna
-# Hum target ko "Future" se nahi, balki "Average Drift" se calculate kar rahe hain
-# Isse koi leakage nahi hoti
-df['Target_Price'] = df['Price'] * (1 + (df['Momentum'] / df['Price']) * 0.1)
+# Logic: Recursive Learning
+# Hum har point (i) par predict karenge ki (i+150) kya hoga,
+# aur compare karenge (i-150) ki purani prediction se.
+results = []
+# Model training sirf 150+ candle hone ke baad shuru hogi
+for i in range(150, len(df) - 150):
+    # Training set: Sirf wo data jo current 'i' se pehle ka hai
+    train = df.iloc[:i]
+    
+    # Feature: Current Momentum
+    X_train = train[['Price']].values
+    y_train = df['Price'].iloc[150:i+150].values 
+    
+    # Model train at every step
+    model = RandomForestRegressor(n_estimators=10).fit(X_train[:len(y_train)], y_train)
+    
+    # Prediction for 150 candles ahead
+    current_val = df[['Price']].iloc[[i]]
+    pred = model.predict(current_val)[0]
+    
+    # Reality (Actual price 150 candles later)
+    actual = df['Price'].iloc[i+150]
+    
+    results.append({
+        'Date': df.index[i],
+        'Price_Then': df['Price'].iloc[i],
+        'Prediction_For_150_Ahead': pred,
+        'Actual_Result_150_Ahead': actual
+    })
 
-# Split 50:50
-split_idx = int(len(df) * 0.50)
-train, test = df.iloc[:split_idx], df.iloc[split_idx:]
+res_df = pd.DataFrame(results)
 
-model = RandomForestRegressor(n_estimators=100).fit(train[['Price', 'SMA_150', 'Volatility']], train['Target_Price'])
-
-# Prediction
-test = test.copy()
-test['Predicted_Target'] = model.predict(test[['Price', 'SMA_150', 'Volatility']])
-test['Target_Date'] = test.index + pd.offsets.BusinessDay(23)
-
-st.subheader("📋 Pure State Projection (No Shift/Lag)")
+st.subheader("📋 Recursive Prediction & Learning Audit")
+st.write("Model har candle par khud ko update kar raha hai.")
 
 st.data_editor(
-    test.sort_index(ascending=False),
+    res_df.sort_values(by='Date', ascending=False),
     use_container_width=True,
     column_config={
-        "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
-        "Predicted_Target": st.column_config.NumberColumn("ML Target (23 Days)", format="%.2f"),
-        "Target_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
+        "Price_Then": st.column_config.NumberColumn("Price at that time", format="%.2f"),
+        "Prediction_For_150_Ahead": st.column_config.NumberColumn("ML Prediction", format="%.2f"),
+        "Actual_Result_150_Ahead": st.column_config.NumberColumn("Actual Market", format="%.2f"),
     }
 )
