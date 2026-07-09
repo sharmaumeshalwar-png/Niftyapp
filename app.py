@@ -48,7 +48,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # STRICT 2-YEAR WINDOW WITH REPAIR LAYER TO PREVENT FRONTLINE TEXT BLANK CRASHES
+    # STRICT 2-YEAR WINDOW WITH REPAIR LAYER
     raw_df = yf.download("^NSEI", period="2y", interval="1h", progress=False, repair=True)
     
     if raw_df.empty:
@@ -65,7 +65,6 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # Timezone conversion
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -137,6 +136,46 @@ else:
     current_cum_down = float(raw_prob_down[0]) if len(raw_prob_down) > 0 else 0.5
     decay = 0.70 
 
+    # FIXED: Arrays declared clearly with matching nomenclature to wipe out NameError bugs
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    prev_high
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
+
+    for i in range(len(raw_prob_up)):
+        p_up_raw = float(raw_prob_up[i]) if not np.isnan(raw_prob_up[i]) else 0.5
+        p_down_raw = float(raw_prob_down[i]) if not np.isnan(raw_prob_down[i]) else 0.5
+        c_val = float(closes[i])
+        k_price_val = float(kalmans_price[i])
+        p_high = float(prev_highs[i])
+        p_low = float(prev_lows[i])
+
+        if i == 0:
+            current_cum_up = p_up_raw
+            current_cum_down = p_down_raw
+        else:
+            current_cum_up = (current_cum_up * decay) + (p_up_raw * (1 - decay))
+            current_cum_down = (current_cum_down * decay) + (p_down_raw * (1 - decay))
+        
+        total_sum = current_cum_up + current_cum_down + 1e-10
+        current_cum_up /= total_sum
+        current_cum_down /= total_sum
+        
+        corrected_prob_up_list.append(current_cum_up)
+        corrected_prob_down_list.append(current_cum_down)
+        corrected_sum_list.append(current_cum_up + current_cum_down)
+
+        net_prob_flow = current_cum_up - current_cum_down
+        cum_prob_flow_log.append(net_prob_flow)
+        
+        if i == 0:
+            flow_direction_log.append("🔄 START")
+        else:
+            if net_prob_flow > cum_prob_flow_log[i-1]:
+                flow_direction_log.append("📈 FLOW RISING")
+            elif net_prob_flow < cum_prob_flow_log[i-1]:
+                flow_direction_log.append("📉 FLOW FALLING")
+            else:
+                flow_direction_log.append("⚖️ FLAT FLOW")
+
+        if
