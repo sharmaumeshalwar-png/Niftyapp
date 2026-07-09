@@ -51,7 +51,6 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Clear MultiIndex fetching format
     raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if raw_df.empty:
@@ -61,7 +60,6 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # MultiIndex safe conversion layer
     if isinstance(raw_df.columns, pd.MultiIndex):
         raw_df.columns = raw_df.columns.get_level_values(0)
         
@@ -92,7 +90,6 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    # Drop rows safely for modeling matrix without losing indexing context
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
 # =====================================================================
@@ -152,7 +149,7 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Cumulative probability calculation
+        # Cumulative Calculations
         running_cum_up += p_up
         running_cum_down += p_down
         net_prob_flow = running_cum_up - running_cum_down
@@ -162,37 +159,4 @@ else:
             flow_direction_log.append("🔄 START")
         else:
             if net_prob_flow > cum_prob_flow_log[i-1]:
-                flow_direction_log.append("📈 FLOW RISING")
-            elif net_prob_flow < cum_prob_flow_log[i-1]:
-                flow_direction_log.append("📉 FLOW FALLING")
-            else:
-                flow_direction_log.append("⚖️ FLAT FLOW")
-
-        # Accumulator Engine
-        if p_up >= 0.55: accumulator += 1  
-        elif p_down >= 0.55: accumulator -= 1  
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-
-        calc_raw_weighted = c_val - k_price_val
-        raw_weighted_momentum_log.append(calc_raw_weighted)
-
-        trap_msg = "TREND VALID"
-
-        if accumulator == 5:
-            current_state = "BUY"
-            if c_val > p_high: final_signals.append("🟢 STRONG BUY (Max [5/5])")
-            else:
-                final_signals.append("❌ NO ENTRY (Wait Breakout)")
-                trap_msg = "⚠️ BULL TRAP"
-        elif accumulator == -5:
-            current_state = "SELL"
-            if c_val < p_low: final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
-            else:
-                final_signals.append("🟢 HOLD LONG (No Short)")
-                trap_msg = "⚠️ BEAR TRAP"
-        else:
-            if current_state == "BUY":
-                if accumulator > 0: final_signals.append(f"🟢 HOLD BUY (Score: {accumulator})")
-                else:
-                    if c_
+                flow_direction_log
