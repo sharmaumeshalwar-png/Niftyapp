@@ -1,40 +1,47 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 50:50 Backtest Engine")
+st.title("🚀 Nifty 50 Multi-Angle Geometry Decoder")
 
 @st.cache_data(ttl=3600)
-def get_backtest_data():
-    # 2 saal ka data load karo
+def get_geometric_data():
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
-    # Features
-    df['Prev_Hour'] = df['Price'].shift(1)
-    df['SMA_150'] = df['Price'].rolling(150).mean()
+    emas = [20, 50, 100, 200]
+    features = []
     
-    # Target
+    for e in emas:
+        ema_val = df['Price'].ewm(span=e).mean()
+        # 1. Distance Angle (Price kitna door hai)
+        df[f'Dist_{e}'] = df['Price'] / ema_val
+        # 2. Slope Angle (EMA ka jhukav)
+        df[f'Slope_{e}'] = ema_val.pct_change(3)
+        # 3. Volatility Angle (EMA ke around kitna shor hai)
+        df[f'Vol_{e}'] = df['Price'].rolling(e).std() / ema_val
+        
+        features.extend([f'Dist_{e}', f'Slope_{e}', f'Vol_{e}'])
+    
     df['Target'] = df['Price'].shift(-1)
-    return df.dropna()
+    return df.dropna(), features
 
-data = get_backtest_data()
+data, feature_cols = get_geometric_data()
 
-# 50:50 Split Logic (Total data ka 50% train, 50% test)
-split_idx = int(len(data) * 0.5)
-train = data.iloc[:split_idx]
-test = data.iloc[split_idx:]
+# 50:50 Split for 2-Year Audit
+split = int(len(data) * 0.5)
+train, test = data.iloc[:split], data.iloc[split:]
 
-# Training
-model = LinearRegression()
-model.fit(train[['Prev_Hour', 'SMA_150']], train['Target'])
+# 12-Dimensional Tree Decoder
+model = RandomForestRegressor(n_estimators=300, max_depth=12, n_jobs=-1)
+model.fit(train[feature_cols], train['Target'])
 
-# Prediction on Testing data (Ye wo 1 saal hai jo model ne pehle nahi dekha)
+# Decoding
 test = test.copy()
-test['Prediction'] = model.predict(test[['Prev_Hour', 'SMA_150']])
+test['Decoded_Target'] = model.predict(test[feature_cols])
 
-st.subheader("📋 50:50 Split Historical Backtest (Last 1 Year Performance)")
-st.dataframe(test.sort_index(ascending=False), use_container_width=True)
+st.subheader("📋 12-Dimensional Geometry Audit")
+st.dataframe(test.sort_index(ascending=False).head(20), use_container_width=True)
