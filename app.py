@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Discovery Pro", layout="wide")
-st.title("🚀 Nifty 50 Advanced Discovery Engine [Pro Mode]")
+st.title("🚀 Nifty 50 Discovery Momentum Engine")
 
 # =====================================================================
 # MATHEMATICAL ENGINES
@@ -14,18 +14,6 @@ st.title("🚀 Nifty 50 Advanced Discovery Engine [Pro Mode]")
 def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x, p = data_array[0], initial_p
     q, r = 0.0001, 2.5
-    res = []
-    for z in data_array:
-        p += q
-        k = p / (p + r)
-        x += k * (z - x)
-        p = (1 - k) * p
-        res.append(x)
-    return res
-
-def apply_non_linear_kalman_momentum(data_array):
-    x, p = data_array[0], 1.0
-    q, r = 0.05, 0.2
     res = []
     for z in data_array:
         p += q
@@ -44,7 +32,6 @@ def get_processed_data():
     df = pd.DataFrame(index=raw.index)
     df[['Close', 'High', 'Low']] = raw[['Close', 'High', 'Low']].ffill()
     
-    # Discovery Metrics
     df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_custom(df['a_Close'].values)
@@ -62,31 +49,30 @@ features = ['c_Gap', 'Normalized_Gap', 'ATR']
 model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(train[features], train['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# Multi-Layer Calculations
-predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
-predict['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(predict['Weighted_Momentum'].values))
-predict['Discovery_Score'] = (predict['Prob_Up'] * predict['Weighted_Momentum']) / (predict['ATR'] + 1e-10)
+# Discovery Score (Base)
+predict['Discovery_Score'] = (predict['Prob_Up'] * predict['c_Gap']) / (predict['ATR'] + 1e-10)
+
+# MOMENTUM ON DISCOVERY SCORE
+# Discovery Score par Kalman lagaya
+predict['Discovery_Momentum'] = apply_kalman_filter_custom(predict['Discovery_Score'].values, initial_p=0.50)
+# Scaled for visibility (100x)
+predict['Scaled_Discovery_Momentum'] = predict['Discovery_Momentum'] * 100
 
 # =====================================================================
-# INTERACTIVE DASHBOARD
+# DASHBOARD
 # =====================================================================
-st.subheader("📊 Interactive Live Discovery View")
-st.write("💡 *Tip: Headers par click karke sort karein, ya columns ko drag karke apni pasand se set karein.*")
+st.subheader("📊 Discovery Score-Based Momentum")
+st.line_chart(predict[['Scaled_Discovery_Momentum', 'Discovery_Score']])
 
-# Final Display DataFrame
-display_df = predict[['a_Close', 'Prob_Up', 'ATR', 'Weighted_Momentum', 'Step_Momentum', 'Discovery_Score']].sort_index(ascending=False)
+display_df = predict[['a_Close', 'Prob_Up', 'Discovery_Score', 'Scaled_Discovery_Momentum']].sort_index(ascending=False)
 
 st.data_editor(
     display_df,
     use_container_width=True,
     column_config={
         "a_Close": st.column_config.NumberColumn("Close Price", format="%.2f"),
-        "Prob_Up": st.column_config.ProgressColumn("Prob_Up", format="%.2f", min_value=0, max_value=1),
-        "Discovery_Score": st.column_config.NumberColumn("Discovery_Score", format="%.4f"),
+        "Discovery_Score": st.column_config.NumberColumn("Discovery Score", format="%.4f"),
+        "Scaled_Discovery_Momentum": st.column_config.NumberColumn("Scaled Disc. Momentum (100x)", format="%.2f"),
     },
-    height=750
+    height=600
 )
-
-st.sidebar.title("Engine Metrics")
-st.sidebar.metric("Last Nifty Price", f"{df['a_Close'].iloc[-1]:.2f}")
-st.sidebar.metric("Live ATR", f"{df['ATR'].iloc[-1]:.2f}")
