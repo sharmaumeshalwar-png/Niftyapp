@@ -55,12 +55,11 @@ features = ['c_Gap', 'ATR']
 model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(df.iloc[:split_idx][features], df.iloc[:split_idx]['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# --- NAYA COLUMN: Weighted Momentum on Prob_Up ---
+# MOMENTUM CALCULATIONS
 predict['Prob_Weighted_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].values, initial_p=0.50) * 100
 
-# Baki purane columns
-predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
-predict['Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Weighted_Momentum'].values, initial_p=0.50) * 10)
+# NAYA COLUMN: Prob Weighted Momentum ka Step Momentum
+predict['Prob_Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Prob_Weighted_Momentum'].values, initial_p=0.50) / 10)
 
 # =====================================================================
 # DASHBOARD
@@ -75,8 +74,7 @@ st.data_editor(
     column_config={
         "Datetime": st.column_config.DatetimeColumn("Date & Time", format="DD/MM/YYYY HH:mm"),
         "Prob_Up": st.column_config.ProgressColumn("Prob Up", format="%.2f", min_value=0, max_value=1),
-        "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom (New)", format="%.2f"),
-        "Weighted_Momentum": st.column_config.NumberColumn("Price Weighted Mom", format="%.4f"),
-        "Step_Momentum": st.column_config.NumberColumn("Step Mom", format="%.0f"),
+        "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom", format="%.2f"),
+        "Prob_Step_Momentum": st.column_config.NumberColumn("Prob Step Mom (New)", format="%.0f"),
     }
 )
