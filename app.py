@@ -1,52 +1,36 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import yfinance as yf
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import IsolationForest
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50: 2-Year Full-Range Consensus Audit (50:50)")
-
-EMAS = [20, 50, 100, 200]
+st.title("🚀 Nifty 50: Pattern Recognition Engine")
 
 @st.cache_data(ttl=3600)
-def get_full_consensus_data():
-    # 2 saal ka pura data
+def get_geometric_data():
+    # Last 2 years
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
-    # Har EMA ke liye signal
-    for e in EMAS:
-        ema_val = df['Price'].ewm(span=e).mean()
-        df[f'Signal_{e}'] = (ema_val.diff() > 0).astype(int)
-        
-    df['Consensus'] = df[[f'Signal_{e}' for e in EMAS]].sum(axis=1)
-    df['Move'] = df['Price'].shift(-1) - df['Price']
-    df['Target_Up'] = (df['Move'] > 0).astype(int)
+    # Geometry Features: Price Range aur Volatility
+    df['Range_10'] = df['Price'].rolling(10).max() - df['Price'].rolling(10).min()
+    df['Std_Dev'] = df['Price'].rolling(20).std()
+    df['Skew'] = df['Price'].rolling(20).skew()
     
     return df.dropna()
 
-data = get_full_consensus_data()
+data = get_geometric_data()
 
-# Strict 50:50 Split (1 saal train, 1 saal test)
-split = int(len(data) * 0.5)
-train = data.iloc[:split]
-test = data.iloc[split:]
+# Model: Isolation Forest (Ye market ke "Anomaly" ya "Big Breakout" patterns dhundta hai)
+model = IsolationForest(n_estimators=200, contamination=0.05)
+model.fit(data)
 
-X = data[[f'Signal_{e}' for e in EMAS]]
-y = data['Target_Up']
+# Anomaly Score: -1 (Outlier/Big Move) to 1 (Normal)
+data['Anomaly_Score'] = model.decision_function(data)
+data['Signal'] = model.predict(data) # -1 means pattern shift
 
-# Model Training (Sirf training data par)
-model = RandomForestRegressor(n_estimators=200, n_jobs=-1)
-model.fit(X.iloc[:split], y.iloc[:split])
-
-# Prediction (Audit: Pura 1 saal ka test data)
-test = test.copy()
-test['Prob_Up'] = model.predict(X.iloc[split:])
-test['Action'] = test['Prob_Up'].apply(lambda x: "BUY" if x > 0.6 else ("SELL" if x < 0.4 else "HOLD"))
-
-st.subheader(f"📋 2-Year Audit Result (Split at: {train.index[-1].date()})")
-st.write(f"Training Range: {train.index[0].date()} to {train.index[-1].date()}")
-st.write(f"Testing Range: {test.index[0].date()} to {test.index[-1].date()}")
-
-st.dataframe(test.sort_index(ascending=False), use_container_width=True)
+st.subheader("📋 Pattern Discovery Audit")
+st.write("Jahan Signal '-1' hai, wahan market ka 'Pattern' badal raha hai (Breakout/Reversal).")
+st.dataframe(data.sort_index(ascending=False).head(20), use_container_width=True)
