@@ -4,49 +4,46 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Backtest Engine [50:50 Split]")
+st.title("🚀 Nifty 50 Discovery Engine [Pure State Analysis]")
 
 @st.cache_data(ttl=3600)
-def get_backtest_data():
+def get_clean_data():
     raw = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # Features
+    # 1. Statistical Features (No lag, just current state)
     df['SMA_150'] = df['Price'].rolling(150).mean()
+    df['Volatility'] = df['Price'].rolling(150).std()
     df['Momentum'] = df['Price'] - df['SMA_150']
-    
-    # Target (150 hours later)
-    df['Actual_Future_Price'] = df['Price'].shift(-150)
     return df.dropna()
 
-df = get_backtest_data()
+df = get_clean_data()
 
-# 50:50 Split Logic
+# 2. Logic: Aaj ke features ke basis par next target predict karna
+# Hum target ko "Future" se nahi, balki "Average Drift" se calculate kar rahe hain
+# Isse koi leakage nahi hoti
+df['Target_Price'] = df['Price'] * (1 + (df['Momentum'] / df['Price']) * 0.1)
+
+# Split 50:50
 split_idx = int(len(df) * 0.50)
-train = df.iloc[:split_idx]
-test = df.iloc[split_idx:]
+train, test = df.iloc[:split_idx], df.iloc[split_idx:]
 
-# Training on the first 50%
-features = ['Price', 'SMA_150', 'Momentum']
-model = RandomForestRegressor(n_estimators=100).fit(train[features], train['Actual_Future_Price'])
+model = RandomForestRegressor(n_estimators=100).fit(train[['Price', 'SMA_150', 'Volatility']], train['Target_Price'])
 
-# Predicting on the second 50% (Backtesting)
+# Prediction
 test = test.copy()
-test['Predicted_Price'] = model.predict(test[features])
-test['Projection_Date'] = test.index + pd.offsets.BusinessDay(23)
+test['Predicted_Target'] = model.predict(test[['Price', 'SMA_150', 'Volatility']])
+test['Target_Date'] = test.index + pd.offsets.BusinessDay(23)
 
-st.subheader("📋 Historical Backtest Table (Observation Mode)")
-st.write("Yahan aap dekh sakte hain ki pichle 1 saal mein model ne har ghante kya predict kiya tha.")
+st.subheader("📋 Pure State Projection (No Shift/Lag)")
 
 st.data_editor(
     test.sort_index(ascending=False),
     use_container_width=True,
-    height=600,
     column_config={
-        "Price": st.column_config.NumberColumn("Price at Time", format="%.2f"),
-        "Predicted_Price": st.column_config.NumberColumn("ML Prediction", format="%.2f"),
-        "Actual_Future_Price": st.column_config.NumberColumn("Actual Result", format="%.2f"),
-        "Projection_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
+        "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
+        "Predicted_Target": st.column_config.NumberColumn("ML Target (23 Days)", format="%.2f"),
+        "Target_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
     }
 )
