@@ -4,46 +4,44 @@ import yfinance as yf
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="Liquidity Decoder", layout="wide")
-
-st.title("🎯 Nifty 50: Liquidity Hunt Engine")
+st.set_page_config(layout="wide")
+st.title("🎯 Nifty 50: 2-Year Liquidity Hunt Audit")
 
 @st.cache_data(ttl=3600)
-def get_hunt_data():
+def get_audit_data():
+    # 2-Year data
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False).ffill()
+    
+    # Feature 1: Wick Signature (The 'Hunt' Tool)
     df['Wick_Ratio'] = (df['High'] - df['Low']) / (abs(df['Close'] - df['Open']) + 0.001)
     
+    # Feature 2: Liquidity Sweep Logic
     prev_low = df['Low'].shift(1).rolling(5).min().values
     prev_high = df['High'].shift(1).rolling(5).max().values
-    
     df['Is_SL_Hunt'] = ((df['Low'].values < prev_low) | (df['High'].values > prev_high)).astype(int)
+    
+    # Success definition: Trap successful if reversal occurs
     df['Success'] = ((df['Close'].shift(-2) - df['Close']) * np.sign(df['Close'] - df['Open']) < 0).astype(int)
     
     return df.dropna()
 
-data = get_hunt_data()
+data = get_audit_data()
 features = ['Wick_Ratio', 'Is_SL_Hunt']
 
+# 50:50 Split (Year 1 Training, Year 2 Auditing)
 split = int(len(data) * 0.5)
-train, test = data.iloc[:split], data.iloc[split:]
+train = data.iloc[:split]
+test = data.iloc[split:]
 
-model = DecisionTreeClassifier(max_depth=4)
+# Train Tree on first 50%
+model = DecisionTreeClassifier(max_depth=5)
 model.fit(train[features], train['Success'])
 
-# Streamlit UI Components
-col1, col2 = st.columns([1, 3])
+# Predict Hunt Probability for every candle in the 50% Audit range
+test = test.copy()
+test['Hunt_Prob'] = model.predict_proba(test[features])[:, 1]
+test['Status'] = np.where(test['Hunt_Prob'] > 0.6, "⚠️ TRAP", "🟢 NORMAL")
 
-with col1:
-    st.subheader("Model Status")
-    latest = test.iloc[-1]
-    prob = model.predict_proba(latest[features].values.reshape(1, -1))[0][1]
-    
-    st.metric("Hunt Probability", f"{prob:.2%}")
-    if prob > 0.6:
-        st.error("🚨 TRAP CONFIRMED")
-    else:
-        st.success("✅ NORMAL MARKET")
-
-with col2:
-    st.subheader("Live Hunt Audit (2-Year Split)")
-    st.dataframe(test.sort_index(ascending=False).head(10), use_container_width=True)
+st.subheader("📋 Candle-by-Candle Hunt Audit")
+st.write(f"Total Candles Audited: {len(test)}")
+st.dataframe(test[['Hunt_Prob', 'Status', 'Wick_Ratio', 'Is_SL_Hunt']].sort_index(ascending=False), use_container_width=True)
