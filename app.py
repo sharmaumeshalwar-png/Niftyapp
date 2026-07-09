@@ -48,7 +48,6 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Changed period to '730d' to force maximum raw compliance from yfinance API
     raw_df = yf.download("^NSEI", period="730d", interval="1h", progress=False)
     
     if raw_df.empty:
@@ -98,10 +97,9 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (No Stop - Auto Fallback Safe Protection)
+# DYNAMIC SPLIT ENGINE
 # =====================================================================
 if len(df_clean) < 10:
-    # Safe protection layer if dataset is highly throttled
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=['c_Combined']).copy()
     df_clean['Target'] = np.where(df_clean['a_Close'] > df_clean['a_Close'].shift(1), 1, 0)
     df_clean.dropna(subset=['Target'], inplace=True)
@@ -198,6 +196,7 @@ else:
 
         trap_msg = "TREND VALID"
 
+        # FIXED SYNTAX & LOGICAL CLOSURES
         if accumulator == 5:
             current_state = "BUY"
             if c_val > p_high: 
@@ -220,4 +219,16 @@ else:
                     if c_val < p_low: 
                         final_signals.append(f"⚠️ BUY CRITICAL (Score: {accumulator})")
                     else:
-                        final_signals.append(
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE"
+            elif current_state == "SELL":
+                if accumulator < 0: 
+                    final_signals.append(f"🔴 HOLD SELL (Score: {accumulator})")
+                else:
+                    if c_val > p_high: 
+                        final_signals.append(f"⚠️ SELL CRITICAL (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE"
+            else:
+                final_signals.append
