@@ -48,7 +48,6 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Download clean data
     raw_df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     
     if raw_df.empty:
@@ -68,14 +67,12 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # Secure Timezone Alignment to prevent blank drops
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
     else:
         df.index = df.index.tz_convert('Asia/Kolkata')
 
-    # Safe Shifting Layer
     df['Prev_High'] = df['High'].shift(1).ffill().bfill()
     df['Prev_Low'] = df['Low'].shift(1).ffill().bfill()
 
@@ -99,58 +96,5 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
-# Prevent blank screen by raising a clear message if dataframe is exhausted
-if len(df_clean) < 10:
-    st.error(f"⚠️ Cleaned Data Matrix became empty post-processing! Total source rows: {len(df)}")
-    st.stop()
-
 # =====================================================================
-# DYNAMIC SPLIT ENGINE
-# =====================================================================
-split_idx = int(len(df_clean) * 0.50)
-
-df_train = df_clean.iloc[:split_idx].copy()
-X_train = df_train[features_matrix]
-y_train = df_train['Target']
-
-df_predict = df_clean.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix]
-
-if len(X_predict) == 0 or len(X_train) == 0:
-    st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
-else:
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
-    model_flow.fit(X_train, y_train)
-
-    probabilities = model_flow.predict_proba(X_predict)
-    raw_prob_down = probabilities[:, 0]
-    raw_prob_up = probabilities[:, 1]
-
-    # =====================================================================
-    # BAYESIAN MEMORY FLOW ENGINE (STRICT SUM = 1.0)
-    # =====================================================================
-    corrected_prob_up_list = []
-    corrected_prob_down_list = []
-    corrected_sum_list = []
-    
-    final_signals = []
-    scores_log = []
-    raw_weighted_momentum_log = [] 
-    trap_status_log = [] 
-    cum_prob_flow_log = []
-    flow_direction_log = []
-    
-    current_state = "HOLD"
-    accumulator = 0
-    
-    current_cum_up = float(raw_prob_up[0])
-    current_cum_down = float(raw_prob_down[0])
-    decay = 0.70 
-
-    closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    prev_highs = df_predict['Prev_High'].to_numpy()
-    prev_lows = df_predict['Prev_Low'].to_numpy()
-
-    for i in range(len(raw_prob_up)):
-        p_up_raw = float(raw_prob_up[i]) if not np.isnan(raw
+# HARDENED SPLIT AND ERROR
