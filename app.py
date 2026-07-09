@@ -5,49 +5,49 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [Bulletproof Mode]")
+st.title("🚀 Nifty 50 Data Recovery Engine")
 
 @st.cache_data(ttl=3600)
-def get_clean_data():
-    raw = yf.download("^NSEI.NS", period="2y", interval="1h", progress=False)
-    df = pd.DataFrame(index=raw.index)
-    df['Price'] = raw['Close'].ffill().squeeze()
-    
-    # Features
-    df['SMA_150'] = df['Price'].rolling(150).mean()
-    df['Volatility'] = df['Price'].rolling(150).std()
-    
-    # Statistical Baseline Target (No shift/lag)
-    df['Dynamic_Target'] = df['Price'] + (df['Price'] - df['SMA_150']) * 0.5
-    
-    # 8-Step Data Cleaning (Crucial to stop ValueError)
-    df = df.replace([np.inf, -np.inf], np.nan)
-    df = df.dropna()
-    return df
+def fetch_safe_data():
+    try:
+        # Ticker check: Kabhi kabhi sirf '^NSEI' ya 'NSEI.NS' kaam karta hai
+        data = yf.download("^NSEI", period="1y", interval="1h", progress=False)
+        
+        if data.empty:
+            return None
+        
+        # Data cleaning
+        df = data[['Close']].copy()
+        df.columns = ['Price']
+        df = df.ffill().dropna()
+        
+        # Features check
+        df['SMA_150'] = df['Price'].rolling(150).mean()
+        df['Volatility'] = df['Price'].rolling(150).std()
+        
+        # Drop NaN after rolling
+        df = df.dropna()
+        
+        return df
+    except Exception as e:
+        return str(e)
 
-df = get_clean_data()
+data_result = fetch_safe_data()
 
-# ML Pipeline
-if df.empty:
-    st.error("Data processing failed: No valid numerical data.")
+if isinstance(data_result, str):
+    st.error(f"Data Fetch Error: {data_result}")
+elif data_result is None:
+    st.error("No data found for Nifty 50. Server response empty.")
 else:
-    X = df[['Price', 'SMA_150', 'Volatility']]
-    y = df['Dynamic_Target']
-
-    # Model fit
-    model = RandomForestRegressor(n_estimators=100, n_jobs=-1).fit(X, y)
+    st.success(f"Data successful! Loaded {len(data_result)} records.")
     
-    # Projection
-    df['Prediction'] = model.predict(X)
-    df['Target_Date'] = df.index + pd.offsets.BusinessDay(23)
+    # ML Prediction
+    data_result['Dynamic_Target'] = data_result['Price'] + (data_result['Price'] - data_result['SMA_150']) * 0.5
+    X = data_result[['Price', 'SMA_150', 'Volatility']]
+    y = data_result['Dynamic_Target']
     
-    st.subheader("📋 Discovery Table (Cleaned & Lag-Free)")
-    st.data_editor(
-        df.sort_index(ascending=False).head(50),
-        use_container_width=True,
-        column_config={
-            "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
-            "Prediction": st.column_config.NumberColumn("ML Projection", format="%.2f"),
-            "Dynamic_Target": st.column_config.NumberColumn("Stat. Baseline", format="%.2f"),
-        }
-    )
+    model = RandomForestRegressor(n_estimators=50).fit(X, y)
+    data_result['Prediction'] = model.predict(X)
+    
+    st.subheader("📋 Discovery Table")
+    st.data_editor(data_result.sort_index(ascending=False).head(20), use_container_width=True)
