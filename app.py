@@ -116,7 +116,6 @@ else:
     prev_highs = df_predict['Prev_High'].to_numpy()
     prev_lows = df_predict['Prev_Low'].to_numpy()
 
-    # Loop Ke Andar Ka Code Perfectly Indented
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
@@ -124,7 +123,6 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Block
         if p_up >= 0.55: 
             accumulator += 1  
         elif p_down >= 0.55: 
@@ -132,7 +130,6 @@ else:
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
-        # 🆕 FIXED INDENTATION FOR THE SIGNALS BLOCK
         if accumulator == 5:
             current_state = "EXPANSION"
             if c_val > p_high: 
@@ -151,4 +148,26 @@ else:
                 else: 
                     final_signals.append(f"⚠️ WAVE FADE | Volatility Dropping ({accumulator})")
             else:
-                final_signals.append(f"💤 CHOPPY WAVE | S
+                final_signals.append(f"💤 CHOPPY WAVE | Squeeze Phase ({accumulator})")
+
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Accumulator_Score'] = scores_log
+
+    # 🆕 PERFECTLY ALIGNED DISPLAY CONFIGURATION BLOCK
+    clean_display_cols = [
+        'a_Close', 'Volatility_Momentum', 'Prob_Up', 'Prob_Down', 
+        'Accumulator_Score', 'd_ML_Signal'
+    ]
+    
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['Volatility_Momentum'] = display_df['Volatility_Momentum'].round(4)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader("📋 Live 1-Hour Nifty Weighted Volatility Momentum Dashboard")
+    st.dataframe(display_df, use_container_width=True, height=750)
