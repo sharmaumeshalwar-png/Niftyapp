@@ -1,5 +1,5 @@
 streamlit
-yfinance
-scikit-learn
 numpy
 pandas
+yfinance
+scikit-learn
