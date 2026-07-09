@@ -1,40 +1,40 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
 from sklearn.linear_model import LinearRegression
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Stable Discovery [No-Crash Mode]")
+st.title("🚀 Nifty 50 50:50 Backtest Engine")
 
-@st.cache_data(ttl=60)
-def get_data():
-    # 2 saal ka data, 1 hour interval
+@st.cache_data(ttl=3600)
+def get_backtest_data():
+    # 2 saal ka data load karo
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
-    # Simple Features: Previous 1 hour and Previous 150 hours SMA
+    # Features
     df['Prev_Hour'] = df['Price'].shift(1)
     df['SMA_150'] = df['Price'].rolling(150).mean()
     
-    # Target: Next hour ka price
+    # Target
     df['Target'] = df['Price'].shift(-1)
     return df.dropna()
 
-data = get_data()
+data = get_backtest_data()
 
-# Model
-X = data[['Prev_Hour', 'SMA_150']]
-y = data['Target']
+# 50:50 Split Logic (Total data ka 50% train, 50% test)
+split_idx = int(len(data) * 0.5)
+train = data.iloc[:split_idx]
+test = data.iloc[split_idx:]
 
+# Training
 model = LinearRegression()
-model.fit(X, y)
+model.fit(train[['Prev_Hour', 'SMA_150']], train['Target'])
 
-# Prediction
-data['Prediction'] = model.predict(X)
-# 150 candles (hours) aage ka projection
-data['Future_Target'] = data['Prediction'] * 1.05 
+# Prediction on Testing data (Ye wo 1 saal hai jo model ne pehle nahi dekha)
+test = test.copy()
+test['Prediction'] = model.predict(test[['Prev_Hour', 'SMA_150']])
 
-st.subheader("📋 Latest Nifty Status (July 2026)")
-st.dataframe(data.sort_index(ascending=False).head(20), use_container_width=True)
+st.subheader("📋 50:50 Split Historical Backtest (Last 1 Year Performance)")
+st.dataframe(test.sort_index(ascending=False), use_container_width=True)
