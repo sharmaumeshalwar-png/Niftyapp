@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 
 st.set_page_config(layout="wide")
-st.title("🎯 Nifty 50: Exact Strike Signal Engine [Ultra-Stable]")
+st.title("🎯 Nifty 50: Exact Strike Signal Engine [Production Ready]")
 
 @st.cache_data(ttl=3600)
 def get_signal_data():
@@ -33,19 +33,17 @@ model.fit(train[features], train['Success'])
 # Prediction
 test = test.copy()
 test['Hunt_Prob'] = model.predict_proba(test[features])[:, 1]
-
-# STABLE LOGIC: Use direct series access instead of .loc dataframe indexing
-test['Call'] = "WAITING"
-mask = test['Hunt_Prob'] > 0.6
 prev_close = test['Close'].shift(1).bfill()
 
-# Update Call column
-down_mask = mask & (test['Close'] > prev_close)
-up_mask = mask & (test['Close'] <= prev_close)
+# Vectorized String Assignment (No apply() needed, no errors!)
+test['Call'] = "WAITING"
+mask = test['Hunt_Prob'] > 0.6
 
-# Direct Series assignment
-test.loc[down_mask, 'Call'] = test['Close'].apply(lambda x: f"{x:.0f} se DOWN aayega")
-test.loc[up_mask, 'Call'] = test['Close'].apply(lambda x: f"{x:.0f} se UP jayega")
+# Formatting prices directly to strings without lambda
+price_str = test['Close'].astype(int).astype(str)
+
+test.loc[mask & (test['Close'] > prev_close), 'Call'] = price_str + " se DOWN aayega"
+test.loc[mask & (test['Close'] <= prev_close), 'Call'] = price_str + " se UP jayega"
 
 st.subheader("📋 2-Year Audit: Exact Strike Calls")
 st.dataframe(test[['Close_Price', 'Hunt_Prob', 'Call']].sort_index(ascending=False).head(20), use_container_width=True)
