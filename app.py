@@ -52,7 +52,6 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    # Base data collection frame (Download slightly more so we get 25 valid rows after dropna)
     raw_df = yf.download("^NSEI", period="1y", interval="1h", group_by='column')
     
     if raw_df.empty:
@@ -62,7 +61,6 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
-    # MultiIndex Framework Elimination
     df = pd.DataFrame(index=raw_df.index)
     
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
@@ -75,15 +73,13 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active - With New Safe Distance)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  # Pure (Close - Kalman) With Proper Gap
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
     df['Sign_Change'] = df['Sign_Change'].astype(int)
     
-    # Microstructure Features
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -93,13 +89,10 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-
-    # STRICT PAST 25-CANDLE TARGET WINDOW
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0) # Fixed target to 1-period for 25-candle window scaling
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0)
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
-    # FIXING THE WINDOW TO STRICTLY PAST 25 CANDLES
     if len(df_clean) >= 25:
         df_clean = df_clean.tail(25)
 
@@ -118,20 +111,24 @@ X_predict = df_predict[features_matrix]
 if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
 else:
-    # 🎯 STEP 4 VERIFICATION: Single Class Variance Safety Check to fix IndexError
+    # 🎯 PERMANENT 2D ARRAY-SHAPE SECURITY FIX FOR INDEXERROR
     if len(np.unique(y_train)) > 1:
         model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
         model_flow.fit(X_train, y_train)
         probabilities = model_flow.predict_proba(X_predict)
-        df_predict['Prob_Down'] = probabilities[:, 0]
-        df_predict['Prob_Up'] = probabilities[:, 1]
+        
+        # Safe slicing checking dimensions dynamically
+        if probabilities.shape[1] == 2:
+            df_predict['Prob_Down'] = probabilities[:, 0]
+            df_predict['Prob_Up'] = probabilities[:, 1]
+        else:
+            df_predict['Prob_Down'] = 0.50
+            df_predict['Prob_Up'] = 0.50
     else:
-        # Fallback tracking if target data is flat
         fallback_val = 1.0 if (len(y_train) > 0 and y_train.iloc[0] == 1) else 0.0
-        df_predict['Prob_Down'] = 1.0 - fallback_val
-        df_predict['Prob_Up'] = fallback_val
+        df_predict['Prob_Down'] = float(1.0 - fallback_val)
+        df_predict['Prob_Up'] = float(fallback_val)
 
-    # Price Action Columns
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
 
@@ -160,13 +157,11 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator Engine
         if p_up >= 0.55: accumulator += 1  
         elif p_down >= 0.55: accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
-        # Raw Weighted Momentum (Close - Smooth Kalman)
         calc_raw_weighted = c_val - k_price_val
         raw_weighted_momentum_log.append(calc_raw_weighted)
 
@@ -204,21 +199,18 @@ else:
 
         trap_status_log.append(trap_msg)
 
-    # Mapping back to dataframe
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Trap_Status'] = trap_status_log 
     df_predict['Accumulator_Score'] = scores_log 
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Keep Decimals)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN
     non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
     # =====================================================================
-    # 🔥 HIGH-SPEED ARRAY ML ON THE 25-CANDLE MOMENTUM TARGET MATRIX
+    # 🔥 SECOND LEVEL BATCH ARRAY ML WITH MATRIX GUARD
     # =====================================================================
     df_predict['WM_Velocity'] = df_predict['Weighted_Momentum'].diff(1).fillna(0)
     df_predict['WM_Acceleration'] = df_predict['WM_Velocity'].diff(1).fillna(0)
@@ -229,17 +221,16 @@ else:
     X_wm = df_predict[wm_features]
     y_wm = df_predict['WM_Target']
     
-    # 🎯 STEP 5 VERIFICATION: Secondary ML Layer Multi-Variance Check
     if len(np.unique(y_wm)) > 1:
-        # Linear Wave Classifier 
         model_linear_batch = RandomForestClassifier(n_estimators=50, max_depth=2, random_state=42, n_jobs=-1)
         model_linear_batch.fit(X_wm, y_wm)
-        df_predict['ML_WM_Linear_Prob'] = model_linear_batch.predict_proba(df_predict[wm_features])[:, 1]
+        prob_wm_lin = model_linear_batch.predict_proba(df_predict[wm_features])
+        df_predict['ML_WM_Linear_Prob'] = prob_wm_lin[:, 1] if prob_wm_lin.shape[1] == 2 else 0.50
         
-        # Non-Linear Structural Classifier
         model_nonlinear_batch = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=-1)
         model_nonlinear_batch.fit(X_wm, y_wm)
-        df_predict['ML_WM_NonLinear_Prob'] = model_nonlinear_batch.predict_proba(df_predict[wm_features])[:, 1]
+        prob_wm_nonlin = model_nonlinear_batch.predict_proba(df_predict[wm_features])
+        df_predict['ML_WM_NonLinear_Prob'] = prob_wm_nonlin[:, 1] if prob_wm_nonlin.shape[1] == 2 else 0.50
     else:
         df_predict['ML_WM_Linear_Prob'] = 0.50
         df_predict['ML_WM_NonLinear_Prob'] = 0.50
