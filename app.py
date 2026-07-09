@@ -1,38 +1,42 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Real-Time Engine [No Stale Data]")
+st.title("🚀 Nifty 50 Crash-Proof Engine")
 
-# Cache hataya taaki har baar fresh data fetch ho
-@st.cache_data(ttl=60) 
+@st.cache_data(ttl=60)
 def get_live_data():
-    # Sirf last 30 days ka data (Live accuracy ke liye)
-    raw = yf.download("^NSEI", period="1mo", interval="1h", progress=False)
+    # 3 mahine ka data lo taaki 150 candles ka window khali na ho
+    raw = yf.download("^NSEI", period="3mo", interval="1h", progress=False)
+    if raw.empty: return pd.DataFrame()
+    
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # Feature Engineering (Past 150 windows)
-    df['SMA_150'] = df['Price'].rolling(150).mean()
-    df['Vol_150'] = df['Price'].rolling(150).std()
+    # Dynamic Windowing: Agar data kam hai toh window size adjust karo
+    window = min(50, len(df)//2)
     
-    # Target: Sirf agle 10 ghante ka trend (Leakage proof)
-    df['Target_Price'] = df['Price'].shift(-10)
+    df['SMA'] = df['Price'].rolling(window=window).mean()
+    df['Vol'] = df['Price'].rolling(window=window).std()
+    
+    # Target: Next candle price
+    df['Target'] = df['Price'].shift(-1)
     return df.dropna()
 
 data = get_live_data()
 
-# Model
-model = RandomForestRegressor(n_estimators=100)
-X = data[['SMA_150', 'Vol_150']]
-y = data['Target_Price']
-model.fit(X, y)
-
-# Prediction
-data['Future_Projection'] = model.predict(X)
-
-st.subheader(f"📋 Live Projection (Last Updated: {data.index[-1].strftime('%d %b %Y %H:%M')})")
-st.dataframe(data.sort_index(ascending=False).head(10), use_container_width=True)
+if data.empty or len(data) < 10:
+    st.error("Data kam hai, calculation nahi ho pa rahi. Kuch der baad try karein.")
+else:
+    model = RandomForestRegressor(n_estimators=100)
+    X = data[['SMA', 'Vol']]
+    y = data['Target']
+    
+    model.fit(X, y)
+    
+    data['Prediction'] = model.predict(X)
+    
+    st.subheader("📋 Latest Market Data")
+    st.dataframe(data.sort_index(ascending=False).head(10), use_container_width=True)
