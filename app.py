@@ -4,41 +4,42 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("🎯 Infinite Convergence: Resilience Mode")
+st.title("🎯 Infinite Convergence: Resilience Mode [Batch Process]")
 
 @st.cache_data(ttl=3600)
-def get_resilient_data():
-    # 2 saal ka duration
+def get_batch_data():
+    all_chunks = []
     end = datetime.now()
-    start = end - timedelta(days=730)
-    
-    # Chunking: Agar ek baar mein fail ho, toh retry logic
-    try:
-        df = yf.download("^NSEI", start=start, end=end, interval="1h", progress=False)
-        # Fix for MultiIndex columns
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+    # 2 saal ko 4-4 mahine ke 6 chunks mein baata (6 * 4 = 24 mahine)
+    for i in range(6):
+        start_chunk = end - timedelta(days=(i+1)*120)
+        end_chunk = end - timedelta(days=i*120)
         
-        # Ensure 'Close' is clean
-        df = df[df['Close'].notna()]
-        return df
-    except Exception as e:
+        chunk = yf.download("^NSEI", start=start_chunk, end=end_chunk, interval="1h", progress=False)
+        if not chunk.empty:
+            all_chunks.append(chunk)
+            
+    if not all_chunks:
         return pd.DataFrame()
+        
+    df = pd.concat(all_chunks).sort_index().ffill()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
 
-df = get_resilient_data()
+df = get_batch_data()
 
 if df.empty:
-    st.error("Server Timeout: API se data nahi mil raha. Kripya thodi der baad refresh karein.")
+    st.error("Server Timeout: API se data phir bhi nahi mil raha. Check kijiye ki Nifty data available hai ya nahi.")
 else:
-    st.success(f"✅ Data Success: {len(df)} candles load hue.")
+    st.success(f"✅ Data Success: {len(df)} total candles load hui.")
     
     # 8-Candle Convergence Engine
-    # Vectorized calculation for performance
     df['Convergence_Price'] = df['Close'].rolling(window=8).mean()
     df['Range_Low'] = df['Low'].rolling(window=8).min()
     df['Range_High'] = df['High'].rolling(window=8).max()
     df['Status'] = 'LOCK'
     
-    # Result table
+    # Audit View
     res_df = df.dropna()[['Convergence_Price', 'Range_Low', 'Range_High', 'Status']]
     st.dataframe(res_df.sort_index(ascending=False).head(50), use_container_width=True)
