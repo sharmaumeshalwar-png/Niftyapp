@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty Dual Momentum Engine", layout="wide")
 st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Linear Smooth Distance Kalman (Price) + Original Linear Weighted Momentum + 🆕 Standalone Non-Linear Step Momentum Column")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Past 500-Candle Window + Linear Smooth Distance Kalman (Price) + Original Linear Weighted Momentum + Standalone Non-Linear Step Momentum Column")
 
 # =====================================================================
 # MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Original Momentum Layer)
@@ -97,22 +97,25 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
+    df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
+
+    # 🎯 FIXING THE WINDOW TO STRICTLY PAST 500 CANDLES
+    if len(df_clean) >= 500:
+        df_clean = df_clean.tail(500)
+    else:
+        st.warning(f"⚠️ Historical data has only {len(df_clean)} rows. Using full available rows instead of 500.")
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio on 500 Candles)
 # =====================================================================
+# 500 rows ka 50% = Exactly 250 rows Train, 250 rows Predict
 split_idx = int(len(df_clean) * 0.50)
 
 df_train = df_clean.iloc[:split_idx].copy()
-df_train.dropna(subset=features_matrix + ['Target'], inplace=True)
-
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
 df_predict = df_clean.iloc[split_idx:].copy()
-df_predict.dropna(subset=features_matrix, inplace=True) 
-
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0 or len(X_train) == 0:
@@ -209,7 +212,7 @@ else:
     # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Jaisa pehle tha - Keep Decimals)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN (Points ko saaf karne ke liye)
+    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN
     non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
@@ -228,10 +231,10 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) # Original remains with decimals
-    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) # New Step column as pure integers
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) 
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard (Strict Past 500 Candles)")
     st.dataframe(display_df, use_container_width=True, height=750)
