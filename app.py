@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Kalman 0.50 Engine", layout="wide")
+st.set_page_config(page_title="Nifty Pure Kalman Engine", layout="wide")
 st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Strictly Past 25-Candle Window + Only 0.50 Kalman Layer")
+st.write("🎯 **Strictly Only Nifty 50 Index Data + Strictly Past 25-Candle Window + Only 0.50 Kalman Layer**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE 1: LINEAR KALMAN FILTER (Price Layer)
@@ -35,7 +35,7 @@ def apply_non_linear_kalman_momentum(data_array):
     if len(data_array) == 0: 
         return []
     x = data_array[0]
-    p = 0.50   # Initial error covariance tuned directly to your 0.50 engine
+    p = 0.50   # Initial error covariance directly tuned to 0.50 engine
     q = 0.05   # Fast reaction noise
     r = 0.2    # Low measurement noise
     
@@ -49,7 +49,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Processing 25-Candle Kalman Chains..."):
-    # Download data
+    # Download fresh hourly data
     raw_df = yf.download("^NSEI", period="1mo", interval="1h")
     
     if raw_df.empty:
@@ -63,33 +63,33 @@ with st.spinner("Processing 25-Candle Kalman Chains..."):
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
 
-    # Apply strictly to the past 25 candles window
+    # Strictly slice past 25 candles window before calculations
     if len(df) >= 25:
         df = df.tail(25).copy()
 
-    # Kalman Core Processing
+    # Core Kalman Calculations
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     
-    # Raw Weighted Momentum Calculation (Price - Kalman Price)
+    # Raw Weighted Momentum (Price - Kalman Price)
     df['Raw_Weighted_Momentum'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Apply Kalman Filter to the Weighted Momentum with 0.50 tuning
+    # Apply 0.50 Kalman Filter directly on the Weighted Momentum
     df['Weighted_Momentum'] = apply_kalman_filter_custom(df['Raw_Weighted_Momentum'].values, initial_p=0.50)
     
-    # Standalone Step Momentum Column using Non-Linear Engine
+    # Non-Linear Step Momentum Column
     df['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(df['Weighted_Momentum'].values))
 
-    # Engine Static 0.50 Probability Arrays (No Machine Learning Models)
+    # Hard-coded Safe Scalar Columns (Pure Math - No ML Crashing)
     df['Prob_Up'] = 0.50
     df['Prob_Down'] = 0.50
     df['ML_WM_Linear_Prob'] = 0.50
     df['ML_WM_NonLinear_Prob'] = 0.50
     df['Accumulator_Score'] = 0
-    df['d_ML_Signal'] = "🔄 ENGINE ACTIVE (0.50 Baseline Locked)"
+    df['d_ML_Signal'] = "🔄 ENGINE ACTIVE (0.50 Pure Kalman Locked)"
     df['Trap_Status'] = "TREND VALID"
 
-    # Display Configuration
+    # Columns display matching your configuration
     clean_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'Accumulator_Score', 'Weighted_Momentum', 'Step_Momentum', 
@@ -98,7 +98,7 @@ with st.spinner("Processing 25-Candle Kalman Chains..."):
     
     display_df = df[clean_cols].copy().sort_index(ascending=False)
     
-    # Formatting decimals
+    # Decimal rounding
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2)
