@@ -5,83 +5,84 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Advanced Discovery Engine", layout="wide")
-st.title("🚀 Nifty 50 Advanced Multi-Layer Discovery Engine")
+st.set_page_config(page_title="Nifty Discovery Pro", layout="wide")
+st.title("🚀 Nifty 50 Advanced Discovery Engine [Pro Mode]")
 
 # =====================================================================
-# MATHEMATICAL ENGINES
+# MATH ENGINES (Fixed & Optimized)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=100.0):
-    if len(data_array) == 0: return []
-    x = data_array[0]
-    p = initial_p
-    q = 0.0001
-    r = 2.5
-    filtered_values = []
+    x, p = data_array[0], initial_p
+    q, r = 0.0001, 2.5
+    res = []
     for z in data_array:
-        p = p + q
+        p += q
         k = p / (p + r)
-        x = x + k * (z - x)
+        x += k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+        res.append(x)
+    return res
 
 def apply_non_linear_kalman_momentum(data_array):
-    if len(data_array) == 0: return []
-    x = data_array[0]
-    p = 1.0
-    q = 0.05
-    r = 0.2
-    filtered_values = []
+    x, p = data_array[0], 1.0
+    q, r = 0.05, 0.2
+    res = []
     for z in data_array:
-        p = p + q
+        p += q
         k = p / (p + r)
-        x = x + k * (z - x)
+        x += k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+        res.append(x)
+    return res
 
 # =====================================================================
-# DATA & INTEGRATED DISCOVERY ENGINE
+# DATA ENGINE WITH ATR INTEGRATION
 # =====================================================================
-with st.spinner("Merging Volatility, Momentum & Probability Matrices..."):
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
-    df = pd.DataFrame(index=raw_df.index)
-    df['Close'] = raw_df['Close'].ffill()
-    df['High'] = raw_df['High'].ffill()
-    df['Low'] = raw_df['Low'].ffill()
+@st.cache_data(ttl=3600)
+def get_data():
+    raw = yf.download("^NSEI", period="2y", interval="1h")
+    df = pd.DataFrame(index=raw.index)
+    df[['Close', 'High', 'Low']] = raw[['Close', 'High', 'Low']].ffill()
     
-    # ATR Calculation for Volatility Integration
-    df['HL_Range'] = df['High'] - df['Low']
-    df['ATR'] = df['HL_Range'].rolling(14).mean()
-    
+    # Discovery Metrics
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_custom(df['a_Close'].values)
     df['c_Gap'] = df['a_Close'] - df['b_Kalman']
-    
-    # ML Features (Learning the volatility regime)
     df['Normalized_Gap'] = df['c_Gap'] / (df['ATR'] + 1e-10)
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-    df.dropna(inplace=True)
+    return df.dropna()
 
-# Training Model
+df = get_data()
 split_idx = int(len(df) * 0.50)
-train_df, predict_df = df.iloc[:split_idx], df.iloc[split_idx:].copy()
+train, predict = df.iloc[:split_idx], df.iloc[split_idx:].copy()
+
+# Training
 features = ['c_Gap', 'Normalized_Gap', 'ATR']
-model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42).fit(train_df[features], train_df['Target'])
+model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(train[features], train['Target'])
+predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# Probability Merge
-predict_df['Prob_Up'] = model.predict_proba(predict_df[features])[:, 1]
+# Multi-Layer Columns
+predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
+predict['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(predict['Weighted_Momentum'].values))
+predict['Discovery_Score'] = (predict['Prob_Up'] * predict['Weighted_Momentum']) / (predict['ATR'] + 1e-10)
 
-# Multi-Layer Momentum Calculation
-predict_df['Weighted_Momentum'] = apply_kalman_filter_custom(predict_df['c_Gap'].values, initial_p=0.50)
-predict_df['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(predict_df['Weighted_Momentum'].values))
+# =====================================================================
+# INTERACTIVE DASHBOARD
+# =====================================================================
+st.subheader("📊 Discovery Engine: Interactive Live View")
+st.write("💡 *Tip: Column headers ko click karke sort karein, ya drag karke move karein.*")
 
-# FINAL INTEGRATION: Discovery Score = (Prob * Weighted) / ATR
-predict_df['Discovery_Score'] = (predict_df['Prob_Up'] * predict_df['Weighted_Momentum']) / (predict_df['ATR'] + 1e-10)
-
-st.subheader("📋 Integrated Discovery Dashboard")
-st.dataframe(
-    predict_df[['a_Close', 'Prob_Up', 'Weighted_Momentum', 'Step_Momentum', 'Discovery_Score']].sort_index(ascending=False), 
-    use_container_width=True, height=750
+# Data Editor for Moveable Columns
+st.data_editor(
+    predict[['Prob_Up', 'ATR', 'Weighted_Momentum', 'Step_Momentum', 'Discovery_Score']].sort_index(ascending=False),
+    use_container_width=True,
+    column_config={
+        "Prob_Up": st.column_config.ProgressColumn("Prob_Up", format="%.2f", min_value=0, max_value=1),
+        "Discovery_Score": st.column_config.NumberColumn("Discovery_Score", format="%.4f"),
+    },
+    height=600
 )
+
+st.sidebar.metric("Latest Nifty Close", f"{df['a_Close'].iloc[-1]:.2f}")
+st.sidebar.metric("Current ATR", f"{df['ATR'].iloc[-1]:.2f}")
