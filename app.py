@@ -2,16 +2,16 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from sklearn.ensemble import RandomForestRegressor
 
 # Page Setup
 st.set_page_config(layout="wide")
-
-st.title("🚀 Nifty 50 Classic Discovery Engine")
+st.title("🚀 Nifty 50 Discovery ML Engine (150-Candle Trained)")
 
 # =====================================================================
-# CORE MATH ENGINE
+# MATH ENGINE
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=100.0):
+def apply_kalman_filter_custom(data_array, initial_p=0.50):
     x, p = data_array[0], initial_p
     q, r = 0.0001, 2.5
     res = []
@@ -24,38 +24,44 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return np.array(res)
 
 @st.cache_data(ttl=3600)
-def get_classic_data():
+def get_ml_data():
     raw = yf.download("^NSEI", period="2y", interval="1h")
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill()
     
-    # Kalman Filter (0.50 logic applied via custom filter)
-    df['Kalman'] = apply_kalman_filter_custom(df['Price'].values, initial_p=0.50)
+    # Kalman & Momentum Logic
+    df['Kalman'] = apply_kalman_filter_custom(df['Price'].values)
+    df['Weighted_Momentum'] = apply_kalman_filter_custom((df['Price'] - df['Kalman']).values)
+    df['Step_Momentum'] = np.round(apply_kalman_filter_custom(df['Weighted_Momentum'].values) * 10)
     
-    # Discovery Metrics
-    df['Weighted_Momentum'] = apply_kalman_filter_custom((df['Price'] - df['Kalman']).values, initial_p=0.50)
-    df['Step_Momentum'] = np.round(apply_kalman_filter_custom(df['Weighted_Momentum'].values, initial_p=0.50) * 10)
-    
-    # 25 Candle Past Comparison
-    df['Past_Diff'] = df['Price'] - df['Price'].shift(25)
-    
+    # 150 Candle Past Aspect (Features for ML)
+    df['Past_150_Diff'] = df['Price'] - df['Price'].shift(150)
+    df['Target'] = df['Price'].shift(-150) # Agli 150 candle baad ka price target
     return df.dropna()
 
-df = get_classic_data()
+df = get_ml_data()
+
+# ML Training
+features = ['Price', 'Kalman', 'Weighted_Momentum', 'Step_Momentum', 'Past_150_Diff']
+train_size = int(len(df) * 0.50)
+model = RandomForestRegressor(n_estimators=100).fit(df.iloc[:train_size][features], df.iloc[:train_size]['Target'])
+
+# Prediction
+df['Predicted_150_Candle_Price'] = model.predict(df[features])
 
 # =====================================================================
 # DASHBOARD
 # =====================================================================
-st.subheader("📋 Classic Discovery Table")
+st.subheader("📋 ML Predictive Discovery (150-Candle Outlook)")
+st.write("ML model pichli 150 candles ka data seekh kar future ka price predict kar raha hai.")
 
 st.data_editor(
     df.sort_index(ascending=False),
     use_container_width=True,
-    height=600,
+    height=500,
     column_config={
-        "Price": st.column_config.NumberColumn("Price", format="%.2f"),
-        "Weighted_Momentum": st.column_config.NumberColumn("Weighted Mom", format="%.4f"),
-        "Step_Momentum": st.column_config.NumberColumn("Step Mom", format="%.0f"),
-        "Past_Diff": st.column_config.NumberColumn("25-Candle Diff", format="%.2f"),
+        "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
+        "Predicted_150_Candle_Price": st.column_config.NumberColumn("ML Pred. Target", format="%.2f"),
+        "Past_150_Diff": st.column_config.NumberColumn("150-Candle Change", format="%.2f"),
     }
 )
