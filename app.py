@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty 25-Candle Volatility Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour 25-Candle Weighted Volatility Engine")
-st.write("🎯 **Macro Quant Core:** Predicts the structural expansion/contraction of the Volatility Wave compared strictly against **25 Candles Past**.")
+st.write("🎯 **Macro Quant Core:** Predicts the structural expansion/contraction of the Volatility Wave compared strictly against **25 Candles Past High-Low Range**.")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -68,7 +68,7 @@ with st.spinner("🚀 Mapping 25-Candle Volatility Waves & Training Macro Core..
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['Volatility_Momentum'].diff(1) 
     
-    # 🎯 TARGET DESIGN REVERTED: Compare strictly against 25 Candles Past (t-25)
+    # 🎯 TARGET DESIGN CHANGED: High-Low Range matrix compared strictly against 25 Candles Past (t-25)
     df['Target'] = np.where(df['Volatility_Momentum'] > df['Volatility_Momentum'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -154,20 +154,3 @@ else:
     df_predict['Accumulator_Score'] = scores_log
 
     # Display Configuration Block
-    clean_display_cols = [
-        'a_Close', 'Volatility_Momentum', 'Prob_Up', 'Prob_Down', 
-        'Accumulator_Score', 'd_ML_Signal'
-    ]
-    
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['Volatility_Momentum'] = display_df['Volatility_Momentum'].round(4)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader("📋 Live 1-Hour Nifty 25-Candle Weighted Volatility Dashboard")
-    st.dataframe(display_df, use_container_width=True, height=750)
