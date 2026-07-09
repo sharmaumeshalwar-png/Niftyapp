@@ -51,10 +51,13 @@ def apply_non_linear_kalman_momentum(data_array):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Aligning Dual Kalman Nifty Microstructure Matrices (Full 2-Year Range)..."):
-    # Strict 2-Year Frame Download
+with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+    # Fail-safe data download to avoid Blank Data issue
     raw_df = yf.download("^NSEI", period="2y", interval="1h", group_by='column')
     
+    if raw_df.empty:
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
+        
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
@@ -94,21 +97,25 @@ with st.spinner("Aligning Dual Kalman Nifty Microstructure Matrices (Full 2-Year
     # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
-    # Drop rows without targets/features before splitting
-    df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
+    df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
 # =====================================================================
-# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio on Full 2-Year Dataset)
+# DYNAMIC SPLIT ENGINE (Strict 50:50 Ratio)
 # =====================================================================
 split_idx = int(len(df_clean) * 0.50)
 
 df_train = df_clean.iloc[:split_idx].copy()
+df_train.dropna(subset=features_matrix + ['Target'], inplace=True)
+
 X_train = df_train[features_matrix]
 y_train = df_train['Target']
 
 df_predict = df_clean.iloc[split_idx:].copy()
+df_predict.dropna(subset=features_matrix, inplace=True) 
 
-if len(df_predict) == 0 or len(df_train) == 0:
+X_predict = df_predict[features_matrix]
+
+if len(X_predict) == 0 or len(X_train) == 0:
     st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
 else:
     # RandomForest Model Training (Linear Trees)
@@ -116,12 +123,11 @@ else:
     model_flow.fit(X_train, y_train)
 
     # Raw Probabilities Prediction
-    X_predict = df_predict[features_matrix]
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Price Action Shifted Columns (Aligned within df_predict boundaries)
+    # Price Action Columns
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
 
@@ -135,7 +141,6 @@ else:
     current_state = "HOLD"
     accumulator = 0
 
-    # Strict NumPy Vector Array conversions to completely avoid Line 104 out-of-bounds error
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
@@ -148,10 +153,8 @@ else:
         p_down = prob_downs[i]
         c_val = closes[i]
         k_price_val = kalmans_price[i]
-        
-        # Fallback check for initial NaN shifted items
-        p_high = prev_highs[i] if (i > 0 and not np.isnan(prev_highs[i])) else c_val
-        p_low = prev_lows[i] if (i > 0 and not np.isnan(prev_lows[i])) else c_val
+        p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
+        p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
         # Accumulator Engine
         if p_up >= 0.55: accumulator += 1  
@@ -197,27 +200,79 @@ else:
 
         trap_status_log.append(trap_msg)
 
-    # Mapping back to dataframe safely
+    # Mapping back to dataframe
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Trap_Status'] = trap_status_log 
     df_predict['Accumulator_Score'] = scores_log 
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Keep Decimals)
+    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Jaisa pehle tha - Keep Decimals)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
 
-    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN
+    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN (Points ko saaf karne ke liye)
     non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
 
-    # Table View Layout Configuration
+    # =====================================================================
+    # 🔥 AAPKI NEW SETTING: 25-CANDLE ML ON WEIGHTED MOMENTUM (LINEAR & NON-LINEAR)
+    # =====================================================================
+    # Features matrix strictly based on Weighted Momentum for the ML to map
+    df_predict['WM_Velocity'] = df_predict['Weighted_Momentum'].diff(1).fillna(0)
+    df_predict['WM_Acceleration'] = df_predict['WM_Velocity'].diff(1).fillna(0)
+    
+    wm_features = ['Weighted_Momentum', 'WM_Velocity', 'WM_Acceleration']
+    
+    # Target allocation based on direction shift inside the prediction data
+    df_predict['WM_Target'] = np.where(df_predict['Weighted_Momentum'] > df_predict['Weighted_Momentum'].shift(1), 1, 0)
+    
+    ml_linear_prob = []
+    ml_nonlinear_prob = []
+    
+    wm_values = df_predict[wm_features].to_numpy()
+    wm_targets = df_predict['WM_Target'].to_numpy()
+    
+    # Running lookback loop over the prediction space to evaluate past 25 candles dynamically
+    for idx in range(len(df_predict)):
+        if idx < 25:
+            ml_linear_prob.append(0.50)
+            ml_nonlinear_prob.append(0.50)
+        else:
+            # Slicing past strictly 25 candles
+            X_wm_train = wm_values[idx-25:idx]
+            y_wm_train = wm_targets[idx-25:idx]
+            
+            # Check for class variance to prevent tree failure
+            if len(np.unique(y_wm_train)) > 1:
+                # Engine 1: Linear Tree Framework (Low depth, high structure)
+                model_linear = RandomForestClassifier(n_estimators=30, max_depth=2, random_state=42)
+                model_linear.fit(X_wm_train, y_wm_train)
+                ml_linear_prob.append(model_linear.predict_proba(wm_values[idx:idx+1])[0][1])
+                
+                # Engine 2: Non-Linear Complex Framework (High depth, split capturing)
+                model_nonlinear = RandomForestClassifier(n_estimators=30, max_depth=6, random_state=42)
+                model_nonlinear.fit(X_wm_train, y_wm_train)
+                ml_nonlinear_prob.append(model_nonlinear.predict_proba(wm_values[idx:idx+1])[0][1])
+            else:
+                ml_linear_prob.append(0.50 if len(ml_linear_prob) == 0 else ml_linear_prob[-1])
+                ml_nonlinear_prob.append(0.50 if len(ml_nonlinear_prob) == 0 else ml_nonlinear_prob[-1])
+
+    df_predict['ML_WM_Linear_Prob'] = ml_linear_prob
+    df_predict['ML_WM_NonLinear_Prob'] = ml_nonlinear_prob
+
+    # Table View Layout Configuration (Showing only latest 500 records for optimal screen size)
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
         'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
-        'Weighted_Momentum', 'Step_Momentum', 'd_ML_Signal', 'Trap_Status'
+        'Weighted_Momentum', 'Step_Momentum', 
+        'ML_WM_Linear_Prob', 'ML_WM_NonLinear_Prob',  # 🔥 Naye columns explicit check ke liye
+        'd_ML_Signal', 'Trap_Status'
     ]
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
     
+    if len(df_predict) > 500:
+        display_df = df_predict[clean_display_cols].iloc[-500:].copy().sort_index(ascending=False)
+    else:
+        display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+        
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prev_High'] = display_df['Prev_High'].round(2)
@@ -227,8 +282,10 @@ else:
     display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) 
+    display_df['ML_WM_Linear_Prob'] = display_df['ML_WM_Linear_Prob'].round(3)
+    display_df['ML_WM_NonLinear_Prob'] = display_df['ML_WM_NonLinear_Prob'].round(3)
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard (Full 2-Year Horizon - Strict 50:50)")
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
