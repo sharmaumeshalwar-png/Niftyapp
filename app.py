@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Weighted Volatility Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Weighted Volatility Momentum Engine")
-st.write("🎯 **Pure Quant Core:** 1-Candle Past Target Framework applied directly to the Kalman-Filtered Weighted Volatility Momentum Wave.")
+st.set_page_config(page_title="Nifty 25-Candle Volatility Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour 25-Candle Weighted Volatility Engine")
+st.write("🎯 **Macro Quant Core:** Predicts the structural expansion/contraction of the Volatility Wave compared strictly against **25 Candles Past**.")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: LINEAR FILTER (Price Mapping Layer)
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("🚀 Smoothing Volatility Waves & Training Weighted Core..."):
+with st.spinner("🚀 Mapping 25-Candle Volatility Waves & Training Macro Core..."):
     # Safe single-layer column download from yfinance
     raw_df = yf.download("^NSEI", period="2y", interval="1h", multi_level_index=False)
     
@@ -55,7 +55,7 @@ with st.spinner("🚀 Smoothing Volatility Waves & Training Weighted Core..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
-    # Hybrid Shift: Raw Range to Weighted Volatility Momentum Wave
+    # Raw Range to Weighted Volatility Momentum Wave
     df['Raw_Range'] = df['High'] - df['Low']
     df['Volatility_Momentum'] = apply_kalman_filter_custom(df['Raw_Range'].values, initial_p=0.50)
     
@@ -68,8 +68,8 @@ with st.spinner("🚀 Smoothing Volatility Waves & Training Weighted Core..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['Volatility_Momentum'].diff(1) 
     
-    # TARGET DESIGN: Predict if Weighted Volatility Momentum expands vs Strictly 1 Candle Past
-    df['Target'] = np.where(df['Volatility_Momentum'] > df['Volatility_Momentum'].shift(1), 1, 0)
+    # 🎯 TARGET DESIGN REVERTED: Compare strictly against 25 Candles Past (t-25)
+    df['Target'] = np.where(df['Volatility_Momentum'] > df['Volatility_Momentum'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
@@ -133,27 +133,27 @@ else:
         if accumulator == 5:
             current_state = "EXPANSION"
             if c_val > p_high: 
-                final_signals.append("🟢 MOMENTUM BREAKOUT (Wave Confirmed Up)")
+                final_signals.append("🟢 MACRO MOMENTUM BUY (Confirmed Up)")
             elif c_val < p_low: 
-                final_signals.append("🔴 MOMENTUM BREAKDOWN (Wave Confirmed Down)")
+                final_signals.append("🔴 MACRO MOMENTUM SELL (Confirmed Down)")
             else: 
-                final_signals.append("⚡ MOMENTUM WAVE EXPANDING (No Price Confirmation)")
+                final_signals.append("⚡ WAVE EXPANDING (No Price Breakout)")
         elif accumulator == -5:
             current_state = "SQUEEZE"
             final_signals.append("⚪ COMPRESSION BLOCK (Squeeze Active / No Trade)")
         else:
             if current_state == "EXPANSION":
                 if accumulator > 0: 
-                    final_signals.append(f"🔄 HOLD POSITION | Wave Cooling ({accumulator})")
+                    final_signals.append(f"🔄 HOLD POSITION | Macro Wave Cooling ({accumulator})")
                 else: 
-                    final_signals.append(f"⚠️ WAVE FADE | Volatility Dropping ({accumulator})")
+                    final_signals.append(f"⚠️ TREND FADE | Volatility Dropping ({accumulator})")
             else:
-                final_signals.append(f"💤 CHOPPY WAVE | Squeeze Phase ({accumulator})")
+                final_signals.append(f"💤 CHOPPY WAVE | Macro Squeeze ({accumulator})")
 
     df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log
 
-    # 🆕 PERFECTLY ALIGNED DISPLAY CONFIGURATION BLOCK
+    # Display Configuration Block
     clean_display_cols = [
         'a_Close', 'Volatility_Momentum', 'Prob_Up', 'Prob_Down', 
         'Accumulator_Score', 'd_ML_Signal'
@@ -169,5 +169,5 @@ else:
     
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader("📋 Live 1-Hour Nifty Weighted Volatility Momentum Dashboard")
+    st.subheader("📋 Live 1-Hour Nifty 25-Candle Weighted Volatility Dashboard")
     st.dataframe(display_df, use_container_width=True, height=750)
