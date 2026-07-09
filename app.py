@@ -48,26 +48,27 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+    # Download clean data
     raw_df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     
     if raw_df.empty:
         raw_df = yf.download("^NSEI", period="1mo", interval="1h", progress=False)
         
     if raw_df.empty:
-        st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
+        st.error("🚨 YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
     if isinstance(raw_df.columns, pd.MultiIndex):
         raw_df.columns = raw_df.columns.get_level_values(0)
         
     df = pd.DataFrame(index=raw_df.index)
-    
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
             df[col] = raw_df[col].ffill()
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
+    # Secure Timezone Alignment to prevent blank drops
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -98,6 +99,11 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
+# Prevent blank screen by raising a clear message if dataframe is exhausted
+if len(df_clean) < 10:
+    st.error(f"⚠️ Cleaned Data Matrix became empty post-processing! Total source rows: {len(df)}")
+    st.stop()
+
 # =====================================================================
 # DYNAMIC SPLIT ENGINE
 # =====================================================================
@@ -117,7 +123,6 @@ else:
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    
     raw_prob_down = probabilities[:, 0]
     raw_prob_up = probabilities[:, 1]
 
@@ -136,3 +141,16 @@ else:
     flow_direction_log = []
     
     current_state = "HOLD"
+    accumulator = 0
+    
+    current_cum_up = float(raw_prob_up[0])
+    current_cum_down = float(raw_prob_down[0])
+    decay = 0.70 
+
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
+
+    for i in range(len(raw_prob_up)):
+        p_up_raw = float(raw_prob_up[i]) if not np.isnan(raw
