@@ -1,43 +1,45 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import IsolationForest
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50: 2-Year Pattern Audit (50:50 Split)")
+st.title("🚀 Nifty 50: Liquidity Hunt Tree Decoder")
 
 @st.cache_data(ttl=3600)
-def get_geometric_data():
-    df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
-    df = df[['Close']].ffill()
-    df.columns = ['Price']
+def get_hunt_data():
+    df = yf.download("^NSEI", period="2y", interval="1h", progress=False).ffill()
     
-    # Geometric Patterns
-    df['Range_10'] = df['Price'].rolling(10).max() - df['Price'].rolling(10).min()
-    df['Std_Dev'] = df['Price'].rolling(20).std()
-    df['Skew'] = df['Price'].rolling(20).skew()
+    # 1. Geometry: Wick vs Body (Is it a sweep?)
+    df['Wick_Ratio'] = (df['High'] - df['Low']) / (abs(df['Close'] - df['Open']) + 0.001)
+    
+    # 2. Hunting Logic: Price broke previous 5-hour low/high
+    df['Prev_Low'] = df['Low'].shift(1).rolling(5).min()
+    df['Prev_High'] = df['High'].shift(1).rolling(5).max()
+    df['Is_SL_Hunt'] = ((df['Low'] < df['Prev_Low']) | (df['High'] > df['Prev_High'])).astype(int)
+    
+    # 3. Success: Kya hunt ke baad price reversal hua?
+    df['Success'] = ((df['Close'].shift(-2) - df['Close']) * np.sign(df['Close'] - df['Open']) < 0).astype(int)
     
     return df.dropna()
 
-data = get_geometric_data()
-features = ['Range_10', 'Std_Dev', 'Skew']
+data = get_hunt_data()
+features = ['Wick_Ratio', 'Is_SL_Hunt']
 
-# 50:50 Split (1 Year Train / 1 Year Test)
 split = int(len(data) * 0.5)
-train = data.iloc[:split]
-test = data.iloc[split:]
+train, test = data.iloc[:split], data.iloc[split:]
 
-# Training on the first 50%
-model = IsolationForest(n_estimators=200, contamination=0.05, random_state=42)
-model.fit(train[features])
+# Tree Model: Jo har angle ko decode karega
+model = DecisionTreeClassifier(max_depth=4)
+model.fit(train[features], train['Success'])
 
-# Testing/Auditing on the second 50%
-test = test.copy()
-test['Anomaly_Score'] = model.decision_function(test[features])
-test['Signal'] = model.predict(test[features]) # -1 = Pattern Shift
+st.subheader("📋 Tree Logic Audit")
+st.write("Decision Tree har 'Hunt' ko analyze kar rahi hai ki wo kitni valid hai.")
+st.dataframe(test.sort_index(ascending=False).head(15), use_container_width=True)
 
-st.subheader("📋 2-Year Audit Report")
-st.write(f"Training Period: {train.index[0].date()} to {train.index[-1].date()}")
-st.write(f"Audit Period: {test.index[0].date()} to {test.index[-1].date()}")
-
-st.dataframe(test.sort_index(ascending=False), use_container_width=True)
+# Visualizing the Decision Logic
+if st.button("Show Tree Logic Structure"):
+    fig, ax = plt.subplots(figsize=(12, 6))
+    plot_tree(model, feature_names=features, filled=True, ax=ax)
+    st.pyplot(fig)
