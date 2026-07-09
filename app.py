@@ -5,43 +5,46 @@ import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 
 st.set_page_config(layout="wide")
-st.title("🎯 Nifty 50: 2-Year Liquidity Hunt Audit")
+st.title("🎯 Nifty 50: Exact Action Signal Engine")
 
 @st.cache_data(ttl=3600)
-def get_audit_data():
-    # 2-Year data
+def get_signal_data():
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False).ffill()
     
-    # Feature 1: Wick Signature (The 'Hunt' Tool)
+    # 1. Price Data
+    df['Close_Price'] = df['Close']
+    
+    # 2. Geometry: Wick vs Body
     df['Wick_Ratio'] = (df['High'] - df['Low']) / (abs(df['Close'] - df['Open']) + 0.001)
     
-    # Feature 2: Liquidity Sweep Logic
+    # 3. Hunting Logic
     prev_low = df['Low'].shift(1).rolling(5).min().values
     prev_high = df['High'].shift(1).rolling(5).max().values
     df['Is_SL_Hunt'] = ((df['Low'].values < prev_low) | (df['High'].values > prev_high)).astype(int)
     
-    # Success definition: Trap successful if reversal occurs
+    # 4. Target Label (Success = Trap Reversal)
     df['Success'] = ((df['Close'].shift(-2) - df['Close']) * np.sign(df['Close'] - df['Open']) < 0).astype(int)
     
     return df.dropna()
 
-data = get_audit_data()
+data = get_signal_data()
 features = ['Wick_Ratio', 'Is_SL_Hunt']
 
-# 50:50 Split (Year 1 Training, Year 2 Auditing)
 split = int(len(data) * 0.5)
-train = data.iloc[:split]
-test = data.iloc[split:]
+train, test = data.iloc[:split], data.iloc[split:]
 
-# Train Tree on first 50%
-model = DecisionTreeClassifier(max_depth=5)
+model = DecisionTreeClassifier(max_depth=4)
 model.fit(train[features], train['Success'])
 
-# Predict Hunt Probability for every candle in the 50% Audit range
+# Prediction with Signal Logic
 test = test.copy()
 test['Hunt_Prob'] = model.predict_proba(test[features])[:, 1]
-test['Status'] = np.where(test['Hunt_Prob'] > 0.6, "⚠️ TRAP", "🟢 NORMAL")
 
-st.subheader("📋 Candle-by-Candle Hunt Audit")
-st.write(f"Total Candles Audited: {len(test)}")
-st.dataframe(test[['Hunt_Prob', 'Status', 'Wick_Ratio', 'Is_SL_Hunt']].sort_index(ascending=False), use_container_width=True)
+# Exact Directional Logic
+# Agar Prob > 60% hai, toh Trap hai -> Opposite Direction ka signal do
+test['Signal'] = np.where(test['Hunt_Prob'] > 0.6, 
+                          np.where(test['Close'] > test['Close'].shift(1), "DOWN EXPECTED", "UP EXPECTED"), 
+                          "SIDEWAYS/NORMAL")
+
+st.subheader("📋 Exact Directional Signal Audit")
+st.dataframe(test[['Close_Price', 'Hunt_Prob', 'Signal']].sort_index(ascending=False).head(20), use_container_width=True)
