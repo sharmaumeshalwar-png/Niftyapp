@@ -5,46 +5,49 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [Cognitive Mode]")
+st.title("🚀 Nifty 50 Cognitive Backtest [50:50 Split]")
 
 @st.cache_data(ttl=3600)
-def get_cognitive_data():
-    raw = yf.download("^NSEI", period="1y", interval="1h", progress=False)
+def get_backtest_data():
+    raw = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # 1. Cognitive Features (Momentum & Acceleration)
+    # Cognitive Features
     df['SMA_150'] = df['Price'].rolling(150).mean()
-    df['ROC'] = df['Price'].pct_change(20) # Rate of Change (Speed)
+    df['ROC'] = df['Price'].pct_change(20)
     df['Vol_Ratio'] = df['Price'].rolling(50).std() / df['Price'].rolling(200).std()
     
-    # 2. "Mind" Logic: Price predict mat karo, "Deviation" predict karo
-    # Hum model ko sikha rahe hain ki jab speed aur volatility aisi ho,
-    # toh market apna mean (SMA) se kitna door jati hai.
-    df['Deviation'] = (df['Price'] - df['SMA_150']) / df['SMA_150']
+    # Target: Deviation from Mean
+    df['Actual_Deviation'] = (df['Price'] - df['SMA_150']) / df['SMA_150']
     
-    df = df.dropna()
-    return df
+    return df.dropna()
 
-df = get_cognitive_data()
+df = get_backtest_data()
 
-# Model "Deviation" predict kar raha hai, "Price" nahi.
-X = df[['ROC', 'Vol_Ratio']]
-y = df['Deviation']
-model = RandomForestRegressor(n_estimators=100).fit(X, y)
+# 50:50 Split Logic
+split_idx = int(len(df) * 0.50)
+train, test = df.iloc[:split_idx], df.iloc[split_idx:]
 
-# Prediction: Market kitni deviation show karega?
-df['Predicted_Deviation'] = model.predict(X)
-df['Discovery_Target'] = df['SMA_150'] * (1 + df['Predicted_Deviation'])
-df['Projected_Date'] = df.index + pd.offsets.BusinessDay(23)
+# Model Training
+X_train = train[['ROC', 'Vol_Ratio']]
+y_train = train['Actual_Deviation']
+model = RandomForestRegressor(n_estimators=100).fit(X_train, y_train)
 
-st.subheader("📋 Discovery: Deviation-Based Intelligence")
+# Backtesting
+test = test.copy()
+test['Predicted_Deviation'] = model.predict(test[['ROC', 'Vol_Ratio']])
+test['Discovery_Target'] = test['SMA_150'] * (1 + test['Predicted_Deviation'])
+test['Projected_Date'] = test.index + pd.offsets.BusinessDay(23)
+
+st.subheader("📋 50:50 Split Cognitive Audit")
+
 st.data_editor(
-    df.sort_index(ascending=False).head(20),
+    test.sort_index(ascending=False),
     use_container_width=True,
     column_config={
-        "Price": st.column_config.NumberColumn("Current", format="%.2f"),
-        "Discovery_Target": st.column_config.NumberColumn("Discovery Target", format="%.2f"),
+        "Price": st.column_config.NumberColumn("Actual Price", format="%.2f"),
+        "Discovery_Target": st.column_config.NumberColumn("Model Discovery Target", format="%.2f"),
         "Projected_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
     }
 )
