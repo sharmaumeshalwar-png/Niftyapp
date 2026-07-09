@@ -4,7 +4,10 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Probability & Consensus Engine")
+st.title("🚀 Nifty 50 Probability & Consensus Engine [Fixed]")
+
+# EMA list ko global rakha taaki har jagah access ho sake
+EMAS = [20, 50, 100, 200]
 
 @st.cache_data(ttl=3600)
 def get_consensus_data():
@@ -12,17 +15,12 @@ def get_consensus_data():
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
-    emas = [20, 50, 100, 200]
-    # Har EMA ke liye ek "Directional Signal" (Slope)
-    for e in emas:
+    # Har EMA ke liye directional signal
+    for e in EMAS:
         ema_val = df['Price'].ewm(span=e).mean()
-        # 1 = Up (Slope positive), 0 = Down (Slope negative)
         df[f'Signal_{e}'] = (ema_val.diff() > 0).astype(int)
         
-    # Consensus: Agar 4-ro up hai toh 4, sab down hai toh 0
-    df['Consensus'] = df[[f'Signal_{e}' for e in emas]].sum(axis=1)
-    
-    # Target move
+    df['Consensus'] = df[[f'Signal_{e}' for e in EMAS]].sum(axis=1)
     df['Move'] = df['Price'].shift(-1) - df['Price']
     df['Target_Up'] = (df['Move'] > 0).astype(int)
     
@@ -30,16 +28,15 @@ def get_consensus_data():
 
 data = get_consensus_data()
 
-# Model: Probability estimate
-model = RandomForestRegressor(n_estimators=200, n_jobs=-1)
-X = data[[f'Signal_{e}' for e in emas]]
+# Training Logic
+X = data[[f'Signal_{e}' for e in EMAS]]
 y = data['Target_Up']
 
-# Train on 50%
 split = int(len(data) * 0.5)
+model = RandomForestRegressor(n_estimators=200, n_jobs=-1)
 model.fit(X.iloc[:split], y.iloc[:split])
 
-# Probability predict karo
+# Prediction
 data['Prob_Up'] = model.predict(X)
 data['Action'] = data['Prob_Up'].apply(lambda x: "BUY" if x > 0.6 else ("SELL" if x < 0.4 else "HOLD"))
 
