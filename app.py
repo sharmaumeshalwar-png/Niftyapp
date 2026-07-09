@@ -31,24 +31,35 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
     return filtered_values
 
 with st.spinner("🚀 Mapping 25-Candle Volatility Waves & Training Macro Core..."):
-    # Safe single-layer column download from yfinance
-    raw_df = yf.download("^NSEI", period="2y", interval="1h", multi_level_index=False)
+    # Download data
+    raw_df = yf.download("^NSEI", period="2y", interval="1h")
     
     if raw_df.empty:
-        raw_df = yf.download("^NSEI", period="1mo", interval="1h", multi_level_index=False)
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
         
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
         st.stop()
         
+    # FIX: Flatten MultiIndex columns if present (yfinance modern bug fix)
+    if isinstance(raw_df.columns, pd.MultiIndex):
+        raw_df.columns = [col[0] for col in raw_df.columns]
+        
     df = pd.DataFrame(index=raw_df.index)
     
+    # Safe Column Extraction & Forward Fill
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in raw_df.columns:
-            df[col] = raw_df[col].ffill()
+            df[col] = pd.to_numeric(raw_df[col], errors='coerce')
+            df[col] = df[col].ffill()
 
+    # Drop rows where critical data is missing
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
+
+    if len(df) < 50:
+        st.error(f"⚠️ Data size too small ({len(df)} rows). Cannot compute 25-candle shift.")
+        st.stop()
 
     # Base Matrix Definition
     df['a_Close'] = df['Close']
@@ -68,10 +79,12 @@ with st.spinner("🚀 Mapping 25-Candle Volatility Waves & Training Macro Core..
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['Volatility_Momentum'].diff(1) 
     
-    # 🎯 TARGET DESIGN CHANGED: High-Low Range matrix compared strictly against 25 Candles Past (t-25)
+    # Target Design: High-Low Range compared against 25 Candles Past (t-25)
     df['Target'] = np.where(df['Volatility_Momentum'] > df['Volatility_Momentum'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    
+    # Replace infinite values and clean
     df_clean = df.replace([np.inf, -np.inf], np.nan).copy()
 
 # Dynamic Split Engine (50:50 Split)
@@ -89,9 +102,9 @@ df_predict.dropna(subset=features_matrix, inplace=True)
 X_predict = df_predict[features_matrix]
 
 if len(X_predict) == 0 or len(X_train) == 0:
-    st.error(f"⚠️ Data size insufficient for split.")
+    st.error(f"⚠️ Data size insufficient for split. Train size: {len(X_train)}, Predict size: {len(X_predict)}")
 else:
-    # Original Trusted Tree Structure (150 estimators, depth 4)
+    # Original Trusted Tree Structure
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
@@ -154,3 +167,20 @@ else:
     df_predict['Accumulator_Score'] = scores_log
 
     # Display Configuration Block
+    clean_display_cols = [
+        'a_Close', 'Volatility_Momentum', 'Prob_Up', 'Prob_Down', 
+        'Accumulator_Score', 'd_ML_Signal'
+    ]
+    
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['Volatility_Momentum'] = display_df['Volatility_Momentum'].round(4)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader("📋 Live 1-Hour Nifty 25-Candle Weighted Volatility Dashboard")
+    st.dataframe(display_df, use_container_width=True, height=750)
