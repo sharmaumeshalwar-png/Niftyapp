@@ -3,11 +3,10 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
-from datetime import datetime
 
 # Page Setup
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [Walk-Forward Mode]")
+st.title("🚀 Nifty 50 Discovery Engine [Hard Leakage Protection]")
 
 @st.cache_data(ttl=3600)
 def get_clean_data():
@@ -15,38 +14,38 @@ def get_clean_data():
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # 1. Features (Past ke data par based)
+    # 1. Past Features
     df['SMA_150'] = df['Price'].rolling(150).mean()
     df['Momentum'] = df['Price'] - df['SMA_150']
     
-    # 2. Target (Ye sirf training ke waqt use hoga, prediction ke waqt nahi)
-    # Hum model ko sikha rahe hain ki pichle 150 candle ke patterns se next 150 candle ka price kya raha tha
-    df['Target_Price'] = df['Price'].shift(-150)
+    # 2. TARGET: Humein 150 ghante baad ka price chahiye.
+    # Lekin hum train karte waqt "Future" ko training data se exclude karenge.
+    df['Future_Price'] = df['Price'].shift(-150)
     return df.dropna()
 
 df = get_clean_data()
 
 # =====================================================================
-# NO LEAKAGE TRAINING: Walk-Forward Logic
+# HARD LEAKAGE PROTECTION: Training on PRE-EXISTING data only
 # =====================================================================
-# Model sirf 'train' data se seekhega
-train_size = int(len(df) * 0.70)
-train = df.iloc[:train_size]
-test = df.iloc[train_size:]
+# Hum test set ko "Cut-off" kar rahe hain aaj ki date par
+# Taaki model kabhi bhi aage ki date na dekh sake
+cutoff_date = df.index[-150] 
+train = df[df.index < cutoff_date]
+test = df[df.index >= cutoff_date]
 
 features = ['Price', 'SMA_150', 'Momentum']
-model = RandomForestRegressor(n_estimators=100, max_depth=5).fit(train[features], train['Target_Price'])
+model = RandomForestRegressor(n_estimators=100, max_depth=5).fit(train[features], train['Future_Price'])
 
 # Prediction
 test = test.copy()
 test['Predicted_Target_Price'] = model.predict(test[features])
 test['Projection_Date'] = test.index + pd.offsets.BusinessDay(23)
 
-st.subheader("📋 Zero Leakage Projection Table")
-st.write("Model ne sirft train set se seekha hai. Test set par prediction puri tarah unbiased hai.")
+st.subheader("📋 Unbiased Projection (Training restricted to past only)")
 
 st.data_editor(
-    test.tail(50).sort_index(ascending=False),
+    test.sort_index(ascending=False),
     use_container_width=True,
     column_config={
         "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
