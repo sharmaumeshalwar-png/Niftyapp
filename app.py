@@ -2,52 +2,44 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Cognitive Backtest [Full History View]")
+st.title("🚀 Nifty 50 Infinite-Depth Discovery Engine")
 
 @st.cache_data(ttl=3600)
-def get_backtest_data():
+def get_infinite_depth_data():
     raw = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # Cognitive Features
-    df['SMA_150'] = df['Price'].rolling(150).mean()
-    df['ROC'] = df['Price'].pct_change(20)
-    df['Vol_Ratio'] = df['Price'].rolling(50).std() / df['Price'].rolling(200).std()
+    # Feature Engineering: 1 Lakh trees ke liye jitne zyada technical dimensions honge, utna accha
+    df['SMA_50'] = df['Price'].rolling(50).mean()
+    df['SMA_200'] = df['Price'].rolling(200).mean()
+    df['Vol_50'] = df['Price'].rolling(50).std()
+    df['Momentum'] = df['Price'].pct_change(10)
+    df['Trend_Slope'] = (df['Price'] - df['SMA_200']) / df['Price']
     
-    # Target: Deviation from Mean
-    df['Actual_Deviation'] = (df['Price'] - df['SMA_150']) / df['SMA_150']
+    # Target
+    df['Future_Move'] = df['Price'].pct_change(150).shift(-150)
     
     return df.dropna()
 
-df = get_backtest_data()
+df = get_infinite_depth_data()
 
-# 50:50 Split Logic
-split_idx = int(len(df) * 0.50)
-train, test = df.iloc[:split_idx], df.iloc[split_idx:]
+# Model: 1,00,000 estimators (Boosting strategy)
+# Learning_rate ko kam rakha hai taaki 1 lakh trees stable rahein
+model = GradientBoostingRegressor(
+    n_estimators=100000, 
+    learning_rate=0.01, 
+    max_depth=3, 
+    subsample=0.8
+).fit(df[['SMA_50', 'SMA_200', 'Vol_50', 'Momentum', 'Trend_Slope']], df['Future_Move'])
 
-# Model Training
-model = RandomForestRegressor(n_estimators=100, n_jobs=-1).fit(train[['ROC', 'Vol_Ratio']], train['Actual_Deviation'])
+# Projection
+df['Predicted_Move'] = model.predict(df[['SMA_50', 'SMA_200', 'Vol_50', 'Momentum', 'Trend_Slope']])
+df['Smart_Target'] = df['Price'] * (1 + df['Predicted_Move'])
+df['Projected_Date'] = df.index + pd.offsets.BusinessDay(23)
 
-# Predicting full test set
-test = test.copy()
-test['Predicted_Deviation'] = model.predict(test[['ROC', 'Vol_Ratio']])
-test['Discovery_Target'] = test['SMA_150'] * (1 + test['Predicted_Deviation'])
-test['Projected_Date'] = test.index + pd.offsets.BusinessDay(23)
-
-st.subheader("📋 Full Historical Audit (Backtest)")
-st.write(f"Showing {len(test)} hours of historical predictions.")
-
-# Use st.dataframe instead of data_editor for high-volume scrolling
-st.dataframe(
-    test.sort_index(ascending=False),
-    use_container_width=True,
-    column_config={
-        "Price": st.column_config.NumberColumn("Actual Price", format="%.2f"),
-        "Discovery_Target": st.column_config.NumberColumn("Model Target", format="%.2f"),
-        "Projected_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
-    }
-)
+st.subheader("📋 Deep-Learning Discovery [100k Iterations]")
+st.dataframe(df.sort_index(ascending=False), use_container_width=True)
