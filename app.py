@@ -95,12 +95,12 @@ else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=4, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Probabilities Generation (Up = Momentum Wave Expanding, Down = Momentum Wave Contracting)
+    # Probabilities Generation
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Price Action Columns for directional breakout rules
+    # Price Action Columns
     df_predict['Prev_High'] = df_predict['High'].shift(1)
     df_predict['Prev_Low'] = df_predict['Low'].shift(1)
 
@@ -116,6 +116,7 @@ else:
     prev_highs = df_predict['Prev_High'].to_numpy()
     prev_lows = df_predict['Prev_Low'].to_numpy()
 
+    # Loop Ke Andar Ka Code Perfectly Indented
     for i in range(len(prob_ups)):
         p_up = prob_ups[i]
         p_down = prob_downs[i]
@@ -123,10 +124,31 @@ else:
         p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
         p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
 
-        # Accumulator tracks the smooth velocity expansion spikes
-        if p_up >= 0.55: accumulator += 1  
-        elif p_down >= 0.55: accumulator -= 1  
+        # Accumulator Block
+        if p_up >= 0.55: 
+            accumulator += 1  
+        elif p_down >= 0.55: 
+            accumulator -= 1  
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
 
+        # 🆕 FIXED INDENTATION FOR THE SIGNALS BLOCK
         if accumulator == 5:
+            current_state = "EXPANSION"
+            if c_val > p_high: 
+                final_signals.append("🟢 MOMENTUM BREAKOUT (Wave Confirmed Up)")
+            elif c_val < p_low: 
+                final_signals.append("🔴 MOMENTUM BREAKDOWN (Wave Confirmed Down)")
+            else: 
+                final_signals.append("⚡ MOMENTUM WAVE EXPANDING (No Price Confirmation)")
+        elif accumulator == -5:
+            current_state = "SQUEEZE"
+            final_signals.append("⚪ COMPRESSION BLOCK (Squeeze Active / No Trade)")
+        else:
+            if current_state == "EXPANSION":
+                if accumulator > 0: 
+                    final_signals.append(f"🔄 HOLD POSITION | Wave Cooling ({accumulator})")
+                else: 
+                    final_signals.append(f"⚠️ WAVE FADE | Volatility Dropping ({accumulator})")
+            else:
+                final_signals.append(f"💤 CHOPPY WAVE | S
