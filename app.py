@@ -9,7 +9,7 @@ st.set_page_config(page_title="Nifty Discovery Pro", layout="wide")
 st.title("🚀 Nifty 50 Advanced Discovery Engine [Pro Mode]")
 
 # =====================================================================
-# MATH ENGINES (Fixed & Optimized)
+# MATHEMATICAL ENGINES
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=100.0):
     x, p = data_array[0], initial_p
@@ -36,10 +36,10 @@ def apply_non_linear_kalman_momentum(data_array):
     return res
 
 # =====================================================================
-# DATA ENGINE WITH ATR INTEGRATION
+# DATA & DISCOVERY ENGINE
 # =====================================================================
 @st.cache_data(ttl=3600)
-def get_data():
+def get_processed_data():
     raw = yf.download("^NSEI", period="2y", interval="1h")
     df = pd.DataFrame(index=raw.index)
     df[['Close', 'High', 'Low']] = raw[['Close', 'High', 'Low']].ffill()
@@ -53,16 +53,16 @@ def get_data():
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     return df.dropna()
 
-df = get_data()
+df = get_processed_data()
 split_idx = int(len(df) * 0.50)
 train, predict = df.iloc[:split_idx], df.iloc[split_idx:].copy()
 
-# Training
+# Machine Learning
 features = ['c_Gap', 'Normalized_Gap', 'ATR']
 model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(train[features], train['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# Multi-Layer Columns
+# Multi-Layer Calculations
 predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
 predict['Step_Momentum'] = np.round(apply_non_linear_kalman_momentum(predict['Weighted_Momentum'].values))
 predict['Discovery_Score'] = (predict['Prob_Up'] * predict['Weighted_Momentum']) / (predict['ATR'] + 1e-10)
@@ -70,19 +70,23 @@ predict['Discovery_Score'] = (predict['Prob_Up'] * predict['Weighted_Momentum'])
 # =====================================================================
 # INTERACTIVE DASHBOARD
 # =====================================================================
-st.subheader("📊 Discovery Engine: Interactive Live View")
-st.write("💡 *Tip: Column headers ko click karke sort karein, ya drag karke move karein.*")
+st.subheader("📊 Interactive Live Discovery View")
+st.write("💡 *Tip: Headers par click karke sort karein, ya columns ko drag karke apni pasand se set karein.*")
 
-# Data Editor for Moveable Columns
+# Final Display DataFrame
+display_df = predict[['a_Close', 'Prob_Up', 'ATR', 'Weighted_Momentum', 'Step_Momentum', 'Discovery_Score']].sort_index(ascending=False)
+
 st.data_editor(
-    predict[['Prob_Up', 'ATR', 'Weighted_Momentum', 'Step_Momentum', 'Discovery_Score']].sort_index(ascending=False),
+    display_df,
     use_container_width=True,
     column_config={
+        "a_Close": st.column_config.NumberColumn("Close Price", format="%.2f"),
         "Prob_Up": st.column_config.ProgressColumn("Prob_Up", format="%.2f", min_value=0, max_value=1),
         "Discovery_Score": st.column_config.NumberColumn("Discovery_Score", format="%.4f"),
     },
-    height=600
+    height=750
 )
 
-st.sidebar.metric("Latest Nifty Close", f"{df['a_Close'].iloc[-1]:.2f}")
-st.sidebar.metric("Current ATR", f"{df['ATR'].iloc[-1]:.2f}")
+st.sidebar.title("Engine Metrics")
+st.sidebar.metric("Last Nifty Price", f"{df['a_Close'].iloc[-1]:.2f}")
+st.sidebar.metric("Live ATR", f"{df['ATR'].iloc[-1]:.2f}")
