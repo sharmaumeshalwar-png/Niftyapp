@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty Dual Momentum Engine", layout="wide")
 st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly 2-Year Data Window + Strictly 50:50 Engine Split + Probability Flow Tracker")
+st.write("🎯 **Aapki Custom Setting:** Strictly 2-Year Data Window + Strictly 50:50 Engine Split + Net Probability Flow & Weighted Momentum Tracker")
 
 # =====================================================================
 # MATHEMATICAL ENGINE 1: LINEAR FILTER
@@ -189,7 +189,6 @@ else:
 
         trap_msg = "TREND VALID"
 
-        # FIXED LOGIC AND REMOVED DOCKING ACCIDENT 'if' AT LINE 181
         if accumulator == 5:
             current_state = "BUY"
             if c_val > p_high: 
@@ -240,12 +239,10 @@ else:
     df_predict['Net_Prob_Flow'] = np.array(cum_prob_flow_log, dtype=float)
     df_predict['Flow_State'] = np.array(flow_direction_log, dtype=object)
 
+    # Core Kalman-filtered Weighted Momentum Engine
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].to_numpy(), initial_p=0.50)
     non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].to_numpy())
     df_predict['Step_Momentum'] = np.round(non_linear_filtered)
-
-    # Core Multiplication layer
-    df_predict['Flow_Momentum_Product'] = df_predict['Net_Prob_Flow'] * df_predict['Step_Momentum']
 
     # Presentation Output Creation
     display_df = pd.DataFrame(index=df_predict.index)
@@ -254,8 +251,8 @@ else:
     display_df['Prob_Down'] = df_predict['Prob_Down'].round(3)
     display_df['Prob_Sum'] = df_predict['Prob_Sum'].round(2)
     display_df['Net_Prob_Flow'] = df_predict['Net_Prob_Flow'].round(2)
+    display_df['Weighted_Momentum'] = df_predict['Weighted_Momentum'].round(2) # Tracked strictly as requested
     display_df['Step_Momentum'] = df_predict['Step_Momentum'].astype(int)
-    display_df['Flow_Momentum_Product'] = df_predict['Flow_Momentum_Product'].round(3)
     display_df['Flow_State'] = df_predict['Flow_State']
     display_df['Accumulator_Score'] = df_predict['Accumulator_Score'].astype(int)
     display_df['d_ML_Signal'] = df_predict['d_ML_Signal']
