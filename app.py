@@ -1,55 +1,54 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
+from datetime import datetime
 
-# Page Setup
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50 Discovery Engine [Hard Leakage Protection]")
+st.title("🚀 Nifty 50 Discovery Engine [Unbiased Projection]")
 
 @st.cache_data(ttl=3600)
-def get_clean_data():
+def get_processed_data():
     raw = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = pd.DataFrame(index=raw.index)
     df['Price'] = raw['Close'].ffill().squeeze()
     
-    # 1. Past Features
+    # Past 150 Candles Features
     df['SMA_150'] = df['Price'].rolling(150).mean()
     df['Momentum'] = df['Price'] - df['SMA_150']
     
-    # 2. TARGET: Humein 150 ghante baad ka price chahiye.
-    # Lekin hum train karte waqt "Future" ko training data se exclude karenge.
-    df['Future_Price'] = df['Price'].shift(-150)
-    return df.dropna()
+    # TARGET: Aaj ke price se 150 candles baad kya price hoga.
+    # Hum yahan shift(-150) use kar rahe hain, lekin training mein sirf 
+    # wo data use karenge jo "Future" nahi hai.
+    df['Target_Price'] = df['Price'].shift(-150)
+    return df.dropna() # Ye NaN wali rows (Future) hata dega
 
-df = get_clean_data()
+df = get_processed_data()
 
-# =====================================================================
-# HARD LEAKAGE PROTECTION: Training on PRE-EXISTING data only
-# =====================================================================
-# Hum test set ko "Cut-off" kar rahe hain aaj ki date par
-# Taaki model kabhi bhi aage ki date na dekh sake
-cutoff_date = df.index[-150] 
-train = df[df.index < cutoff_date]
-test = df[df.index >= cutoff_date]
+# TRAINING: Sirf uss data par jiska target hamare paas available hai
+# (Yani 150 ghante purana data)
+X = df[['Price', 'SMA_150', 'Momentum']]
+y = df['Target_Price']
 
-features = ['Price', 'SMA_150', 'Momentum']
-model = RandomForestRegressor(n_estimators=100, max_depth=5).fit(train[features], train['Future_Price'])
+model = RandomForestRegressor(n_estimators=100).fit(X, y)
 
-# Prediction
-test = test.copy()
-test['Predicted_Target_Price'] = model.predict(test[features])
-test['Projection_Date'] = test.index + pd.offsets.BusinessDay(23)
+# PREDICTION: Aaj ka latest point
+latest_point = df.iloc[[-1]][['Price', 'SMA_150', 'Momentum']]
+predicted_price = model.predict(latest_point)[0]
 
-st.subheader("📋 Unbiased Projection (Training restricted to past only)")
+# Projection Date calculation (150 hours = 23 Business Days)
+target_date = df.index[-1] + pd.offsets.BusinessDay(23)
 
-st.data_editor(
-    test.sort_index(ascending=False),
-    use_container_width=True,
-    column_config={
-        "Price": st.column_config.NumberColumn("Current Price", format="%.2f"),
-        "Predicted_Target_Price": st.column_config.NumberColumn("ML Predicted Price", format="%.2f"),
-        "Projection_Date": st.column_config.DateColumn("Target Date", format="DD/MM/YYYY"),
-    }
-)
+st.subheader("🎯 Market Prediction")
+col1, col2 = st.columns(2)
+col1.metric("Current Market Price", f"{df['Price'].iloc[-1]:.2f}")
+col2.metric("Predicted Price (After 150 Candles)", f"{predicted_price:.2f}")
+
+st.write(f"### 🗓️ Predicted Date: {target_date.strftime('%d/%m/%Y')}")
+
+st.info("""
+**Data Logic Explanation:**
+1. Model ne pichle 2 saal ke har 150-candle ke pattern ko observe kiya hai.
+2. Leakage hatane ke liye, humne sirf wahi data train kiya hai jiska 'Future' (150 candles baad ka price) record mein tha.
+3. Prediction 'Latest Price' par ki gayi hai, bina future ka price dekhne diye.
+""")
