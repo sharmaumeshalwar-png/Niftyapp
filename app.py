@@ -92,8 +92,6 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    
-    # FIXED LINE: Parenthesis properly closed here
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
@@ -171,4 +169,42 @@ else:
         # Accumulator Engine
         if p_up >= 0.55: 
             accumulator += 1  
-        elif p_down >= 0.55:
+        elif p_down >= 0.55: 
+            accumulator -= 1  
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(int(accumulator))
+
+        calc_raw_weighted = c_val - k_price_val
+        raw_weighted_momentum_log.append(calc_raw_weighted)
+
+        trap_msg = "TREND VALID"
+
+        if accumulator == 5:
+            current_state = "BUY"
+            if c_val > p_high: 
+                final_signals.append("🟢 STRONG BUY (Max [5/5])")
+            else:
+                final_signals.append("❌ NO ENTRY (Wait Breakout)")
+                trap_msg = "⚠️ BULL TRAP"
+        elif accumulator == -5:
+            current_state = "SELL"
+            if c_val < p_low: 
+                final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
+            else:
+                final_signals.append("🟢 HOLD LONG (No Short)")
+                trap_msg = "⚠️ BEAR TRAP"
+        else:
+            if current_state == "BUY":
+                if accumulator > 0: 
+                    final_signals.append(f"🟢 HOLD BUY (Score: {accumulator})")
+                else:
+                    if c_val < p_low: 
+                        final_signals.append(f"⚠️ BUY CRITICAL (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE"
+            elif current_state == "SELL":
+                if accumulator < 0: 
+                    final_signals.append(f"🔴 HOLD SELL (Score: {accumulator})")
+                else:
+                    if c_val > p
