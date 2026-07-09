@@ -4,47 +4,44 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 
 st.set_page_config(layout="wide")
-st.title("🚀 Nifty 50: 2-Year Full Geometry Backtest (50:50 Split)")
+st.title("🚀 Nifty 50 Probability & Consensus Engine")
 
 @st.cache_data(ttl=3600)
-def get_full_data():
-    # 2 saal ka full data download
+def get_consensus_data():
     df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     df = df[['Close']].ffill()
     df.columns = ['Price']
     
     emas = [20, 50, 100, 200]
-    features = []
-    
+    # Har EMA ke liye ek "Directional Signal" (Slope)
     for e in emas:
         ema_val = df['Price'].ewm(span=e).mean()
-        df[f'Dist_{e}'] = df['Price'] / ema_val
-        df[f'Slope_{e}'] = ema_val.pct_change(3)
-        df[f'Vol_{e}'] = df['Price'].rolling(e).std() / ema_val
-        features.extend([f'Dist_{e}', f'Slope_{e}', f'Vol_{e}'])
+        # 1 = Up (Slope positive), 0 = Down (Slope negative)
+        df[f'Signal_{e}'] = (ema_val.diff() > 0).astype(int)
+        
+    # Consensus: Agar 4-ro up hai toh 4, sab down hai toh 0
+    df['Consensus'] = df[[f'Signal_{e}' for e in emas]].sum(axis=1)
     
-    # Target: Next hour prediction
-    df['Target'] = df['Price'].shift(-1)
-    return df.dropna(), features
+    # Target move
+    df['Move'] = df['Price'].shift(-1) - df['Price']
+    df['Target_Up'] = (df['Move'] > 0).astype(int)
+    
+    return df.dropna()
 
-data, feature_cols = get_full_data()
+data = get_consensus_data()
 
-# Strict 50:50 Split Logic
-mid_point = int(len(data) * 0.5)
-train = data.iloc[:mid_point]
-test = data.iloc[mid_point:]
+# Model: Probability estimate
+model = RandomForestRegressor(n_estimators=200, n_jobs=-1)
+X = data[[f'Signal_{e}' for e in emas]]
+y = data['Target_Up']
 
-# Training on first 50% (Past 1 Year)
-model = RandomForestRegressor(n_estimators=300, max_depth=12, n_jobs=-1)
-model.fit(train[feature_cols], train['Target'])
+# Train on 50%
+split = int(len(data) * 0.5)
+model.fit(X.iloc[:split], y.iloc[:split])
 
-# Prediction on second 50% (Future 1 Year Audit)
-test = test.copy()
-test['Predicted_Price'] = model.predict(test[feature_cols])
-test['Date'] = test.index
+# Probability predict karo
+data['Prob_Up'] = model.predict(X)
+data['Action'] = data['Prob_Up'].apply(lambda x: "BUY" if x > 0.6 else ("SELL" if x < 0.4 else "HOLD"))
 
-st.subheader("📋 2-Year Performance Audit (Split: 50% Train / 50% Test)")
-st.write(f"Training Range: {train.index[0].date()} to {train.index[-1].date()}")
-st.write(f"Testing Range (Audit): {test.index[0].date()} to {test.index[-1].date()}")
-
-st.dataframe(test[['Date', 'Price', 'Predicted_Price']].sort_index(ascending=False), use_container_width=True)
+st.subheader("📋 Consensus Audit (EMA Hierarchy)")
+st.dataframe(data.sort_index(ascending=False).head(20), use_container_width=True)
