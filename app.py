@@ -27,7 +27,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
+        filtered_values.append(float(x))
     return filtered_values
 
 # =====================================================================
@@ -47,14 +47,15 @@ def apply_non_linear_kalman_momentum(data_array):
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
+        filtered_values.append(float(x))
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+    # Direct single-column download clean framework
+    raw_df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     
     if raw_df.empty:
-        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h", progress=False)
         
     if raw_df.empty:
         st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
@@ -72,8 +73,8 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     df.index = pd.to_datetime(df.index)
 
-    df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
+    df['a_Close'] = df['Close'].astype(float)
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].to_numpy(), initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
     df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
@@ -142,14 +143,14 @@ else:
     prev_lows = df_predict['Prev_Low'].to_numpy()
 
     for i in range(len(prob_ups)):
-        p_up = prob_ups[i] if not np.isnan(prob_ups[i]) else 0.5
-        p_down = prob_downs[i] if not np.isnan(prob_downs[i]) else 0.5
-        c_val = closes[i]
-        k_price_val = kalmans_price[i]
-        p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
-        p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
+        p_up = float(prob_ups[i]) if not np.isnan(prob_ups[i]) else 0.5
+        p_down = float(prob_downs[i]) if not np.isnan(prob_downs[i]) else 0.5
+        c_val = float(closes[i])
+        k_price_val = float(kalmans_price[i])
+        p_high = float(prev_highs[i]) if not np.isnan(prev_highs[i]) else c_val
+        p_low = float(prev_lows[i]) if not np.isnan(prev_lows[i]) else c_val
 
-        # Cumulative Calculations
+        # Cumulative calculations
         running_cum_up += p_up
         running_cum_down += p_down
         net_prob_flow = running_cum_up - running_cum_down
@@ -158,5 +159,4 @@ else:
         if i == 0:
             flow_direction_log.append("🔄 START")
         else:
-            if net_prob_flow > cum_prob_flow_log[i-1]:
-                flow_direction_log
+            if net_prob_flow > cum_prob_flow_log
