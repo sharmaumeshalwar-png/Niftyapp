@@ -191,20 +191,4 @@ else:
             if c_val < p_low: 
                 final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
             else:
-                final_signals.append("🟢 HOLD LONG (No Short)")
-                trap_msg = "⚠️ BEAR TRAP"
-        else:
-            if current_state == "BUY":
-                if accumulator > 0: 
-                    final_signals.append(f"🟢 HOLD BUY (Score: {accumulator})")
-                else:
-                    if c_val < p_low: 
-                        final_signals.append(f"⚠️ BUY CRITICAL (Score: {accumulator})")
-                    else:
-                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
-                        trap_msg = "⚠️ BEAR TRAP INSIDE"
-            elif current_state == "SELL":
-                if accumulator < 0: 
-                    final_signals.append(f"🔴 HOLD SELL (Score: {accumulator})")
-                else:
-                    if c_val > p
+                final_signals.append("🟢 HOLD
