@@ -58,12 +58,10 @@ predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 # Calculations
 predict['Prob_Weighted_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].values, initial_p=0.50) * 100
 predict['Prob_Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Prob_Weighted_Momentum'].values, initial_p=0.50) / 10)
-
-# NAYA COLUMN: Kalman-Adjusted Momentum (Prob Weighted Mom * Kalman Value)
 predict['Kalman_Adjusted_Mom'] = predict['Prob_Weighted_Momentum'] * predict['b_Kalman']
 
 # =====================================================================
-# DASHBOARD
+# DASHBOARD (3 Figure Formatting)
 # =====================================================================
 st.subheader("📋 Discovery Engine Data Table")
 display_df = predict.reset_index()
@@ -74,8 +72,8 @@ st.data_editor(
     height=600,
     column_config={
         "Datetime": st.column_config.DatetimeColumn("Date & Time", format="DD/MM/YYYY HH:mm"),
-        "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom", format="%.2f"),
-        "Prob_Step_Momentum": st.column_config.NumberColumn("Prob Step Mom", format="%.0f"),
-        "Kalman_Adjusted_Mom": st.column_config.NumberColumn("Kalman Adjusted Mom (New)", format="%.2f"),
+        "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom", format="%.3g"),
+        "Prob_Step_Momentum": st.column_config.NumberColumn("Prob Step Mom", format="%.3g"),
+        "Kalman_Adjusted_Mom": st.column_config.NumberColumn("Kalman Adjusted Mom", format="%.3g"),
     }
 )
