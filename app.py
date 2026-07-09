@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Setup
 st.set_page_config(layout="wide")
 
-# Side-Panel (News only)
+# Side-Panel
 with st.sidebar:
     st.header("📢 Market Events")
     st.write("• 10:00 AM: RBI Policy Decision")
@@ -31,7 +31,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         x += k * (z - x)
         p = (1 - k) * p
         res.append(x)
-    return res
+    return np.array(res) # <--- Yahan Array mein convert kiya
 
 @st.cache_data(ttl=3600)
 def get_data():
@@ -41,6 +41,7 @@ def get_data():
     
     df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     df['a_Close'] = df['Close']
+    # Error fix: Kalman ko array input diya
     df['b_Kalman'] = apply_kalman_filter_custom(df['a_Close'].values)
     df['c_Gap'] = df['a_Close'] - df['b_Kalman']
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
@@ -48,14 +49,14 @@ def get_data():
 
 df = get_data()
 split_idx = int(len(df) * 0.50)
-train, predict = df.iloc[:split_idx], df.iloc[split_idx:].copy()
+predict = df.iloc[split_idx:].copy()
 
 # ML Training
 features = ['c_Gap', 'ATR']
-model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(train[features], train['Target'])
+model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(df.iloc[:split_idx][features], df.iloc[:split_idx]['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# Calculations
+# Calculations (Fixed)
 predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
 predict['Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Weighted_Momentum'].values, initial_p=0.50) * 10)
 predict['Discovery_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].values, initial_p=0.50) * 100
@@ -64,7 +65,6 @@ predict['Discovery_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].va
 # DASHBOARD
 # =====================================================================
 st.subheader("📋 Discovery Engine Data Table")
-# Reset index taaki Date movable column ban jaye
 display_df = predict.reset_index()
 
 st.data_editor(
