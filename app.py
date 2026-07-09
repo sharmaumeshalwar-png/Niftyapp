@@ -94,6 +94,7 @@ with st.spinner("Aligning Dual Kalman Nifty Microstructure Matrices (Full 2-Year
     # STRICT PAST 25-CANDLE TARGET WINDOW
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
+    # Drop rows without targets/features before splitting
     df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
 # =====================================================================
@@ -101,4 +102,133 @@ with st.spinner("Aligning Dual Kalman Nifty Microstructure Matrices (Full 2-Year
 # =====================================================================
 split_idx = int(len(df_clean) * 0.50)
 
-df_train = df_clean.
+df_train = df_clean.iloc[:split_idx].copy()
+X_train = df_train[features_matrix]
+y_train = df_train['Target']
+
+df_predict = df_clean.iloc[split_idx:].copy()
+
+if len(df_predict) == 0 or len(df_train) == 0:
+    st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
+else:
+    # RandomForest Model Training (Linear Trees)
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
+    model_flow.fit(X_train, y_train)
+
+    # Raw Probabilities Prediction
+    X_predict = df_predict[features_matrix]
+    probabilities = model_flow.predict_proba(X_predict)
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # Price Action Shifted Columns (Aligned within df_predict boundaries)
+    df_predict['Prev_High'] = df_predict['High'].shift(1)
+    df_predict['Prev_Low'] = df_predict['Low'].shift(1)
+
+    # =====================================================================
+    # LIVE TREND-LOCK CIRCUIT WITH TRAP-DETECTION FILTER (HIGH/LOW BREAK)
+    # =====================================================================
+    final_signals = []
+    scores_log = []
+    raw_weighted_momentum_log = [] 
+    trap_status_log = [] 
+    current_state = "HOLD"
+    accumulator = 0
+
+    # Strict NumPy Vector Array conversions to completely avoid Line 104 out-of-bounds error
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+        c_val = closes[i]
+        k_price_val = kalmans_price[i]
+        
+        # Fallback check for initial NaN shifted items
+        p_high = prev_highs[i] if (i > 0 and not np.isnan(prev_highs[i])) else c_val
+        p_low = prev_lows[i] if (i > 0 and not np.isnan(prev_lows[i])) else c_val
+
+        # Accumulator Engine
+        if p_up >= 0.55: accumulator += 1  
+        elif p_down >= 0.55: accumulator -= 1  
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+
+        # Raw Weighted Momentum (Close - Smooth Kalman)
+        calc_raw_weighted = c_val - k_price_val
+        raw_weighted_momentum_log.append(calc_raw_weighted)
+
+        trap_msg = "TREND VALID"
+
+        if accumulator == 5:
+            current_state = "BUY"
+            if c_val > p_high: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            else:
+                final_signals.append("❌ NO ENTRY (Wait for Breakout)")
+                trap_msg = "⚠️ BULL TRAP (High Not Broken)"
+        elif accumulator == -5:
+            current_state = "SELL"
+            if c_val < p_low: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            else:
+                final_signals.append("🟢 HOLD LONG (No Short Entry)")
+                trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
+        else:
+            if current_state == "BUY":
+                if accumulator > 0: final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+                else:
+                    if c_val < p_low: final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE BULL TREND"
+            elif current_state == "SELL":
+                if accumulator < 0: final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
+                else:
+                    if c_val > p_high: final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE BEAR TREND"
+            else:
+                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+
+        trap_status_log.append(trap_msg)
+
+    # Mapping back to dataframe safely
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Trap_Status'] = trap_status_log 
+    df_predict['Accumulator_Score'] = scores_log 
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+
+    # 1. 🟢 ORIGINAL LINEAR WEIGHTED MOMENTUM (Keep Decimals)
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
+
+    # 2. 🆕 NEW NON-LINEAR STANDALONE STEP MOMENTUM COLUMN
+    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
+    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
+
+    # Table View Layout Configuration
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
+        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'Step_Momentum', 'd_ML_Signal', 'Trap_Status'
+    ]
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prev_High'] = display_df['Prev_High'].round(2)
+    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) 
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard (Full 2-Year Horizon - Strict 50:50)")
+    st.dataframe(display_df, use_container_width=True, height=750)
