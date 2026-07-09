@@ -31,7 +31,7 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
         x += k * (z - x)
         p = (1 - k) * p
         res.append(x)
-    return np.array(res) # <--- Yahan Array mein convert kiya
+    return np.array(res)
 
 @st.cache_data(ttl=3600)
 def get_data():
@@ -41,7 +41,6 @@ def get_data():
     
     df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     df['a_Close'] = df['Close']
-    # Error fix: Kalman ko array input diya
     df['b_Kalman'] = apply_kalman_filter_custom(df['a_Close'].values)
     df['c_Gap'] = df['a_Close'] - df['b_Kalman']
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
@@ -56,10 +55,12 @@ features = ['c_Gap', 'ATR']
 model = RandomForestClassifier(n_estimators=150, max_depth=3).fit(df.iloc[:split_idx][features], df.iloc[:split_idx]['Target'])
 predict['Prob_Up'] = model.predict_proba(predict[features])[:, 1]
 
-# Calculations (Fixed)
+# --- NAYA COLUMN: Weighted Momentum on Prob_Up ---
+predict['Prob_Weighted_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].values, initial_p=0.50) * 100
+
+# Baki purane columns
 predict['Weighted_Momentum'] = apply_kalman_filter_custom(predict['c_Gap'].values, initial_p=0.50)
 predict['Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Weighted_Momentum'].values, initial_p=0.50) * 10)
-predict['Discovery_Momentum'] = apply_kalman_filter_custom(predict['Prob_Up'].values, initial_p=0.50) * 100
 
 # =====================================================================
 # DASHBOARD
@@ -73,9 +74,9 @@ st.data_editor(
     height=600,
     column_config={
         "Datetime": st.column_config.DatetimeColumn("Date & Time", format="DD/MM/YYYY HH:mm"),
-        "a_Close": st.column_config.NumberColumn("Price", format="%.2f"),
-        "Weighted_Momentum": st.column_config.NumberColumn("Weighted Mom", format="%.4f"),
+        "Prob_Up": st.column_config.ProgressColumn("Prob Up", format="%.2f", min_value=0, max_value=1),
+        "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom (New)", format="%.2f"),
+        "Weighted_Momentum": st.column_config.NumberColumn("Price Weighted Mom", format="%.4f"),
         "Step_Momentum": st.column_config.NumberColumn("Step Mom", format="%.0f"),
-        "Discovery_Momentum": st.column_config.NumberColumn("Discovery Mom", format="%.2f")
     }
 )
