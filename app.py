@@ -14,9 +14,9 @@ with st.sidebar:
     st.write("• 01:30 PM: Reliance Q1 Result")
     st.write("• 03:00 PM: Global Market Cues")
     st.write("---")
-    st.info("💡 Tip: Date aur saare columns move kar sakte ho.")
+    st.info("💡 Tip: 10 Saal ka Daily Data Load ho raha hai.")
 
-st.title("🚀 Nifty 50 Discovery Pro Engine")
+st.title("🚀 Nifty 50 Discovery Pro [10Y Daily Engine]")
 
 # =====================================================================
 # MATH & DATA ENGINE
@@ -35,7 +35,8 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0):
 
 @st.cache_data(ttl=3600)
 def get_data():
-    raw = yf.download("^NSEI", period="2y", interval="1h")
+    # 10 Saal ka Daily Data
+    raw = yf.download("^NSEI", period="10y", interval="1d")
     df = pd.DataFrame(index=raw.index)
     df[['Close', 'High', 'Low', 'Open']] = raw[['Close', 'High', 'Low', 'Open']].ffill()
     
@@ -43,10 +44,12 @@ def get_data():
     df['a_Close'] = df['Close']
     df['b_Kalman'] = apply_kalman_filter_custom(df['a_Close'].values)
     df['c_Gap'] = df['a_Close'] - df['b_Kalman']
+    # 10 saal ke liye 25 din ka target shift rakha hai
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     return df.dropna()
 
 df = get_data()
+# 50:50 Split for 10 years of data
 split_idx = int(len(df) * 0.50)
 predict = df.iloc[split_idx:].copy()
 
@@ -61,17 +64,17 @@ predict['Prob_Step_Momentum'] = np.round(apply_kalman_filter_custom(predict['Pro
 predict['Kalman_Adjusted_Mom'] = predict['Prob_Weighted_Momentum'] * predict['b_Kalman']
 
 # =====================================================================
-# DASHBOARD (3 Figure Formatting)
+# DASHBOARD
 # =====================================================================
-st.subheader("📋 Discovery Engine Data Table")
+st.subheader("📋 10-Year Daily Discovery Table")
 display_df = predict.reset_index()
 
 st.data_editor(
-    display_df.sort_values(by='Datetime', ascending=False),
+    display_df.sort_values(by='Date', ascending=False), # Note: Daily data mein index 'Date' hota hai
     use_container_width=True,
     height=600,
     column_config={
-        "Datetime": st.column_config.DatetimeColumn("Date & Time", format="DD/MM/YYYY HH:mm"),
+        "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
         "Prob_Weighted_Momentum": st.column_config.NumberColumn("Prob Weighted Mom", format="%.3g"),
         "Prob_Step_Momentum": st.column_config.NumberColumn("Prob Step Mom", format="%.3g"),
         "Kalman_Adjusted_Mom": st.column_config.NumberColumn("Kalman Adjusted Mom", format="%.3g"),
