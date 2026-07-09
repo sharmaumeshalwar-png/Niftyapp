@@ -51,6 +51,7 @@ def apply_non_linear_kalman_momentum(data_array):
     return filtered_values
 
 with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+    # Target 2y exact data to catch the absolute latest hour
     raw_df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
     
     if raw_df.empty:
@@ -70,7 +71,13 @@ with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices...
             df[col] = raw_df[col].ffill()
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
+    
+    # Strictly convert index to Indian Timezone (Kolkata) to fix the latest date issue
     df.index = pd.to_datetime(df.index)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+    else:
+        df.index = df.index.tz_convert('Asia/Kolkata')
 
     # Safe Shifting Layer
     df['Prev_High'] = df['High'].shift(1).ffill().bfill()
@@ -117,6 +124,9 @@ else:
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
+    
+    # NEW FEATURE: Sum of both probabilities column
+    df_predict['Prob_Sum'] = df_predict['Prob_Up'] + df_predict['Prob_Down']
 
     # =====================================================================
     # LIVE TREND-LOCK + NEW CUMULATIVE PROBABILITY FLOW ENGINE
@@ -234,15 +244,5 @@ else:
     display_df['a_Close'] = df_predict['a_Close'].round(2)
     display_df['Prob_Up'] = df_predict['Prob_Up'].round(3)
     display_df['Prob_Down'] = df_predict['Prob_Down'].round(3)
-    display_df['Net_Prob_Flow'] = df_predict['Net_Prob_Flow'].round(2)
-    display_df['Flow_State'] = df_predict['Flow_State']
-    display_df['Accumulator_Score'] = df_predict['Accumulator_Score'].astype(int)
-    display_df['Step_Momentum'] = df_predict['Step_Momentum'].astype(int)
-    display_df['d_ML_Signal'] = df_predict['d_ML_Signal']
-    display_df['Trap_Status'] = df_predict['Trap_Status']
-    
-    display_df = display_df.sort_index(ascending=False)
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    display_df['Prob_Sum'] = df_predict['Prob_Sum'].round(2)  # Added to view sum (strictly 1.00)
+    display_df['Net_Prob_Flow'] = df_predict['Net_Prob_Flow'].
