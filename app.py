@@ -191,4 +191,58 @@ else:
             if c_val < p_low: 
                 final_signals.append("🔴 STRONG SELL (Max [-5/-5])")
             else:
-                final_signals.append("🟢 HOLD
+                final_signals.append("🟢 HOLD LONG (No Short)")
+                trap_msg = "⚠️ BEAR TRAP"
+        else:
+            if current_state == "BUY":
+                if accumulator > 0: 
+                    final_signals.append(f"🟢 HOLD BUY (Score: {accumulator})")
+                else:
+                    if c_val < p_low: 
+                        final_signals.append(f"⚠️ BUY CRITICAL (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE"
+            elif current_state == "SELL":
+                if accumulator < 0: 
+                    final_signals.append(f"🔴 HOLD SELL (Score: {accumulator})")
+                else:
+                    if c_val > p_high: 
+                        final_signals.append(f"⚠️ SELL CRITICAL (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE"
+            else:
+                final_signals.append(f"⚪ NEUTRAL (Score: {accumulator})")
+
+        trap_status_log.append(trap_msg)
+
+    # State Assignment Layer
+    df_predict['d_ML_Signal'] = np.array(final_signals, dtype=object)
+    df_predict['Trap_Status'] = np.array(trap_status_log, dtype=object)
+    df_predict['Accumulator_Score'] = np.array(scores_log, dtype=int)
+    df_predict['Raw_Weighted_Momentum'] = np.array(raw_weighted_momentum_log, dtype=float)
+    df_predict['Net_Prob_Flow'] = np.array(cum_prob_flow_log, dtype=float)
+    df_predict['Flow_State'] = np.array(flow_direction_log, dtype=object)
+
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].to_numpy(), initial_p=0.50)
+    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].to_numpy())
+    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
+
+    # Presentation Output Creation
+    display_df = pd.DataFrame(index=df_predict.index)
+    display_df['a_Close'] = df_predict['a_Close'].round(2)
+    display_df['Prob_Up'] = df_predict['Prob_Up'].round(3)
+    display_df['Prob_Down'] = df_predict['Prob_Down'].round(3)
+    display_df['Net_Prob_Flow'] = df_predict['Net_Prob_Flow'].round(2)
+    display_df['Flow_State'] = df_predict['Flow_State']
+    display_df['Accumulator_Score'] = df_predict['Accumulator_Score'].astype(int)
+    display_df['Step_Momentum'] = df_predict['Step_Momentum'].astype(int)
+    display_df['d_ML_Signal'] = df_predict['d_ML_Signal']
+    display_df['Trap_Status'] = df_predict['Trap_Status']
+    
+    display_df = display_df.sort_index(ascending=False)
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard")
+    st.dataframe(display_df, use_container_width=True, height=750)
