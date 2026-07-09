@@ -55,7 +55,7 @@ with st.spinner("🚀 Smoothing Volatility Waves & Training Weighted Core..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']  
     
-    # 🆕 THE HYBRID SHIFT: Raw Range to Weighted Volatility Momentum Wave
+    # Hybrid Shift: Raw Range to Weighted Volatility Momentum Wave
     df['Raw_Range'] = df['High'] - df['Low']
     df['Volatility_Momentum'] = apply_kalman_filter_custom(df['Raw_Range'].values, initial_p=0.50)
     
@@ -68,7 +68,7 @@ with st.spinner("🚀 Smoothing Volatility Waves & Training Weighted Core..."):
     df['Normalized_Gap'] = df['c_Combined'] / rolling_std
     df['Flow_Velocity'] = df['Volatility_Momentum'].diff(1) 
     
-    # 🎯 TARGET DESIGN: Predict if Weighted Volatility Momentum expands vs Strictly 1 Candle Past
+    # TARGET DESIGN: Predict if Weighted Volatility Momentum expands vs Strictly 1 Candle Past
     df['Target'] = np.where(df['Volatility_Momentum'] > df['Volatility_Momentum'].shift(1), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -130,35 +130,3 @@ else:
         scores_log.append(accumulator)
 
         if accumulator == 5:
-            current_state = "EXPANSION"
-            if c_val > p_high: final_signals.append("🟢 MOMENTUM BREAKOUT (Wave Confirmed Up)")
-            elif c_val < p_low: final_signals.append("🔴 MOMENTUM BREAKDOWN (Wave Confirmed Down)")
-            else: final_signals.append("⚡ MOMENTUM WAVE EXPANDING (No Price Confirmation)")
-        elif accumulator == -5:
-            current_state = "SQUEEZE"
-            final_signals.append("⚪ COMPRESSION BLOCK (Squeeze Active / No Trade)")
-        else:
-            if current_state == "EXPANSION":
-                if accumulator > 0: final_signals.append(f"🔄 HOLD POSITION | Wave Cooling ({accumulator})")
-                else: final_signals.append(f"⚠️ WAVE FADE | Volatility Dropping ({accumulator})")
-            else:
-                final_signals.append(f"💤 CHOPPY WAVE | Squeeze Phase ({accumulator})")
-
-    df_predict['d_ML_Signal'] = final_signals
-    df_predict['Accumulator_Score'] = scores_log
-
-    # Table View Layout Configuration
-    clean_display_cols = [
-        'a_Close', 'Volatility_Momentum', 'Prob_Up', 'Prob_Down', 
-        'Accumulator_Score', 'd_ML_Signal'
-    ]
-    
-    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['Volatility_Momentum'] = display_df['Volatility_Momentum'].round(4)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
-    
-    display_df.index = pd.to_datetime(display_df.index).
