@@ -2,52 +2,51 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
+from sklearn.linear_model import LinearRegression
 
 st.set_page_config(layout="wide")
-st.title("🎯 2-Year Audit: Convergence & Future Projection")
+st.title("🎯 ML Convergence Sniper: 2-Year Full Audit")
 
 @st.cache_data(ttl=3600)
-def get_full_2year_data():
-    all_chunks = []
+def get_ml_data():
+    # 2 Year Batching (Server Timeout avoid karne ke liye)
     end = datetime.now()
-    # 2 saal ko 8 tukdon (3 mahine each) mein baata taki server error na aaye
-    for i in range(8):
-        start_chunk = end - timedelta(days=(i+1)*90)
-        end_chunk = end - timedelta(days=i*90)
-        chunk = yf.download("^NSEI", start=start_chunk, end=end_chunk, interval="1h", progress=False)
-        if not chunk.empty:
-            all_chunks.append(chunk)
-    
-    df = pd.concat(all_chunks).sort_index().ffill().dropna()
+    start = end - timedelta(days=730)
+    # Batch request for stability
+    df = yf.download("^NSEI", start=start, end=end, interval="1h", progress=False)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    return df
+    return df.ffill().dropna()
 
-df = get_full_2year_data()
+df = get_ml_data()
 
-# 50:50 Split (1st Year Train, 2nd Year Audit)
-mid = len(df) // 2
-audit_df = df.iloc[mid:].copy()
+# 50:50 Split for ML Training
+split = len(df) // 2
+train_df = df.iloc[:split]
+test_df = df.iloc[split:].copy()
 
-# 8-Hour Convergence Lock
-audit_df['LOCK'] = audit_df['Close'].rolling(window=8).mean()
+# ML Features Engineering
+# Hum 'Close' price predict karenge pichle 8 ghante ke features se
+def create_features(data):
+    d = data.copy()
+    for i in range(1, 9):
+        d[f'lag_{i}'] = d['Close'].shift(i)
+    return d.dropna()
 
-# "Target" Calculation: Agle 4 ghante mein price LOCK (Fair Value) par aana chahiye
-audit_df['Convergence_Target'] = audit_df['LOCK'] 
-audit_df['Target_Date'] = audit_df.index + timedelta(hours=4)
+train_feat = create_features(train_df)
+test_feat = create_features(test_df)
 
-# Visualization
-st.write(f"📊 Audit Records: {len(audit_df)}")
-st.dataframe(audit_df[['Close', 'LOCK', 'Convergence_Target', 'Target_Date']].sort_index(ascending=False).head(50), use_container_width=True)
+X_train = train_feat[[f'lag_{i}' for i in range(1, 9)]]
+y_train = train_feat['Close']
+X_test = test_feat[[f'lag_{i}' for i in range(1, 9)]]
 
-st.markdown("""
-### 8-Step Verification (Convergence Projection):
-1. **Divide:** 2 साल के डेटा को 50:50 में बांटा।
-2. **Train:** 1st year के पैटर्न से 'LOCK' की स्टेबिलिटी सीखी।
-3. **Lock:** 8-घंटे की रोलिंग विंडो से 'Fair Value' लॉक की।
-4. **Target:** 'Convergence_Target' का मतलब है कि अगर मार्केट अपनी औसत (Mean) पर वापस आता है, तो प्राइस क्या होगा।
-5. **Timeline:** 'Target_Date' वह समय है जब प्राइस को 'LOCK' के पास होना चाहिए।
-6. **Evaluate:** आप चेक कर सकते हैं कि क्या 'Close' प्राइस 'Convergence_Target' के पास गया।
-7. **Verify:** HIT (Success) या MISS का पैटर्न देखें।
-8. **Final Lock:** यह डेटा 2 साल के इतिहास का निचोड़ है।
-""")
+# ML Model Training
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Prediction
+test_feat['Predicted_Price'] = model.predict(X_test)
+test_feat['Target_Time'] = test_feat.index
+
+st.write(f"📊 ML Model Trained on: {len(train_feat)} hours | Audit: {len(test_feat)} hours")
+st.dataframe(test_feat[['Close', 'Predicted_Price', 'Target_Time']].sort_index(ascending=False).head(20), use_container_width=True)
