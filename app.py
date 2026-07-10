@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="Nifty Dynamic Pulse Price Trigger", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour [Umesh Dynamic Price Trigger]")
+st.write("🎯 **Aapki Custom Setting:** Strict 1-Hour + 50:50 Split + **Dynamic Pulse Price Trigger Level (No Hardcoding)** + Latest Candle on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,24 +29,18 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
-    # -----------------------------------------------------------------
-    # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
-    # -----------------------------------------------------------------
+with st.spinner("Scanning Nifty Matrix for Dynamic Pulse Trigger Prices..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
-    
-    # +1 Day shift taaki Yahoo Finance aaj ka pura live data include kare
     end_date = current_time + timedelta(days=1) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact buffered date boundaries
     raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
+        st.error(f"Data Connection Timeout. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -56,12 +50,12 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active)
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (VWAP features are completely omitted)
+    # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -69,13 +63,12 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -113,12 +106,35 @@ else:
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
+    # Core Pulse Signal Calculation
+    df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
+    energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
+    df_predict['Pulse_Active'] = df_predict['Feature_Energy'] > energy_threshold
+
+    # -----------------------------------------------------------------
+    # 🎯 UMESH DYNAMIC PULSE PRICE TRIGGER (Dynamic Price Catching)
+    # -----------------------------------------------------------------
+    dynamic_trigger_log = []
+    
+    for idx, row in df_predict.iterrows():
+        current_close_price = round(row['a_Close'], 1)
+        
+        # Agar is candle par ML Pulse Active hua h
+        if row['Pulse_Active']:
+            # Direction check based on ML Probabilities
+            if row['Prob_Up'] > row['Prob_Down']:
+                dynamic_trigger_log.append(f"🎯 Trigger: When price cross {current_close_price} ABOVE it's hit 📈")
+            else:
+                dynamic_trigger_log.append(f"🎯 Trigger: When price cross {current_close_price} BELOW it's hit 📉")
+        else:
+            dynamic_trigger_log.append("⚪ Stable Flow")
+
+    df_predict['Umesh_Pulse_Price_Trigger'] = dynamic_trigger_log
+
     # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Umesh_Pulse_Price_Trigger']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
