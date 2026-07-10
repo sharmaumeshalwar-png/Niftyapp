@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Live Pulse Trigger", layout="wide")
-st.title("⚡ Nifty 50 Real-Time [Umesh Strict Pulse Trigger]")
-st.write("🎯 **Strict Pulse Rule:** Only triggers when ML Pulse is Active. No stable candle noise. Uses running candle base.")
+st.set_page_config(page_title="BTC Core Pulse Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour [Core Pulse Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + Strict 2-Year Range + 50:50 Split + **Micro-Momentum Pulse Detector** + No Price Triggers + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Connecting to Live Market Streams..."):
+with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -37,10 +37,11 @@ with st.spinner("Connecting to Live Market Streams..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
+    # CHANGED TICKER TO BTC-USD FOR BITCOIN
+    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error(f"Data Connection Timeout. Please refresh.")
+        st.error(f"YFinance API Limit Error for BTC. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -63,6 +64,7 @@ with st.spinner("Connecting to Live Market Streams..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Clean Binary State Definition
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -83,70 +85,4 @@ else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
-
-    # Live Accumulators & Raw Logs
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
-    
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
-    closes = df_predict['a_Close'].to_numpy()
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-
-    for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Core Pulse Signal Calculation
-    df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
-    energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
-    df_predict['Pulse_Active'] = df_predict['Feature_Energy'] > energy_threshold
-
-    # -----------------------------------------------------------------
-    # 🎯 STRIKT LIVE PRICE PULSE FILTER (Umesh Optimized)
-    # -----------------------------------------------------------------
-    strict_trigger_log = []
-    
-    for idx, row in df_predict.iterrows():
-        # Live chalte bhav ko track karne ke liye candle ka Open price dynamic base banega
-        live_bhav = round(row['Open'], 1)
-        
-        # Trigger STRICTLY tabhi aayega jab Pulse Active ho (No normal candle noise)
-        if row['Pulse_Active'] == True:
-            if row['Prob_Up'] > row['Prob_Down']:
-                strict_trigger_log.append(f"📈 Trigger Above {live_bhav}")
-            else:
-                strict_trigger_log.append(f"📉 Trigger Below {live_bhav}")
-        else:
-            # Normal ya stable candle par bilkul saaf blank space rahega
-            strict_trigger_log.append("-")
-
-    df_predict['Umesh_Pulse_Price_Trigger'] = strict_trigger_log
-
-    # Formatting UI Structure
-    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Umesh_Pulse_Price_Trigger']
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['Open'] = display_df['Open'].round(2)
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    # Latest candle on top
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    probabilities = model_flow.predict_
