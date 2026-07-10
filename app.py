@@ -2,68 +2,69 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
-# Page Configuration
-st.set_page_config(page_title="Nifty 2-Year Hybrid Engine", layout="wide")
-st.title("📊 Nifty 50 Hybrid Engine: 2-Year 50:50 Split")
+st.set_page_config(layout="wide")
+st.title("📊 Nifty 50: Max 2-Year Full-Candle Engine [50:50 Split]")
 
 # =====================================================================
-# MATHEMATICAL ENGINE: KALMAN FILTERS
+# CORE MATHEMATICAL FUNCTIONS
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=100.0, q=0.0001, r=2.5): 
-    if len(data_array) == 0: return []
-    x = data_array[0]; p = initial_p
-    filtered_values = []
-    for z in data_array:
-        p = p + q; k = p / (p + r); x = x + k * (z - x); p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+def apply_kalman(data, initial_p=100.0, q=0.0001, r=2.5):
+    x = data[0]; p = initial_p; filtered = []
+    for z in data:
+        p += q; k = p / (p + r); x += k * (z - x); p *= (1 - k)
+        filtered.append(x)
+    return np.array(filtered)
 
-def apply_non_linear_kalman(data_array):
-    if len(data_array) == 0: return []
-    x = data_array[0]; p = 1.0; q = 0.05; r = 0.2
-    filtered_values = []
-    for z in data_array:
-        p = p + q; k = p / (p + r); x = x + k * (z - x); p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+def apply_step_momentum(data):
+    x = data[0]; p = 1.0; q = 0.05; r = 0.2; filtered = []
+    for z in data:
+        p += q; k = p / (p + r); x += k * (z - x); p *= (1 - k)
+        filtered.append(x)
+    return np.round(filtered)
 
-with st.spinner("Loading 2-Year Nifty Data & Training Engine..."):
-    # 2 Year Data Fetch
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=730)
-    raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
-    
-    df = pd.DataFrame(index=raw_df.index)
-    df['a_Close'] = raw_df['Close'].ffill()
-    df['Open'] = raw_df['Open'].ffill(); df['High'] = raw_df['High'].ffill(); df['Low'] = raw_df['Low'].ffill()
-    df.dropna(inplace=True)
+# =====================================================================
+# DATA PIPELINE (Max Candles Fetch)
+# =====================================================================
+@st.cache_data
+def get_data():
+    # 2 years = 730 days
+    end = datetime.now()
+    start = end - timedelta(days=730)
+    raw = yf.download("^NSEI", start=start, end=end, interval="1h", auto_adjust=True)
+    return raw.ffill().dropna()
 
-    # Momentum Layers
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values)
-    df['Raw_Weighted_Momentum'] = df['a_Close'] - df['b_Kalman_Price']
-    df['Weighted_Momentum'] = apply_kalman_filter_custom(df['Raw_Weighted_Momentum'].values, initial_p=0.50)
-    df['Step_Momentum'] = np.round(apply_non_linear_kalman(df['Weighted_Momentum'].values))
+with st.spinner("Processing Maximum Candles (1H) for 2-Year Horizon..."):
+    df = get_data()
+    total_candles = len(df)
     
-    # ML Features
-    df['Velocity'] = df['Weighted_Momentum'].diff(1).fillna(0)
-    df['Acceleration'] = df['Velocity'].diff(1).fillna(0)
-    df['Target'] = np.where(df['Weighted_Momentum'] > df['Weighted_Momentum'].shift(1), 1, 0)
+    # 1. Base Kalman Price
+    df['Kalman_Price'] = apply_kalman(df['Close'].values)
     
-    # Split Engine (50:50)
-    df_clean = df.dropna().copy()
-    split_idx = int(len(df_clean) * 0.50)
-    train_df = df_clean.iloc[:split_idx]
-    pred_df = df_clean.iloc[split_idx:]
+    # 2. Weighted Momentum
+    df['Raw_WM'] = df['Close'] - df['Kalman_Price']
+    df['Weighted_Momentum'] = apply_kalman(df['Raw_WM'].values, initial_p=0.5, q=0.01, r=0.5)
     
-    # Training
-    features = ['Weighted_Momentum', 'Velocity', 'Acceleration']
-    model = RandomForestClassifier(n_estimators=50, max_depth=3).fit(train_df[features], train_df['Target'])
-    pred_df['ML_Prob'] = model.predict_proba(pred_df[features])[:, 1]
+    # 3. Step Momentum
+    df['Step_Momentum'] = apply_step_momentum(df['Weighted_Momentum'].values)
     
-    # Display
-    st.write(f"Total Data Points: {len(df_clean)} | Split Point: {split_idx}")
-    display_cols = ['a_Close', 'Weighted_Momentum', 'Step_Momentum', 'ML_Prob']
-    st.dataframe(pred_df[display_cols].sort_index(ascending=False), use_container_width=True)
+    # 4. Accumulator (Trend Lock)
+    # Score increases if Weighted Momentum > 0 and Step Momentum > 0
+    df['Accumulator'] = 0
+    signal = 0
+    for i in range(len(df)):
+        if df['Weighted_Momentum'].iloc[i] > 0 and df['Step_Momentum'].iloc[i] > 0:
+            signal = min(signal + 1, 5)
+        elif df['Weighted_Momentum'].iloc[i] < 0 and df['Step_Momentum'].iloc[i] < 0:
+            signal = max(signal - 1, -5)
+        df.iloc[i, df.columns.get_loc('Accumulator')] = signal
+
+    # 5. 50:50 Split (Displaying the Second Half)
+    split_idx = int(total_candles * 0.50)
+    display_df = df.iloc[split_idx:].sort_index(ascending=False)
+
+    st.write(f"### 📈 Total Candles Processed: {total_candles} | Live Prediction Window (Last 50%): {len(display_df)} Rows")
+    
+    st.dataframe(display_df[['Close', 'Weighted_Momentum', 'Step_Momentum', 'Accumulator']], 
+                 use_container_width=True)
