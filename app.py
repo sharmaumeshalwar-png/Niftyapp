@@ -6,103 +6,64 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 50 2-Year Engine", layout="wide")
-st.title("📊 Nifty 50 [2-Year Historical] Hybrid Engine")
+st.set_page_config(page_title="Nifty 2-Year Hybrid Engine", layout="wide")
+st.title("📊 Nifty 50 Hybrid Engine: 2-Year 50:50 Split")
 
 # =====================================================================
-# MATHEMATICAL ENGINE
+# MATHEMATICAL ENGINE: KALMAN FILTERS
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=100.0): 
-    x = data_array[0]
-    p = initial_p
-    q, r = 0.0001, 2.5
+def apply_kalman_filter_custom(data_array, initial_p=100.0, q=0.0001, r=2.5): 
+    if len(data_array) == 0: return []
+    x = data_array[0]; p = initial_p
     filtered_values = []
     for z in data_array:
-        p = p + q
-        k = p / (p + r)
-        x = x + k * (z - x)
-        p = (1 - k) * p
+        p = p + q; k = p / (p + r); x = x + k * (z - x); p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
-# =====================================================================
-# DATA FETCHING & CLEANING
-# =====================================================================
-@st.cache_data
-def get_nifty_data():
+def apply_non_linear_kalman(data_array):
+    if len(data_array) == 0: return []
+    x = data_array[0]; p = 1.0; q = 0.05; r = 0.2
+    filtered_values = []
+    for z in data_array:
+        p = p + q; k = p / (p + r); x = x + k * (z - x); p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
+
+with st.spinner("Loading 2-Year Nifty Data & Training Engine..."):
+    # 2 Year Data Fetch
     end_date = datetime.now()
     start_date = end_date - timedelta(days=730)
+    raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
     
-    # Downloading Daily data for 2 years
-    raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1d")
-    
-    # FIX: Handling MultiIndex columns
-    if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = raw_df.columns.get_level_values(0)
-    
-    df = raw_df.reset_index()
+    df = pd.DataFrame(index=raw_df.index)
+    df['a_Close'] = raw_df['Close'].ffill()
+    df['Open'] = raw_df['Open'].ffill(); df['High'] = raw_df['High'].ffill(); df['Low'] = raw_df['Low'].ffill()
     df.dropna(inplace=True)
-    return df
 
-with st.spinner("Fetching and Calibrating 2-Year Nifty Matrices..."):
-    df = get_nifty_data()
-    
-    # Ensure columns exist and are numeric
-    for col in ['Open', 'High', 'Low', 'Close']:
-        df[col] = pd.to_numeric(df[col])
-
-    # Base Matrix Calculations
-    df['a_Close'] = df['Close']
+    # Momentum Layers
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+    df['Raw_Weighted_Momentum'] = df['a_Close'] - df['b_Kalman_Price']
+    df['Weighted_Momentum'] = apply_kalman_filter_custom(df['Raw_Weighted_Momentum'].values, initial_p=0.50)
+    df['Step_Momentum'] = np.round(apply_non_linear_kalman(df['Weighted_Momentum'].values))
     
-    # Microstructure Features
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    # ML Features
+    df['Velocity'] = df['Weighted_Momentum'].diff(1).fillna(0)
+    df['Acceleration'] = df['Velocity'].diff(1).fillna(0)
+    df['Target'] = np.where(df['Weighted_Momentum'] > df['Weighted_Momentum'].shift(1), 1, 0)
     
-    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
-    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
+    # Split Engine (50:50)
+    df_clean = df.dropna().copy()
+    split_idx = int(len(df_clean) * 0.50)
+    train_df = df_clean.iloc[:split_idx]
+    pred_df = df_clean.iloc[split_idx:]
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0)
+    # Training
+    features = ['Weighted_Momentum', 'Velocity', 'Acceleration']
+    model = RandomForestClassifier(n_estimators=50, max_depth=3).fit(train_df[features], train_df['Target'])
+    pred_df['ML_Prob'] = model.predict_proba(pred_df[features])[:, 1]
     
-    # Final Clean
-    df_clean = df.dropna(subset=features_matrix + ['Target']).copy()
-
-# =====================================================================
-# DYNAMIC 50:50 SPLIT ENGINE
-# =====================================================================
-split_idx = int(len(df_clean) * 0.50)
-df_train, df_predict = df_clean.iloc[:split_idx], df_clean.iloc[split_idx:]
-
-X_train, y_train = df_train[features_matrix], df_train['Target']
-model_flow = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42).fit(X_train, y_train)
-
-# Predictions
-probs = model_flow.predict_proba(df_predict[features_matrix])
-df_predict['Prob_Up'] = probs[:, 1]
-df_predict['Prob_Down'] = probs[:, 0]
-
-# Logic Loop
-accumulator = 0
-signals = []
-for i in range(len(df_predict)):
-    if df_predict['Prob_Up'].iloc[i] >= 0.55: accumulator += 1
-    elif df_predict['Prob_Down'].iloc[i] >= 0.55: accumulator -= 1
-    accumulator = max(-5, min(5, accumulator))
-    
-    if accumulator == 5: sig = "🟢 STRONG BUY"
-    elif accumulator == -5: sig = "🔴 STRONG SELL"
-    else: sig = f"🔄 Neutral (Score: {accumulator})"
-    signals.append(sig)
-
-df_predict['d_ML_Signal'] = signals
-
-# Display
-st.subheader("📋 2-Year Nifty Dual Momentum Results (50:50 Split)")
-st.dataframe(df_predict[['Date', 'a_Close', 'Prob_Up', 'd_ML_Signal']].tail(50))
-
-st.write("---")
-st.write("✅ **Engine Status:** 50% Train / 50% Predict | Data: 2 Years Daily | ML: Random Forest")
+    # Display
+    st.write(f"Total Data Points: {len(df_clean)} | Split Point: {split_idx}")
+    display_cols = ['a_Close', 'Weighted_Momentum', 'Step_Momentum', 'ML_Prob']
+    st.dataframe(pred_df[display_cols].sort_index(ascending=False), use_container_width=True)
