@@ -1,52 +1,276 @@
 import streamlit as st
+import numpy as np
 import pandas as pd
 import yfinance as yf
-import numpy as np
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(layout="wide")
-st.title("🎯 ML Convergence: Final Hardened Audit")
+# Page Configuration
+st.set_page_config(page_title="Nifty Dual Momentum Engine", layout="wide")
+st.title("📊 Nifty 50 Live 1-Hour Hybrid Double Kalman [0.50 Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only Nifty 50 Index Data + Strictly Past 25-Candle Window + Double Filtered Weighted Momentum Layer + Instant Linear & Non-Linear ML Column Arrays")
 
-@st.cache_data(ttl=3600)
-def get_hardened_data():
-    # Load 2-year data
-    df = yf.download("^NSEI", period="2y", interval="1h", progress=False)
+# =====================================================================
+# MATHEMATICAL ENGINE 1: LINEAR FILTER (Price & Original Momentum Layer)
+# =====================================================================
+def apply_kalman_filter_custom(data_array, initial_p=100.0): 
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = initial_p  
     
-    # Flatten Columns
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    # LINEAR DISTANCE PARAMETERS
+    q = 0.0001     
+    r = 2.5        
     
-    # Data Cleaning: Har missing value ko handle karna
-    df = df.ffill().bfill()
-    df = df.replace([np.inf, -np.inf], np.nan).dropna()
-    return df
+    filtered_values = []
+    for z in data_array:
+        p = p + q
+        k = p / (p + r)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
 
-df = get_hardened_data()
+# =====================================================================
+# MATHEMATICAL ENGINE 2: NON-LINEAR FILTER
+# =====================================================================
+def apply_non_linear_kalman_momentum(data_array):
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = 1.0  
+    q = 0.05   
+    r = 0.2    
+    
+    filtered_values = []
+    for z in data_array:
+        p = p + q
+        k = p / (p + r)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
 
-# ML Features Setup
-data = df[['Close']].copy()
-for i in range(1, 9):
-    data[f'lag_{i}'] = data['Close'].shift(i)
+with st.spinner("Aligning 25-Candle Dual Kalman Nifty Microstructure Matrices..."):
+    # Data download block
+    raw_df = yf.download("^NSEI", period="1y", interval="1h", group_by='column')
+    
+    if raw_df.empty:
+        raw_df = yf.download("^NSEI", period="1mo", interval="1h")
+        
+    if raw_df.empty:
+        st.error("YFinance API Timeout or Indian Market Closed. Please refresh the dashboard.")
+        st.stop()
+        
+    df = pd.DataFrame(index=raw_df.index)
+    
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in raw_df.columns:
+            if isinstance(raw_df[col], pd.DataFrame):
+                df[col] = raw_df[col].iloc[:, 0].ffill()
+            else:
+                df[col] = raw_df[col].ffill()
 
-# NaN ko hatao jo shift() ke wajah se aate hain
-data = data.dropna()
+    df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
+    df.index = pd.to_datetime(df.index)
 
-# 50:50 Split
-split = len(data) // 2
-train = data.iloc[:split]
-test = data.iloc[split:]
+    # Base Matrix Definition
+    df['a_Close'] = df['Close']
+    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=100.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+    
+    df['Sign_Change'] = np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))
+    df['Sign_Change'] = df['Sign_Change'].astype(int)
+    
+    # Microstructure Features
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    
+    rolling_std = df['c_Combined'].rolling(window=24).std() + 1e-10
+    df['Normalized_Gap'] = df['c_Combined'] / rolling_std
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
+    
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(1), 1, 0)
+    
+    df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=features_matrix + ['Target']).copy()
 
-# Ensure X and y are clean
-X_train = train[[f'lag_{i}' for i in range(1, 9)]].values
-y_train = train['Close'].values
-X_test = test[[f'lag_{i}' for i in range(1, 9)]].values
+    # STRICTLY PAST 25 CANDLES LIMIT ENFORCEMENT
+    if len(df_clean) >= 25:
+        df_clean = df_clean.tail(25)
 
-# ML Training (Robust Mode)
-model = LinearRegression()
-model.fit(X_train, y_train)
+# =====================================================================
+# DYNAMIC SPLIT ENGINE
+# =====================================================================
+split_idx = int(len(df_clean) * 0.50)
 
-# Prediction
-test['Predicted_Price'] = model.predict(X_test)
+df_train = df_clean.iloc[:split_idx].copy()
+X_train = df_train[features_matrix]
+y_train = df_train['Target']
 
-st.write(f"✅ Data Sanitized: {len(test)} points audited.")
-st.dataframe(test[['Close', 'Predicted_Price']].sort_index(ascending=False).head(20), use_container_width=True)
+df_predict = df_clean.iloc[split_idx:].copy()
+X_predict = df_predict[features_matrix]
+
+if len(X_predict) == 0 or len(X_train) == 0:
+    st.error(f"⚠️ Data size insufficient for split. Total rows: {len(df_clean)}")
+else:
+    df_predict['Prob_Down'] = 0.50
+    df_predict['Prob_Up'] = 0.50
+
+    if len(np.unique(y_train)) > 1:
+        model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
+        model_flow.fit(X_train, y_train)
+        probabilities = model_flow.predict_proba(X_predict)
+        
+        if probabilities.shape[1] == 2:
+            df_predict['Prob_Down'] = probabilities[:, 0]
+            df_predict['Prob_Up'] = probabilities[:, 1]
+        else:
+            only_class = model_flow.classes_[0]
+            if only_class == 1:
+                df_predict['Prob_Down'] = 0.0
+                df_predict['Prob_Up'] = 1.0
+            else:
+                df_predict['Prob_Down'] = 1.0
+                df_predict['Prob_Up'] = 0.0
+    else:
+        fallback_val = 1.0 if (len(y_train) > 0 and y_train.iloc[0] == 1) else 0.0
+        df_predict['Prob_Down'] = float(1.0 - fallback_val)
+        df_predict['Prob_Up'] = float(fallback_val)
+
+    df_predict['Prev_High'] = df_predict['High'].shift(1)
+    df_predict['Prev_Low'] = df_predict['Low'].shift(1)
+
+    # =====================================================================
+    # LIVE TREND-LOCK CIRCUIT
+    # =====================================================================
+    final_signals = []
+    scores_log = []
+    raw_weighted_momentum_log = [] 
+    trap_status_log = [] 
+    current_state = "HOLD"
+    accumulator = 0
+
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    prev_highs = df_predict['Prev_High'].to_numpy()
+    prev_lows = df_predict['Prev_Low'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+        c_val = closes[i]
+        k_price_val = kalmans_price[i]
+        p_high = prev_highs[i] if not np.isnan(prev_highs[i]) else c_val
+        p_low = prev_lows[i] if not np.isnan(prev_lows[i]) else c_val
+
+        if p_up >= 0.55: accumulator += 1  
+        elif p_down >= 0.55: accumulator -= 1  
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+
+        calc_raw_weighted = c_val - k_price_val
+        raw_weighted_momentum_log.append(calc_raw_weighted)
+
+        trap_msg = "TREND VALID"
+
+        if accumulator == 5:
+            current_state = "BUY"
+            if c_val > p_high: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
+            else:
+                final_signals.append("❌ NO ENTRY (Wait for Breakout)")
+                trap_msg = "⚠️ BULL TRAP (High Not Broken)"
+        elif accumulator == -5:
+            current_state = "SELL"
+            if c_val < p_low: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
+            else:
+                final_signals.append("🟢 HOLD LONG (No Short Entry)")
+                trap_msg = "⚠️ BEAR TRAP (Low Not Broken)"
+        else:
+            if current_state == "BUY":
+                if accumulator > 0: final_signals.append(f"🟢 HOLD BUY | Points Decreasing (Score: {accumulator})")
+                else:
+                    if c_val < p_low: final_signals.append(f"⚠️ BUY CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD BUY | Fake Dip (Score: {accumulator})")
+                        trap_msg = "⚠️ BEAR TRAP INSIDE BULL TREND"
+            elif current_state == "SELL":
+                if accumulator < 0: final_signals.append(f"🔴 HOLD SELL | Points Increasing (Score: {accumulator})")
+                else:
+                    if c_val > p_high: final_signals.append(f"⚠️ SELL CRITICAL | Reversal Warning (Score: {accumulator})")
+                    else:
+                        final_signals.append(f"🔄 HOLD SELL | Fake Pump (Score: {accumulator})")
+                        trap_msg = "⚠️ BULL TRAP INSIDE BEAR TREND"
+            else:
+                final_signals.append(f"⚪ NEUTRAL | Building Conviction (Score: {accumulator})")
+
+        trap_status_log.append(trap_msg)
+
+    df_predict['d_ML_Signal'] = final_signals
+    df_predict['Trap_Status'] = trap_status_log 
+    df_predict['Accumulator_Score'] = scores_log 
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50)
+
+    non_linear_filtered = apply_non_linear_kalman_momentum(df_predict['Weighted_Momentum'].values)
+    df_predict['Step_Momentum'] = np.round(non_linear_filtered)
+
+    # =====================================================================
+    # 🔥 SECOND LEVEL BATCH ARRAY ML
+    # =====================================================================
+    df_predict['WM_Velocity'] = df_predict['Weighted_Momentum'].diff(1).fillna(0)
+    df_predict['WM_Acceleration'] = df_predict['WM_Velocity'].diff(1).fillna(0)
+    
+    wm_features = ['Weighted_Momentum', 'WM_Velocity', 'WM_Acceleration']
+    df_predict['WM_Target'] = np.where(df_predict['Weighted_Momentum'] > df_predict['Weighted_Momentum'].shift(1), 1, 0)
+    
+    X_wm = df_predict[wm_features]
+    y_wm = df_predict['WM_Target']
+    
+    df_predict['ML_WM_Linear_Prob'] = 0.50
+    df_predict['ML_WM_NonLinear_Prob'] = 0.50
+
+    if len(np.unique(y_wm)) > 1:
+        model_linear_batch = RandomForestClassifier(n_estimators=50, max_depth=2, random_state=42, n_jobs=-1)
+        model_linear_batch.fit(X_wm, y_wm)
+        prob_wm_lin = model_linear_batch.predict_proba(df_predict[wm_features])
+        if prob_wm_lin.shape[1] == 2:
+            df_predict['ML_WM_Linear_Prob'] = prob_wm_lin[:, 1]
+        
+        model_nonlinear_batch = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=-1)
+        model_nonlinear_batch.fit(X_wm, y_wm)
+        prob_wm_nonlin = model_nonlinear_batch.predict_proba(df_predict[wm_features])
+        if prob_wm_nonlin.shape[1] == 2:
+            df_predict['ML_WM_NonLinear_Prob'] = prob_wm_nonlin[:, 1]
+
+    # Table View Layout Configuration
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prev_High', 'Prev_Low', 
+        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 
+        'Weighted_Momentum', 'Step_Momentum', 
+        'ML_WM_Linear_Prob', 'ML_WM_NonLinear_Prob',
+        'd_ML_Signal', 'Trap_Status'
+    ]
+    
+    display_df = df_predict[clean_display_cols].copy().sort_index(ascending=False)
+        
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prev_High'] = display_df['Prev_High'].round(2)
+    display_df['Prev_Low'] = display_df['Prev_Low'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Accumulator_Score'] = display_df['Accumulator_Score'].astype(int)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    display_df['Step_Momentum'] = display_df['Step_Momentum'].astype(int) 
+    display_df['ML_WM_Linear_Prob'] = display_df['ML_WM_Linear_Prob'].round(3)
+    display_df['ML_WM_NonLinear_Prob'] = display_df['ML_WM_NonLinear_Prob'].round(3)
+    
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live 1-Hour Nifty Dual Momentum Engine Dashboard (Strict 25-Candle Setup)")
+    st.dataframe(display_df, use_container_width=True)
