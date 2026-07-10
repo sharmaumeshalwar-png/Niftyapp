@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="Nifty Dual Momentum Engine 2.0", layout="wide")
 st.title("📊 Nifty 50 [2-Year Historical] Hybrid Double Kalman Engine")
-st.write("🎯 **Mode:** 50:50 Split | **Data Range:** Last 2 Years (1-Hour)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: FILTERS
@@ -31,26 +30,18 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0, q=0.0001, r=2.5):
 end_date = datetime.now()
 start_date = end_date - timedelta(days=730) 
 
-with st.spinner(f"Downloading 2-Year Data from {start_date.strftime('%Y-%m-%d')}..."):
-    # Download data with explicit date range
+with st.spinner(f"Downloading data from {start_date.date()} to {end_date.date()}..."):
     raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
     
     if raw_df.empty:
-        st.error("Data fetch failed. Ensure Internet is ON and Nifty is ticker ^NSEI.")
+        st.error("Data empty! Check connection or Ticker.")
         st.stop()
         
-    df = pd.DataFrame(index=raw_df.index)
-    # Handle multi-level columns if present
+    # Flatten MultiIndex columns if they exist
     if isinstance(raw_df.columns, pd.MultiIndex):
-        df['Open'] = raw_df['Open'].iloc[:, 0]
-        df['High'] = raw_df['High'].iloc[:, 0]
-        df['Low'] = raw_df['Low'].iloc[:, 0]
-        df['Close'] = raw_df['Close'].iloc[:, 0]
-    else:
-        df[['Open', 'High', 'Low', 'Close']] = raw_df[['Open', 'High', 'Low', 'Close']]
+        raw_df.columns = raw_df.columns.get_level_values(0)
     
-    df.ffill(inplace=True)
-    df.dropna(inplace=True)
+    df = raw_df[['Open', 'High', 'Low', 'Close']].ffill().dropna()
 
     # Base Matrix
     df['a_Close'] = df['Close']
@@ -103,6 +94,6 @@ df_predict['d_ML_Signal'] = final_signals
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['c_Combined'].values, initial_p=0.50)
 
 # Display
-st.subheader("📋 Engine Dashboard (2-Year Historical Data Applied)")
+st.subheader("📋 Engine Dashboard")
 display_df = df_predict[['a_Close', 'Prob_Up', 'Weighted_Momentum', 'd_ML_Signal']].sort_index(ascending=False)
 st.dataframe(display_df.head(100), use_container_width=True)
