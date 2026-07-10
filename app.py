@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Crisp Trigger Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour [Umesh Short Trigger Edition]")
-st.write("🎯 **Aapki Custom Setting:** Strict 1-Hour + 50:50 Split + **Crisp Short Trigger Alerts** + Latest Candle on Top")
+st.set_page_config(page_title="Nifty Live Pulse Trigger", layout="wide")
+st.title("⚡ Nifty 50 Real-Time [Umesh Strict Pulse Trigger]")
+st.write("🎯 **Strict Pulse Rule:** Only triggers when ML Pulse is Active. No stable candle noise. Uses running candle base.")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Scanning Nifty Matrix for Crisp Pulse Triggers..."):
+with st.spinner("Connecting to Live Market Streams..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -114,34 +114,37 @@ else:
     df_predict['Pulse_Active'] = df_predict['Feature_Energy'] > energy_threshold
 
     # -----------------------------------------------------------------
-    # 🎯 CRISP SHORT TRIGGER COLUMN (Clean Look)
+    # 🎯 STRIKT LIVE PRICE PULSE FILTER (Umesh Optimized)
     # -----------------------------------------------------------------
-    short_trigger_log = []
+    strict_trigger_log = []
     
     for idx, row in df_predict.iterrows():
-        current_close_price = round(row['a_Close'], 1)
+        # Live chalte bhav ko track karne ke liye candle ka Open price dynamic base banega
+        live_bhav = round(row['Open'], 1)
         
-        if row['Pulse_Active']:
+        # Trigger STRICTLY tabhi aayega jab Pulse Active ho (No normal candle noise)
+        if row['Pulse_Active'] == True:
             if row['Prob_Up'] > row['Prob_Down']:
-                short_trigger_log.append(f"📈 Trigger Above {current_close_price}")
+                strict_trigger_log.append(f"📈 Trigger Above {live_bhav}")
             else:
-                short_trigger_log.append(f"📉 Trigger Below {current_close_price}")
+                strict_trigger_log.append(f"📉 Trigger Below {live_bhav}")
         else:
-            short_trigger_log.append("⚪ Stable")
+            # Normal ya stable candle par bilkul saaf blank space rahega
+            strict_trigger_log.append("-")
 
-    df_predict['Umesh_Pulse_Price_Trigger'] = short_trigger_log
+    df_predict['Umesh_Pulse_Price_Trigger'] = strict_trigger_log
 
     # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Umesh_Pulse_Price_Trigger']
+    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Umesh_Pulse_Price_Trigger']
     display_df = df_predict[clean_display_cols].copy()
     
+    display_df['Open'] = display_df['Open'].round(2)
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Inverting via index flip to freeze the latest active hour on Top Row
+    # Latest candle on top
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
