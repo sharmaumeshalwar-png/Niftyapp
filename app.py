@@ -150,9 +150,9 @@ else:
             
     df_predict['Optimized_Setting_Action'] = adaptive_actions
 
-    # Formatting UI Structure
+    # Formatting UI Structure (Probabilities Added Back)
     clean_display_cols = [
-        'Open', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 
+        'Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Weighted_Momentum', 
         'Mom_MACD_Line', 'Mom_MACD_Signal', 'Mom_MACD_Hist', 
         'Micro_Momentum_Pulse', 'Optimized_Setting_Action'
     ]
@@ -160,6 +160,7 @@ else:
     
     round_two = ['Open', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 'Mom_MACD_Line', 'Mom_MACD_Signal', 'Mom_MACD_Hist']
     display_df[round_two] = display_df[round_two].round(2)
+    display_df[['Prob_Up', 'Prob_Down']] = display_df[['Prob_Up', 'Prob_Down']].round(3)
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
