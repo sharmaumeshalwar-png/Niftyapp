@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone [Original Core Dataset Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only NIFTY 1-Hour Data + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only NIFTY 1-Hour Data + 2-Year Range + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,9 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Restoring Your Original Stable Core Data Engine for Nifty..."):
-    # Nifty 50 Index 1-HOUR Interval Data (Ticker: ^NSEI)
+    # =====================================================================
+    # STRICT 2-YEAR (730d) RANGE + 1-HOUR INTERVAL DATA (Ticker: ^NSEI)
+    # =====================================================================
     raw_df = yf.download("^NSEI", period="730d", interval="1h")
     
     if len(raw_df) == 0:
@@ -48,7 +50,7 @@ with st.spinner("Restoring Your Original Stable Core Data Engine for Nifty..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (Note: VWAP features are completely omitted)
+    # Microstructure Features Space (VWAP features are completely omitted)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -56,15 +58,13 @@ with st.spinner("Restoring Your Original Stable Core Data Engine for Nifty..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # -----------------------------------------------------------------
     # TARGET RULE (STRICT PAST 25 CANDLES - ZERO LEAKAGE)
-    # -----------------------------------------------------------------
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['Target'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio)
+# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -111,7 +111,7 @@ else:
     # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure (All new modifications removed completely)
+    # Formatting UI Structure
     clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
     display_df = df_predict[clean_display_cols].copy()
     
