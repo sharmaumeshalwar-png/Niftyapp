@@ -20,13 +20,13 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     p = initial_p  
     q = q_val      
     r = r_val        
-    filtered_values = []
-    for z in data_array:
+    filtered_values = np.empty(len(data_array))
+    for i, z in enumerate(data_array):
         p = p + q
         k = p / (p + r)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
+        filtered_values[i] = x
     return filtered_values
 
 with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
@@ -37,10 +37,9 @@ with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # CHANGED TICKER TO BTC-USD FOR BITCOIN
-    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
+    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", auto_adjust=True)
     
-    if len(raw_df) == 0:
+    if raw_df.empty:
         st.error(f"YFinance API Limit Error for BTC. Please refresh.")
         st.stop()
         
@@ -56,7 +55,7 @@ with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space
+    # Microstructure Features Space (Primary Priority to Imbalance Zones)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -82,7 +81,7 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42, n_jobs=-1)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
@@ -90,7 +89,7 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # Live Accumulators & Raw Logs
-    scores_log, raw_weighted_momentum_log = [], []
+    scores_log = []
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
@@ -99,27 +98,59 @@ else:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        p_up, p_down = prob_ups[i], prob_downs[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
 
     df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    df_predict['Raw_Weighted_Momentum'] = closes - kalmans_price
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # -----------------------------------------------------------------
-    # THE SECRET TRICK: Microstructure Volatility Pulse Detector
-    # -----------------------------------------------------------------
+    # Microstructure Volatility Pulse Detector
     df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
     energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
-    
     df_predict['Micro_Momentum_Pulse'] = np.where(df_predict['Feature_Energy'] > energy_threshold, "⚡ PULSE ACTIVE", "⚪ Stable Noise")
 
-    # Formatting UI Structure (No Price Triggers, Pure Original Settings)
-    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Micro_Momentum_Pulse']
+    # =====================================================================
+    # 🧠 NEW BALANCED TARGET ENGINE: IMBLANCE & WHIPSIP AUTO-OPTIMIZATION
+    # =====================================================================
+    df_predict['Price_Delta'] = df_predict['a_Close'].diff(1)
+    df_predict['Signal_Flip'] = (df_predict['State_Direction'] != df_predict['State_Direction'].shift(1)).astype(int)
+    market_noise_threshold = df_predict['Price_Delta'].rolling(window=24).std()
+    
+    # Mark the traps
+    df_predict['Trap_Flip'] = np.where((df_predict['Signal_Flip'] == 1) & (df_predict['Price_Delta'].abs() > market_noise_threshold), 1, 0)
+    
+    # ML dynamically shifts core focus to Body Imbalances and Order Imbalance structures
+    adaptive_actions = []
+    for idx, row in df_predict.iterrows():
+        if row['Trap_Flip'] == 1:
+            # High Priority 1: Extreme Body Imbalance Check (Candle closing skewed heavily to one side)
+            if row['Body_Imbalance'] > 0.80 or row['Body_Imbalance'] < 0.20:
+                adaptive_actions.append("🛡️ Body Imbalance Zone: Reject Flip, Lock Previous Signal Line")
+            
+            # High Priority 2: Institutional Spoofing / Order Book Liquidity imbalance
+            elif row['Order_Imbalance'] > 0.85 or row['Order_Imbalance'] < 0.15:
+                adaptive_actions.append("⚠️ Order Flow Vacuum: Increase Model Prob Trigger to > 0.65")
+            
+            # Sub-Priority 3: Pure Kalman Velocity Overshoot
+            elif abs(row['Normalized_Gap']) > 2.0:
+                adaptive_actions.append("🔧 Kalman Variance Calibration: Set R=0.50 to absorb gap")
+            else:
+                adaptive_actions.append("📈 Expansion Risk: Require Multi-Candle Confirmation")
+        else:
+            # Check for hidden non-whipsaw imbalance risks even when stable
+            if row['Body_Imbalance'] > 0.75 or row['Body_Imbalance'] < 0.25:
+                adaptive_actions.append("👀 Liquidity Shift Building (Body skewed)")
+            else:
+                adaptive_actions.append("✅ Structure Balanced")
+            
+    df_predict['Optimized_Setting_Action'] = adaptive_actions
+
+    # Formatting UI Structure
+    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Micro_Momentum_Pulse', 'Optimized_Setting_Action']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['Open'] = display_df['Open'].round(2)
@@ -129,9 +160,22 @@ else:
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live BTC-USD Dataset Matrix (Latest Hour Locked on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    st.subheader(f"📋 Live BTC-USD Dataset Matrix (Imbalance Zone Core Scanner Enabled)")
+    
+    def highlight_matrix(val):
+        if "🛡️" in str(val) or "⚠️" in str(val):
+            return 'background-color: rgba(255, 75, 255, 0.15); color: #ff4bff; font-weight: bold;'
+        elif "🔧" in str(val) or "👀" in str(val):
+            return 'background-color: rgba(255, 165, 0, 0.15); color: #ffaa00; font-weight: bold;'
+        elif "⚡ PULSE ACTIVE" in str(val):
+            return 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold;'
+        return ''
+
+    st.dataframe(
+        display_df.style.map(highlight_matrix, subset=['Micro_Momentum_Pulse', 'Optimized_Setting_Action']),
+        use_container_width=True, 
+        height=750
+    )
