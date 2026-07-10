@@ -2,8 +2,8 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
+from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Dual Momentum Engine 2.0", layout="wide")
@@ -31,13 +31,14 @@ end_date = datetime.now()
 start_date = end_date - timedelta(days=730) 
 
 with st.spinner(f"Downloading data from {start_date.date()} to {end_date.date()}..."):
+    # Download 1-hour Nifty 50 data
     raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
     
     if raw_df.empty:
-        st.error("Data empty! Check connection or Ticker.")
+        st.error("Data empty! Check Ticker or Internet.")
         st.stop()
         
-    # Flatten MultiIndex columns if they exist
+    # Standardize column handling
     if isinstance(raw_df.columns, pd.MultiIndex):
         raw_df.columns = raw_df.columns.get_level_values(0)
     
