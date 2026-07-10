@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone [Original Core Dataset Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only NIFTY 1-Hour Data + 2-Year Range + 50:50 Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Strictly Past 25-Candle Target + **Original Weighted Momentum Restored** + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only NIFTY 1-Hour Data + 2-Year Range + 50:50 Split + **Signal Column Removed** + **Probability Expected Horizon Engine Added** + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,9 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Restoring Your Original Stable Core Data Engine for Nifty..."):
-    # =====================================================================
     # STRICT 2-YEAR (730d) RANGE + 1-HOUR INTERVAL DATA (Ticker: ^NSEI)
-    # =====================================================================
     raw_df = yf.download("^NSEI", period="730d", interval="1h")
     
     if len(raw_df) == 0:
@@ -83,8 +81,8 @@ else:
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Live Signals & Accumulators
-    final_signals, scores_log, raw_weighted_momentum_log = [], [], []
+    # Live Accumulators & Raw Logs
+    scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
@@ -99,20 +97,24 @@ else:
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
         raw_weighted_momentum_log.append(c_val - k_price_val)
-        
-        if accumulator == 5: final_signals.append("🟢 STRONG BUY (Max Locked [5/5])")
-        elif accumulator == -5: final_signals.append("🔴 STRONG SELL (Max Locked [-5/-5])")
-        else: final_signals.append(f"⚪ NEUTRAL/HOLD (Score: {accumulator})")
 
-    df_predict['d_ML_Signal'] = final_signals
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
     # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'd_ML_Signal']
+    # -----------------------------------------------------------------
+    # NEW HORIZON ENGINE (Signal Column Replaced by Infinite Projection Factor)
+    # -----------------------------------------------------------------
+    # Formula: Target Candles (25) / Prob_Up (Bhag method with overflow safety)
+    df_predict['Est_Candles_To_Target'] = 25 / (df_predict['Prob_Up'] + 1e-10)
+    
+    # Practical clean up: Convert to integers and limit max value to 100 candles
+    df_predict['Est_Candles_To_Target'] = df_predict['Est_Candles_To_Target'].apply(lambda x: f"{int(min(x, 100))} Hrs")
+
+    # Formatting UI Structure (Signal removed, Expected Target Horizon Column Added At Last)
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Est_Candles_To_Target']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
