@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Core Pulse Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour [Core Pulse Engine]")
-st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + Strict 2-Year Range + 50:50 Split + **Micro-Momentum Pulse Detector** + No Price Triggers + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + Strict 2-Year Range + 50:50 Split + **Micro-Momentum Pulse Detector** + Momentum MACD (10,50,200) + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -55,7 +55,7 @@ with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (Primary Priority to Imbalance Zones)
+    # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -108,40 +108,41 @@ else:
     df_predict['Raw_Weighted_Momentum'] = closes - kalmans_price
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
+    # =====================================================================
+    # 📈 MOMENTUM MACD ENGINE (10, 50, 200)
+    # =====================================================================
+    fast_ema = df_predict['Weighted_Momentum'].ewm(span=10, adjust=False).mean()
+    slow_ema = df_predict['Weighted_Momentum'].ewm(span=50, adjust=False).mean()
+    
+    df_predict['Mom_MACD_Line'] = fast_ema - slow_ema
+    df_predict['Mom_MACD_Signal'] = df_predict['Mom_MACD_Line'].ewm(span=200, adjust=False).mean()
+    df_predict['Mom_MACD_Hist'] = df_predict['Mom_MACD_Line'] - df_predict['Mom_MACD_Signal']
+
     # Microstructure Volatility Pulse Detector
     df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
     energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
     df_predict['Micro_Momentum_Pulse'] = np.where(df_predict['Feature_Energy'] > energy_threshold, "⚡ PULSE ACTIVE", "⚪ Stable Noise")
 
     # =====================================================================
-    # 🧠 NEW BALANCED TARGET ENGINE: IMBLANCE & WHIPSIP AUTO-OPTIMIZATION
+    # 🧠 BALANCED TARGET ENGINE: IMBLANCE & WHIPSIP AUTO-OPTIMIZATION
     # =====================================================================
     df_predict['Price_Delta'] = df_predict['a_Close'].diff(1)
     df_predict['Signal_Flip'] = (df_predict['State_Direction'] != df_predict['State_Direction'].shift(1)).astype(int)
     market_noise_threshold = df_predict['Price_Delta'].rolling(window=24).std()
-    
-    # Mark the traps
     df_predict['Trap_Flip'] = np.where((df_predict['Signal_Flip'] == 1) & (df_predict['Price_Delta'].abs() > market_noise_threshold), 1, 0)
     
-    # ML dynamically shifts core focus to Body Imbalances and Order Imbalance structures
     adaptive_actions = []
     for idx, row in df_predict.iterrows():
         if row['Trap_Flip'] == 1:
-            # High Priority 1: Extreme Body Imbalance Check (Candle closing skewed heavily to one side)
             if row['Body_Imbalance'] > 0.80 or row['Body_Imbalance'] < 0.20:
                 adaptive_actions.append("🛡️ Body Imbalance Zone: Reject Flip, Lock Previous Signal Line")
-            
-            # High Priority 2: Institutional Spoofing / Order Book Liquidity imbalance
             elif row['Order_Imbalance'] > 0.85 or row['Order_Imbalance'] < 0.15:
                 adaptive_actions.append("⚠️ Order Flow Vacuum: Increase Model Prob Trigger to > 0.65")
-            
-            # Sub-Priority 3: Pure Kalman Velocity Overshoot
             elif abs(row['Normalized_Gap']) > 2.0:
                 adaptive_actions.append("🔧 Kalman Variance Calibration: Set R=0.50 to absorb gap")
             else:
                 adaptive_actions.append("📈 Expansion Risk: Require Multi-Candle Confirmation")
         else:
-            # Check for hidden non-whipsaw imbalance risks even when stable
             if row['Body_Imbalance'] > 0.75 or row['Body_Imbalance'] < 0.25:
                 adaptive_actions.append("👀 Liquidity Shift Building (Body skewed)")
             else:
@@ -150,15 +151,15 @@ else:
     df_predict['Optimized_Setting_Action'] = adaptive_actions
 
     # Formatting UI Structure
-    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Micro_Momentum_Pulse', 'Optimized_Setting_Action']
+    clean_display_cols = [
+        'Open', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 
+        'Mom_MACD_Line', 'Mom_MACD_Signal', 'Mom_MACD_Hist', 
+        'Micro_Momentum_Pulse', 'Optimized_Setting_Action'
+    ]
     display_df = df_predict[clean_display_cols].copy()
     
-    display_df['Open'] = display_df['Open'].round(2)
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    round_two = ['Open', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 'Mom_MACD_Line', 'Mom_MACD_Signal', 'Mom_MACD_Hist']
+    display_df[round_two] = display_df[round_two].round(2)
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
