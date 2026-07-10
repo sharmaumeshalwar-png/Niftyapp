@@ -4,12 +4,11 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
-import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Umesh Zero Leakage Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC) Live 1-Hour [Umesh Absolute Zero Leakage]")
-st.write("🎯 **Strict Verification Engine:** 0% Future Leakage (Not even 1 candle). Scoreboard tracks true closed-loop historical signals only.")
+st.set_page_config(page_title="BTC Core Pulse Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC) Live 1-Hour [Core Pulse Engine]")
+st.write("🎯 **Aapki Custom Setting:** Strictly Only BTC 1-Hour Data + Strict 2-Year Range + 50:50 Split + **Micro-Momentum Pulse Detector** + No Price Triggers + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -30,20 +29,19 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Zero-Leakage Protocol & Scoring Models..."):
-    IST = pytz.timezone('Asia/Kolkata')
-    current_time = datetime.now(IST)
-    
+with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
+    current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
+    # CHANGED TICKER TO BTC-USD FOR BITCOIN
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error(f"YFinance Connection Timeout. Please refresh.")
+        st.error(f"YFinance API Limit Error for BTC. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -66,6 +64,7 @@ with st.spinner("Executing Zero-Leakage Protocol & Scoring Models..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Clean Binary State Definition
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -112,107 +111,27 @@ else:
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # -----------------------------------------------------------------
-    # 🎯 ABSOLUTE ZERO LEAKAGE METHOD (Strict Historical Tracking Only)
+    # THE SECRET TRICK: Microstructure Volatility Pulse Detector
     # -----------------------------------------------------------------
-    tree_strike_logs = []
-    current_position = None  
-    decision_trees = model_flow.estimators_
+    df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
+    energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
     
-    total_signals = 0
-    sahi_trades = 0
-    
-    X_predict_values = X_predict.values
-    
-    for i in range(len(df_predict)):
-        if i == 0:
-            tree_strike_logs.append("-")
-            continue
-            
-        current_open = df_predict['Open'].iloc[i]
-        strike_base = round(current_open / 500) * 500
-        
-        p_up_curr = df_predict['Prob_Up'].iloc[i]
-        p_down_curr = df_predict['Prob_Down'].iloc[i]
-        p_up_prev = df_predict['Prob_Up'].iloc[i-1]
-        p_down_prev = df_predict['Prob_Down'].iloc[i-1]
-        
-        is_bull_shock = (p_up_prev < 0.10) and (p_up_curr > 0.88)
-        is_bear_shock = (p_down_prev < 0.10) and (p_down_curr > 0.88)
-        
-        if is_bull_shock and current_position != 'TREE_BULL':
-            current_position = 'TREE_BULL'
-            total_signals += 1
-            
-            tree_votes = [tree.predict([X_predict_values[i]])[0] for tree in decision_trees]
-            agreement_ratio = np.mean(tree_votes)
-            
-            if agreement_ratio > 0.85:
-                selected_strike = int(strike_base - 5000)
-                tree_strike_logs.append(f"🎯 SURE PUT: {selected_strike}")
-            else:
-                selected_strike = int(strike_base - 3500)
-                tree_strike_logs.append(f"💡 HINT PUT: {selected_strike}")
-            
-            # --- 100% NO FUTURE LEAKAGE CHECK ---
-            # Strictly verify if past nodes up to index 'i' ever breached this strike
-            historical_lows = df_predict['Low'].iloc[:i+1].values
-            if not np.any(historical_lows <= selected_strike):
-                sahi_trades += 1
-                
-        elif is_bear_shock and current_position != 'TREE_BEAR':
-            current_position = 'TREE_BEAR'
-            total_signals += 1
-            
-            tree_votes = [tree.predict([X_predict_values[i]])[0] for tree in decision_trees]
-            agreement_ratio = 1 - np.mean(tree_votes)
-            
-            if agreement_ratio > 0.85:
-                selected_strike = int(strike_base + 5000)
-                tree_strike_logs.append(f"🎯 SURE CALL: {selected_strike}")
-            else:
-                selected_strike = int(strike_base + 3500)
-                tree_strike_logs.append(f"💡 HINT CALL: {selected_strike}")
-                
-            # --- 100% NO FUTURE LEAKAGE CHECK ---
-            # Strictly verify if past nodes up to index 'i' ever breached this strike
-            historical_highs = df_predict['High'].iloc[:i+1].values
-            if not np.any(historical_highs >= selected_strike):
-                sahi_trades += 1
-                
-        else:
-            if current_position == 'TREE_BULL':
-                tree_strike_logs.append("⏳ Hold PUT Node")
-            elif current_position == 'TREE_BEAR':
-                tree_strike_logs.append("⏳ Hold CALL Node")
-            else:
-                tree_strike_logs.append("-")
+    df_predict['Micro_Momentum_Pulse'] = np.where(df_predict['Feature_Energy'] > energy_threshold, "⚡ PULSE ACTIVE", "⚪ Stable Noise")
 
-    df_predict['Umesh_ML_Tree_Strike_Log'] = tree_strike_logs
-
-    # -----------------------------------------------------------------
-    # 📊 SIDEBAR COUNTERS DISPLAY (Left Side Panel)
-    # -----------------------------------------------------------------
-    st.sidebar.title("📊 UMESH TRACKER LOG")
-    st.sidebar.markdown("---")
-    
-    st.sidebar.metric(label="🎯 Strategy Scoreboard (Wins / Total)", value=f"{sahi_trades} / {total_signals}")
-    
-    win_rate = (sahi_trades / total_signals * 100) if total_signals > 0 else 0.0
-    st.sidebar.metric(label="📈 Final Accuracy Rate", value=f"{round(win_rate, 1)} %")
-    st.sidebar.markdown("---")
-
-    # UI Main Matrix Extraction
-    clean_display_cols = ['Open', 'a_Close', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Umesh_ML_Tree_Strike_Log']
+    # Formatting UI Structure (No Price Triggers, Pure Original Settings)
+    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Micro_Momentum_Pulse']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['Open'] = display_df['Open'].round(2)
     display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Latest Hour Locked on Top Row
+    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live BTC-USD Tree Strike Matrix (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Live BTC-USD Dataset Matrix (Latest Hour Locked on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
