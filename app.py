@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Dynamic Pulse Price Trigger", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour [Umesh Dynamic Price Trigger]")
-st.write("🎯 **Aapki Custom Setting:** Strict 1-Hour + 50:50 Split + **Dynamic Pulse Price Trigger Level (No Hardcoding)** + Latest Candle on Top")
+st.set_page_config(page_title="Nifty Crisp Trigger Engine", layout="wide")
+st.title("⚡ Nifty 50 Live 1-Hour [Umesh Short Trigger Edition]")
+st.write("🎯 **Aapki Custom Setting:** Strict 1-Hour + 50:50 Split + **Crisp Short Trigger Alerts** + Latest Candle on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Scanning Nifty Matrix for Dynamic Pulse Trigger Prices..."):
+with st.spinner("Scanning Nifty Matrix for Crisp Pulse Triggers..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -114,24 +114,22 @@ else:
     df_predict['Pulse_Active'] = df_predict['Feature_Energy'] > energy_threshold
 
     # -----------------------------------------------------------------
-    # 🎯 UMESH DYNAMIC PULSE PRICE TRIGGER (Dynamic Price Catching)
+    # 🎯 CRISP SHORT TRIGGER COLUMN (Clean Look)
     # -----------------------------------------------------------------
-    dynamic_trigger_log = []
+    short_trigger_log = []
     
     for idx, row in df_predict.iterrows():
         current_close_price = round(row['a_Close'], 1)
         
-        # Agar is candle par ML Pulse Active hua h
         if row['Pulse_Active']:
-            # Direction check based on ML Probabilities
             if row['Prob_Up'] > row['Prob_Down']:
-                dynamic_trigger_log.append(f"🎯 Trigger: When price cross {current_close_price} ABOVE it's hit 📈")
+                short_trigger_log.append(f"📈 Trigger Above {current_close_price}")
             else:
-                dynamic_trigger_log.append(f"🎯 Trigger: When price cross {current_close_price} BELOW it's hit 📉")
+                short_trigger_log.append(f"📉 Trigger Below {current_close_price}")
         else:
-            dynamic_trigger_log.append("⚪ Stable Flow")
+            short_trigger_log.append("⚪ Stable")
 
-    df_predict['Umesh_Pulse_Price_Trigger'] = dynamic_trigger_log
+    df_predict['Umesh_Pulse_Price_Trigger'] = short_trigger_log
 
     # Formatting UI Structure
     clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Umesh_Pulse_Price_Trigger']
