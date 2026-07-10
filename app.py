@@ -4,6 +4,7 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
+import pytz  # Added to fix Streamlit Cloud Server Time Bug
 
 # Page Configuration
 st.set_page_config(page_title="BTC Core Pulse Engine", layout="wide")
@@ -30,14 +31,17 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Executing Strict Live BTC Data Fetch & Pulse Scanner..."):
-    current_time = datetime.now()
+    # Fixing Streamlit Server Time Zone to India (IST)
+    IST = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(IST)
+    
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # CHANGED TICKER TO BTC-USD FOR BITCOIN
+    # Fetching BTC Data safely
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
@@ -85,4 +89,52 @@ else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    probabilities = model_flow.predict_
+    # FIXED THE REDACTED ATTRIBUTE ERROR HERE
+    probabilities = model_flow.predict_proba(X_predict)
+    df_predict['Prob_Down'] = probabilities[:, 0]
+    df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # Live Accumulators & Raw Logs
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
+    
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Core Pulse Calculation
+    df_predict['Feature_Energy'] = df_predict['Order_Imbalance'].diff().abs() + df_predict['Flow_Velocity'].diff().abs()
+    energy_threshold = df_predict['Feature_Energy'].rolling(window=20).mean() + (1.5 * df_predict['Feature_Energy'].rolling(window=20).std())
+    
+    df_predict['Micro_Momentum_Pulse'] = np.where(df_predict['Feature_Energy'] > energy_threshold, "⚡ PULSE ACTIVE", "⚪ Stable Noise")
+
+    # Formatting UI Structure (No Price Triggers, Perfectly Scannable)
+    clean_display_cols = ['Open', 'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Micro_Momentum_Pulse']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['Open'] = display_df['Open'].round(2)
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    # Inverting via index flip to freeze the latest active hour on Top Row
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live BTC-USD Dataset Matrix (Latest Hour Locked on Top Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
