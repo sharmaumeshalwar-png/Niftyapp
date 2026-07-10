@@ -3,10 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Dual Momentum Engine 2.0", layout="wide")
-st.title("📊 Nifty 50 [2-Year] Hybrid Double Kalman Engine [50:50 Split]")
+st.title("📊 Nifty 50 [2-Year Historical] Hybrid Double Kalman Engine")
+st.write("🎯 **Mode:** 50:50 Split | **Data Range:** Last 2 Years (1-Hour)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE: FILTERS
@@ -23,33 +25,31 @@ def apply_kalman_filter_custom(data_array, initial_p=100.0, q=0.0001, r=2.5):
         filtered_values.append(x)
     return filtered_values
 
-def apply_non_linear_kalman_momentum(data_array):
-    if len(data_array) == 0: return []
-    x, p, q, r = data_array[0], 1.0, 0.05, 0.2
-    filtered_values = []
-    for z in data_array:
-        p = p + q
-        k = p / (p + r)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+# =====================================================================
+# DATA PIPELINE (FIXED 2-YEAR RANGE)
+# =====================================================================
+end_date = datetime.now()
+start_date = end_date - timedelta(days=730) 
 
-# =====================================================================
-# DATA PIPELINE
-# =====================================================================
-with st.spinner("Downloading 2-Year Nifty 1-Hour Data & Processing Matrices..."):
-    raw_df = yf.download("^NSEI", period="2y", interval="1h")
+with st.spinner(f"Downloading 2-Year Data from {start_date.strftime('%Y-%m-%d')}..."):
+    # Download data with explicit date range
+    raw_df = yf.download("^NSEI", start=start_date, end=end_date, interval="1h")
     
     if raw_df.empty:
-        st.error("Market data unavailable.")
+        st.error("Data fetch failed. Ensure Internet is ON and Nifty is ticker ^NSEI.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close']:
-        if col in raw_df.columns:
-            df[col] = raw_df[col].ffill()
-
+    # Handle multi-level columns if present
+    if isinstance(raw_df.columns, pd.MultiIndex):
+        df['Open'] = raw_df['Open'].iloc[:, 0]
+        df['High'] = raw_df['High'].iloc[:, 0]
+        df['Low'] = raw_df['Low'].iloc[:, 0]
+        df['Close'] = raw_df['Close'].iloc[:, 0]
+    else:
+        df[['Open', 'High', 'Low', 'Close']] = raw_df[['Open', 'High', 'Low', 'Close']]
+    
+    df.ffill(inplace=True)
     df.dropna(inplace=True)
 
     # Base Matrix
@@ -77,6 +77,8 @@ df_predict = df_clean.iloc[split_idx:].copy()
 # Model Fitting
 model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, random_state=42)
 model_flow.fit(df_train[features_matrix], df_train['Target'])
+
+# Prediction
 probs = model_flow.predict_proba(df_predict[features_matrix])
 df_predict['Prob_Up'] = probs[:, 1]
 df_predict['Prob_Down'] = probs[:, 0]
@@ -86,7 +88,9 @@ df_predict['Prob_Down'] = probs[:, 0]
 # =====================================================================
 final_signals, accumulator = [], 0
 for i in range(len(df_predict)):
-    p_up, p_down = df_predict['Prob_Up'].iloc[i], df_predict['Prob_Down'].iloc[i]
+    p_up = df_predict['Prob_Up'].iloc[i]
+    p_down = df_predict['Prob_Down'].iloc[i]
+    
     if p_up >= 0.55: accumulator += 1
     elif p_down >= 0.55: accumulator -= 1
     accumulator = max(-5, min(5, accumulator))
@@ -99,6 +103,6 @@ df_predict['d_ML_Signal'] = final_signals
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['c_Combined'].values, initial_p=0.50)
 
 # Display
+st.subheader("📋 Engine Dashboard (2-Year Historical Data Applied)")
 display_df = df_predict[['a_Close', 'Prob_Up', 'Weighted_Momentum', 'd_ML_Signal']].sort_index(ascending=False)
-st.subheader("📋 Engine Dashboard")
-st.dataframe(display_df.head(50), use_container_width=True)
+st.dataframe(display_df.head(100), use_container_width=True)
