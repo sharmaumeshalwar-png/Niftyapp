@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Core Pulse Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC) Live 1-Hour [Zero-Leakage Engine 10x]")
-st.write("🎯 **Upgraded Setting:** Strictly Causal Processing | 50:50 Split First -> Feature Engineering Second (No Future Contamination)")
+st.write("🎯 **Upgraded Setting:** Strictly Causal Processing | 50:50 Split First -> 14x Hyper-Feature Engineering Second (No Future Contamination)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Causal Kalman Filter)
@@ -30,7 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 # =====================================================================
-# FEATURE ENGINEERING FUNCTION (Strictly Safe - Runs independently on slices)
+# 🔥 10x HYPER-MICROSTRUCTURE FEATURE ENGINEERING FUNCTION (Strictly Isolated)
 # =====================================================================
 def build_microstructure_features(sliced_df):
     # Copy to avoid setting with copy warning
@@ -47,28 +47,28 @@ def build_microstructure_features(sliced_df):
     df_out['Body_Imbalance'] = (df_out['Body_Center'] - df_out['Low']) / (df_out['High'] - df_out['Low'] + 1e-10)
     df_out['Normalized_Gap'] = df_out['c_Combined'] / (df_out['c_Combined'].rolling(window=24).std() + 1e-10)
     
-    # 2. Kinematics (Velocity, Acceleration, Jerk)
+    # 2. Kinematics (Velocity, Acceleration, Jerk for Trend Fatigue)
     df_out['Flow_Velocity'] = df_out['c_Combined'].diff(1)
     df_out['Acceleration_Force'] = df_out['Flow_Velocity'].diff(1) 
     df_out['Jerk_Force'] = df_out['Acceleration_Force'].diff(1) 
     
-    # 3. Micro-Spread & Range Expansion
+    # 3. Micro-Spread & Volatility Shock
     hl_range = df_out['High'] - df_out['Low']
     atr_proxy = hl_range.rolling(window=14).mean()
     df_out['Vol_Shock'] = np.where(atr_proxy > 0, hl_range / (atr_proxy + 1e-10), 1.0)
     df_out['Micro_Spread_Proxy'] = (df_out['High'] - df_out['Low']) / (abs(df_out['a_Close'] - df_out['Open']) + 1e-10)
     
-    # 4. Range Compression (Parkinson Volatility Proxy)
+    # 4. Range Compression (Parkinson Volatility/Squeeze Index)
     df_out['Log_HL'] = np.log(df_out['High'] / (df_out['Low'] + 1e-10))
     df_out['Parkinson_Vol'] = np.sqrt((df_out['Log_HL'] ** 2) / (4 * np.log(2)))
     df_out['Vol_Squeeze_Ratio'] = df_out['Parkinson_Vol'] / (df_out['Parkinson_Vol'].rolling(window=20).mean() + 1e-10)
     
-    # 5. Volume-Weighted Price Discovery Speed
+    # 5. Volume-Weighted Order Flow Pressure
     df_out['Candle_Direction'] = np.where(df_out['a_Close'] > df_out['Open'], 1, -1)
     df_out['Volume_Imbalance_Weight'] = df_out['Volume'] * df_out['Candle_Direction'] * df_out['Order_Imbalance']
     df_out['Volume_Imbalance_EMA'] = df_out['Volume_Imbalance_Weight'].ewm(span=5, adjust=False).mean()
     
-    # 6. Advanced Efficiency (Fractal Dimension Proxy)
+    # 6. Advanced Efficiency Scales (Multi-Horizon Fractal Noise)
     net_change_10 = (df_out['a_Close'] - df_out['a_Close'].shift(10)).abs()
     sum_changes_10 = df_out['a_Close'].diff().abs().rolling(window=10).sum()
     df_out['Noise_Ratio_10'] = net_change_10 / (sum_changes_10 + 1e-10)
@@ -77,7 +77,7 @@ def build_microstructure_features(sliced_df):
     sum_changes_5 = df_out['a_Close'].diff().abs().rolling(window=5).sum()
     df_out['Noise_Ratio_5'] = net_change_5 / (sum_changes_5 + 1e-10)
 
-    # 7. Mean-Reversion Force
+    # 7. Mean-Reversion Dynamic Force
     rolling_std = df_out['a_Close'].rolling(window=20).std()
     df_out['Band_Distance'] = (df_out['a_Close'] - df_out['a_Close'].rolling(window=20).mean()) / (rolling_std + 1e-10)
     
@@ -113,11 +113,11 @@ with st.spinner("Executing Uncontaminated Live Data Pipeline..."):
     raw_train = df.iloc[:split_idx].copy()
     raw_predict = df.iloc[split_idx:].copy()
     
-    # Processing both universes in total math isolation
+    # Processing both universes in total math isolation (100% Leakage Free)
     df_train = build_microstructure_features(raw_train)
     df_predict = build_microstructure_features(raw_predict)
 
-    # 14x Hyper Features Matrix
+    # Upgraded 14x Hyper Features Matrix List
     features_matrix = [
         'c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity',
         'Acceleration_Force', 'Jerk_Force', 'Vol_Shock', 'Micro_Spread_Proxy', 
@@ -134,7 +134,7 @@ with st.spinner("Executing Uncontaminated Live Data Pipeline..."):
 if len(X_predict) == 0:
     st.error("Data tracking frame mismatch.")
 else:
-    # Anti-Overfit Forest Setup
+    # Tuned Forest Settings to prevent raw 0.01/0.99 noise and absorb 14x features smoothly
     model_flow = RandomForestClassifier(n_estimators=300, max_depth=4, min_samples_leaf=7, max_features='log2', random_state=42, n_jobs=-1)
     model_flow.fit(X_train, y_train)
 
