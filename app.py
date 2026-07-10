@@ -3,11 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Standalone [Max History Clean Engine]")
-st.write("🎯 **Aapki Custom Setting:** Max Possible 1-Hour Historical Depth + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
+st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict 2-Year Date Override]")
+st.write("🎯 **Aapki Custom Setting:** Explicit Date Range Override + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,12 +29,21 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Fetching Maximum Available 1-Hour Data Horizon for Nifty..."):
-    # yfinance se 1-Hour ki maximum limit (730d) fetch kar rahe hain
-    raw_df = yf.download("^NSEI", period="730d", interval="1h")
+with st.spinner("Executing Strict 2-Year Historical Fetch for Nifty..."):
+    # -----------------------------------------------------------------
+    # HARDCODED DATE CALCULATOR: strictly pulling past 720-730 days
+    # -----------------------------------------------------------------
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=720) # 720 days safely inside 1h API limit
+    
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
+
+    # Fetch using exact date boundaries instead of relative period string
+    raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error("YFinance API Timeout or Market Closed Data Error. Please refresh the dashboard.")
+        st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -62,11 +72,7 @@ with st.spinner("Fetching Maximum Available 1-Hour Data Horizon for Nifty..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# -----------------------------------------------------------------
-# OPTIMIZED SPLIT ENGINE: 30:70 to push prediction history way back
-# -----------------------------------------------------------------
-# Agar strictly 50:50 rakhna hai toh 0.50 use karein. But piche ka data jyada dekhne ke liye 0.30 standard hota hai.
-# Aapke liye ham yahan strict 50:50 hi rakh rahe hain taaki core logic match kare.
+# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
