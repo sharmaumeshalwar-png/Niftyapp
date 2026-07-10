@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
-st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict 2-Year Date Override]")
-st.write("🎯 **Aapki Custom Setting:** Explicit Date Range Override + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
+st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict Live Flow Override]")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,17 +29,20 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict 2-Year Historical Fetch for Nifty..."):
+with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
     # -----------------------------------------------------------------
-    # HARDCODED DATE CALCULATOR: strictly pulling past 720-730 days
+    # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
     # -----------------------------------------------------------------
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=720) # 720 days safely inside 1h API limit
+    current_time = datetime.now()
+    start_date = current_time - timedelta(days=720) 
+    
+    # +1 Day shift taaki Yahoo Finance aaj ka pura live data include kare
+    end_date = current_time + timedelta(days=1) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact date boundaries instead of relative period string
+    # Fetch using exact buffered date boundaries
     raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
