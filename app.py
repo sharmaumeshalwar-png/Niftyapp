@@ -5,7 +5,7 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide")
-st.title("📊 Nifty 50: Max 2-Year Full-Candle Engine [Fixed]")
+st.title("📊 Nifty 50: 2-Year Engine [Ticker Bypass]")
 
 # Core Calculation Engine
 def apply_kalman(data, initial_p=100.0, q=0.0001, r=2.5):
@@ -24,22 +24,19 @@ def apply_step_momentum(data):
         filtered.append(np.round(x))
     return filtered
 
-# DATA PIPELINE
+# DATA PIPELINE (The Bypass)
 @st.cache_data
-def get_data():
-    end = datetime.now()
-    start = end - timedelta(days=730)
-    # Using 'NSEI' with specific index handling
-    raw = yf.download("^NSEI", start=start, end=end, interval="1h")
-    # Handling Multi-index columns if they exist
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    return raw.ffill().dropna()
+def get_data_bypass():
+    # Force Yahoo to recognize the ticker
+    nifty = yf.Ticker("^NSEI")
+    # Fetch data in chunks if needed or use history method
+    df = nifty.history(period="2y", interval="1h")
+    return df.ffill().dropna()
 
-with st.spinner("Processing Candles..."):
-    df = get_data()
+with st.spinner("Bypassing API restrictions..."):
+    df = get_data_bypass()
     
-    if len(df) > 0:
+    if len(df) > 100:
         # Core Calculations
         df['Kalman_Price'] = apply_kalman(df['Close'].values)
         df['Raw_WM'] = df['Close'] - df['Kalman_Price']
@@ -58,7 +55,7 @@ with st.spinner("Processing Candles..."):
         split_idx = int(len(df) * 0.50)
         display_df = df.iloc[split_idx:].sort_index(ascending=False)
 
-        st.write(f"### Total Candles: {len(df)} | Live Prediction Window: {len(display_df)} Rows")
+        st.write(f"### Total Candles: {len(df)} | Live Window: {len(display_df)} Rows")
         st.dataframe(display_df[['Close', 'Weighted_Momentum', 'Step_Momentum', 'Accumulator']], use_container_width=True)
     else:
-        st.error("No data fetched. Check if '^NSEI' is available or API limits.")
+        st.error("Data fetch failed. ^NSEI 1h might be restricted. Try changing interval to '1d'.")
