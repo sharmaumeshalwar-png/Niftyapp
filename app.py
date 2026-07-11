@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Leaf-50 Accuracy Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Strict Noise Filter (min_samples_leaf=50)**")
+st.set_page_config(page_title="BTC Absolute Leaf-1 Feature Engine", layout="wide")
+st.title("⚡ BTC-USD Live 1-Hour [Absolute Extreme Leaf-1 & Feature Decoder]")
+st.write("🎯 **Aapki Custom Setting:** Reverted to Extreme `min_samples_leaf=1` + 4 Column Feature Probability Breakdowns + 50:50 Split + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -30,23 +30,19 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
-    # -----------------------------------------------------------------
     # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
-    # -----------------------------------------------------------------
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
-    
-    # +1 Day shift taaki Yahoo Finance aaj ka pura live data include kare
     end_date = current_time + timedelta(days=1) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact BTC-USD ticker for continuous crypto data stream
+    # Fetch using exact BTC-USD ticker
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
+        st.error(f"YFinance API Limit Error. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -61,8 +57,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (VWAP features are completely omitted)
-    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
+    # Microstructure Features Space
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
@@ -75,7 +70,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -87,19 +82,31 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # --- HYPER-FILTER MODEL CALIBRATION ---
-    # min_samples_leaf=50 kiya hai taaki sirf strong historical patterns hi survive karein
+    # --- ABSOLUTE LEAF-1 MODEL CALIBRATION ---
+    # Aapke original point par strict tree calibration wapas set kar diya hai
     model_flow = RandomForestClassifier(
         n_estimators=150, 
-        max_depth=3, 
-        min_samples_leaf=50, 
+        min_samples_leaf=1, 
         random_state=42
     )
     model_flow.fit(X_train, y_train)
 
+    # Master Probabilities
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # -----------------------------------------------------------------
+    # THE 4 COLUMN FEATURE DECODER ENGINE (Individual Microstructure Predictions)
+    # -----------------------------------------------------------------
+    # Har feature ko alag se train karke check karenge ki uska akela ka kya vote hai
+    target_features = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    
+    for feat in target_features:
+        feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
+        feat_model.fit(X_train[[feat]], y_train)
+        # Up-probability columns structure generate karna hai
+        df_predict[f'P_Up_{feat}'] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
@@ -111,32 +118,36 @@ else:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        p_up, p_down = prob_ups[i], prob_downs[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
+        raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
+    # Formatting UI Structure with the new 4 individual breakdown columns
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
+        'P_Up_Order_Imbalance', 'P_Up_Body_Imbalance', 'P_Up_Normalized_Gap', 'P_Up_Flow_Velocity',
+        'Accumulator_Score', 'Weighted_Momentum'
+    ]
+    
     display_df = df_predict[clean_display_cols].copy()
     
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    # Precision rounding
+    for col in display_df.columns:
+        if 'Prob_' in col or 'P_Up_' in col:
+            display_df[col] = display_df[col].round(3)
+        elif col != 'Accumulator_Score':
+            display_df[col] = display_df[col].round(2)
     
     # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Live Original Matrix + 4 Core Microstructure Decoders (Latest Hour Locked on Top)")
     st.dataframe(display_df, use_container_width=True, height=750)
