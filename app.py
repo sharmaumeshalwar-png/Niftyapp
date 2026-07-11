@@ -3,13 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Hyper-Accuracy Engine", layout="wide")
+st.set_page_config(page_title="BTC Leaf-50 Accuracy Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Probability Calibration & Smoothing Layer**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Strict Noise Filter (min_samples_leaf=50)**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -88,10 +87,14 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # --- ADVANCED PROBABILITY CALIBRATION LAYER ---
-    # Base model ko sigmoid calibration se wrap kiya hai taaki extreme 0.01/0.99 outputs filter hokar actual accuracy map karein
-    base_model = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
-    model_flow = CalibratedClassifierCV(estimator=base_model, method='sigmoid', cv=3)
+    # --- HYPER-FILTER MODEL CALIBRATION ---
+    # min_samples_leaf=50 kiya hai taaki sirf strong historical patterns hi survive karein
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        max_depth=3, 
+        min_samples_leaf=50, 
+        random_state=42
+    )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
