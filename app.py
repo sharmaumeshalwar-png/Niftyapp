@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **India VIX Integrated**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
+with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
     # -----------------------------------------------------------------
     # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
     # -----------------------------------------------------------------
@@ -42,17 +42,31 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact buffered date boundaries
-    raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
+    # Fetch using exact buffered date boundaries (Fetching both Nifty and India VIX together)
+    raw_data = yf.download(["^NSEI", "^INDIAVIX"], start=start_str, end=end_str, interval="1h")
     
-    if len(raw_df) == 0:
+    if len(raw_data) == 0:
         st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
         st.stop()
         
-    df = pd.DataFrame(index=raw_df.index)
+    df = pd.DataFrame(index=raw_data.index)
+    
+    # Extracting Nifty 50 Columns safely from MultiIndex
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in raw_df.columns:
-            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+        if (col, '^NSEI') in raw_data.columns:
+            df[col] = raw_data[(col, '^NSEI')]
+        elif col in raw_data.columns and not isinstance(raw_data.columns, pd.MultiIndex):
+            df[col] = raw_data[col]
+
+    # Extracting India VIX Close safely and mapping it as a column
+    if ('Close', '^INDIAVIX') in raw_data.columns:
+        df['India_VIX'] = raw_data[('Close', '^INDIAVIX')]
+    else:
+        # Fallback if MultiIndex structure differs
+        df['India_VIX'] = 15.0  # Safe default if API temporarily glitches
+        
+    # Forward fill VIX values if there are any hourly mismatches in stamps
+    df['India_VIX'] = df['India_VIX'].ffill().bfill()
 
     df.index = pd.to_datetime(df.index)
 
@@ -72,7 +86,8 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
     # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    # --- INDIA VIX INJECTED INTO THE FEATURE MATRIX FOR ML ACCURACY BOOST ---
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'India_VIX']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
@@ -117,12 +132,13 @@ else:
     # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
+    # Formatting UI Structure (Added India_VIX to display table so you can verify it live)
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'India_VIX', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['India_VIX'] = display_df['India_VIX'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
