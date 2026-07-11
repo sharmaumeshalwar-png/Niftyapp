@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Laser Gap-Volatility Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [Normalized Gap & StdDev Only Engine]")
-st.write("🎯 **Aapki Custom Setting:** ONLY Normalized_Gap + ONLY Standard Deviation (Rolling Volatility) + Reverted to Absolute `min_samples_leaf=1` + 50:50 Split + Latest Active Candle Locked on Top")
+st.set_page_config(page_title="BTC Hard-Cutoff Laser Engine", layout="wide")
+st.title("⚡ BTC-USD Live 1-Hour [Strict Hard-Cutoff Volatility Filter]")
+st.write("🎯 **Aapki Custom Setting:** Normalized_Gap + **Strict Out-of-Model Hard Cutoff** (Volatility < 7-Day Avg = Forced 0.50 Neutral) + `min_samples_leaf=1` + 50:50 Split")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Laser Gap Data Fetch for BTC-USD..."):
+with st.spinner("Executing Strict Hard-Cutoff Engine for BTC-USD..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -55,16 +55,20 @@ with st.spinner("Executing Laser Gap Data Fetch for BTC-USD..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Strictly Only Gap and Volatility (Baki sab khatam)
+    # Core Mathematical Metrics
     df['Rolling_Volatility'] = df['c_Combined'].rolling(window=24).std()
     df['Normalized_Gap'] = df['c_Combined'] / (df['Rolling_Volatility'] + 1e-10)
+    
+    # --- HARD CUTOFF BENCHMARK ---
+    # Pichle 7 dino (168 ghante) ka average standard deviation baseline
+    df['Volatility_7Day_Avg'] = df['Rolling_Volatility'].rolling(window=168).mean()
     
     # Target Direction State
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # Only 2 Features in the whole engine now!
+    # Clean up matrix
     features_matrix = ['Normalized_Gap', 'Rolling_Volatility']
-    df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
+    df.dropna(subset=features_matrix + ['State_Direction', 'Volatility_7Day_Avg'], inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
@@ -86,12 +90,7 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Master Probabilities
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
-
-    # Individual Column Decoders for our 2 features
+    # Individual Feature Breakdown Engine
     feat_probs = {}
     for feat in features_matrix:
         feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
@@ -100,24 +99,47 @@ else:
         df_predict[col_name] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
         feat_probs[col_name] = df_predict[col_name].to_numpy()
 
+    # Dynamic Volatility Extraction for Predict Window
+    vol_current = df.iloc[split_idx:]['Rolling_Volatility'].to_numpy()
+    vol_baseline = df.iloc[split_idx:]['Volatility_7Day_Avg'].to_numpy()
+    
     # Live Accumulators & Raw Logs
     master_scores_log, feat_scores_log, raw_weighted_momentum_log = [], [], []
+    prob_up_log, prob_down_log = [], []
     master_accumulator = 0
     
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
+    raw_probabilities = model_flow.predict_proba(X_predict)
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
-    for i in range(len(prob_ups)):
-        # Master Accumulator Logic [-5, 5]
-        p_up, p_down = prob_ups[i], prob_downs[i]
+    # -----------------------------------------------------------------
+    # THE HARD CUTOFF RULE EXECUTION LOOP
+    # -----------------------------------------------------------------
+    for i in range(len(raw_probabilities)):
+        p_down_raw = raw_probabilities[i, 0]
+        p_up_raw = raw_probabilities[i, 1]
+        
+        # CONDITION: Agar current standard deviation weekly average se kam hai -> RESET EVERYTHING TO NEUTRAL
+        if vol_current[i] < vol_baseline[i]:
+            p_up = 0.500
+            p_down = 0.500
+            # Columns breakdown ko bhi override kar do taaki fake indications na dikhein
+            feat_probs['P_Up_Normalized_Gap'][i] = 0.500
+            feat_probs['P_Up_Rolling_Volatility'][i] = 0.500
+        else:
+            p_up = p_up_raw
+            p_down = p_down_raw
+            
+        prob_up_log.append(p_up)
+        prob_down_log.append(p_down)
+
+        # Master Accumulator Logic [-5, 5] (Ab rangebound me ye freeze rahega)
         if p_up >= 0.55: master_accumulator += 1
         elif p_down >= 0.55: master_accumulator -= 1
         master_accumulator = max(-5, min(5, master_accumulator))
         master_scores_log.append(master_accumulator)
         
-        # Feature Accumulator Logic [-2, 2] per row (Kyunki ab sirf 2 features hain)
+        # Feature Accumulator Logic [-2, 2]
         current_feat_score = 0
         for feat in features_matrix:
             f_prob = feat_probs[f'P_Up_{feat}'][i]
@@ -127,6 +149,12 @@ else:
         
         raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
 
+    # Assigning Clean Logs
+    df_predict['Prob_Up'] = prob_up_log
+    df_predict['Prob_Down'] = prob_down_log
+    df_predict['P_Up_Normalized_Gap'] = feat_probs['P_Up_Normalized_Gap']
+    df_predict['P_Up_Rolling_Volatility'] = feat_probs['P_Up_Rolling_Volatility']
+    
     df_predict['Accumulator_Score'] = master_scores_log  
     df_predict['Feature_Accumulator'] = feat_scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
@@ -152,5 +180,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Laser Gap-Volatility Engine Matrix (Latest Hour Locked on Top)")
+    st.subheader(f"📋 Laser Engine Matrix with Strict 7-Day Volatility Cutoff Filter")
     st.dataframe(display_df, use_container_width=True, height=750)
