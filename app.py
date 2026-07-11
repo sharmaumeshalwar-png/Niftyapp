@@ -104,3 +104,32 @@ else:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Formatting UI Structure
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
+    display_df = df_predict[clean_display_cols].copy()
+    
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    # Inverting via index flip to freeze the latest active hour on Top Row
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
+    st.dataframe(display_df, use_container_width=True, height=750)
