@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Original Core Engine", layout="wide")
+st.set_page_config(page_title="BTC Hyper-Accuracy Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Bitcoin Engine (VIX Completely Removed)**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Hyper-Accuracy Model Calibration**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -42,11 +42,11 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using BTC-USD ticker for continuous crypto streams
+    # Fetch using exact BTC-USD ticker for continuous crypto data stream
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
-        st.error(f"YFinance API Limit Error for BTC-USD range {start_str} to {end_str}. Please refresh.")
+        st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
         st.stop()
         
     df = pd.DataFrame(index=raw_df.index)
@@ -72,7 +72,6 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # VIX completely removed from feature list, keeping the original features intact
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
@@ -88,7 +87,15 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
+    # --- MODEL CALIBRATION FOR HIGHER ACCURACY ON EXTREME HINTS ---
+    # min_samples_leaf=5 kiya hai taaki noise filter ho aur max_features="log2" taaki predictions super-refined hon
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        max_depth=3, 
+        min_samples_leaf=5, 
+        max_features="log2", 
+        random_state=42
+    )
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
@@ -97,65 +104,35 @@ else:
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
-    load_adj_up_log, load_adj_down_log = [], []
-    
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    
-    order_imbalances = df_predict['Order_Imbalance'].to_numpy()
-    body_imbalances = df_predict['Body_Imbalance'].to_numpy()
-    flow_velocities = df_predict['Flow_Velocity'].to_numpy()
 
     for i in range(len(prob_ups)):
         p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        oi, bi, fv = order_imbalances[i], body_imbalances[i], flow_velocities[i]
-        
-        # Original Logic (Untouched)
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
         raw_weighted_momentum_log.append(c_val - k_price_val)
-        
-        # Load Compensation Logic for BTC's Volatile Movements
-        load_bias = (oi - 0.5) + (bi - 0.5) + (np.tanh(fv / 10.0) * 0.2)
-        p_up_load = max(0.01, min(0.99, p_up + (load_bias * 0.15)))
-        p_down_load = max(0.01, min(0.99, p_down - (load_bias * 0.15)))
-        
-        total_p = p_up_load + p_down_load
-        p_up_load /= total_p
-        p_down_load /= total_p
-        
-        load_adj_up_log.append(p_up_load)
-        load_adj_down_log.append(p_down_load)
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Load_Adj_Prob_Up'] = load_adj_up_log
-    df_predict['Load_Adj_Prob_Down'] = load_adj_down_log
 
-    # [Kalman 2 Execution]
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure (VIX column dropped cleanly)
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 
-        'Prob_Up', 'Prob_Down', 
-        'Load_Adj_Prob_Up', 'Load_Adj_Prob_Down', 
-        'Accumulator_Score', 'Weighted_Momentum'
-    ]
+    # Formatting UI Structure
+    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Load_Adj_Prob_Up'] = display_df['Load_Adj_Prob_Up'].round(3)
-    display_df['Load_Adj_Prob_Down'] = display_df['Load_Adj_Prob_Down'].round(3)
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     # Inverting via index flip to freeze the latest active hour on Top Row
