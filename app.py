@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **All Original W% Columns Exact Copy**")
+st.write("🎯 **Aapki Custom Setting:** 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Latest Active Candle Locked on Top + **All Original W% Columns Exact Copy + Isolated Kalman Diff Probability Column Added**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -81,12 +81,28 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
+    # -----------------------------------------------------------------
+    # MODEL 1: Original 5-Feature Model (Untouched Core System)
+    # -----------------------------------------------------------------
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
+
+    # -----------------------------------------------------------------
+    # MODEL 2: Isolated Kalman Diff Model (Only trains on c_Combined)
+    # -----------------------------------------------------------------
+    X_train_kdiff = df_train[['c_Combined']].copy()
+    X_predict_kdiff = df_predict[['c_Combined']].copy()
+    
+    model_kdiff = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
+    model_kdiff.fit(X_train_kdiff, y_train)
+    
+    prob_kdiff = model_kdiff.predict_proba(X_predict_kdiff)
+    df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
+    df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
 
     # Real-Time row-level variance scaling math for W% columns
     importances = model_flow.feature_importances_
@@ -110,7 +126,7 @@ else:
     df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
-    # Live Accumulators & Raw Logs
+    # Live Accumulators & Raw Logs (Using original Prob_Up/Prob_Down)
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
     
@@ -130,12 +146,13 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # Formatting UI Structure
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
+        'KDiff_Prob_Up', 'KDiff_Prob_Down', # Naye Isolated Columns
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
     ]
@@ -145,6 +162,8 @@ else:
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
+    display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
+    display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
     
     # Rounding W% columns
     for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
@@ -156,5 +175,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Real-Time Feature Dominance (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Live Original Matrix + Kalman Diff Isolated Probability (Latest Hour Locked on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
