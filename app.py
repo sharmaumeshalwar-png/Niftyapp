@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **India VIX Integrated**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **India VIX Integrated & Instant Load Protection Layer**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -62,7 +62,6 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
     if ('Close', '^INDIAVIX') in raw_data.columns:
         df['India_VIX'] = raw_data[('Close', '^INDIAVIX')]
     else:
-        # Fallback if MultiIndex structure differs
         df['India_VIX'] = 15.0  # Safe default if API temporarily glitches
         
     # Forward fill VIX values if there are any hourly mismatches in stamps
@@ -86,7 +85,7 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
     # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # --- INDIA VIX INJECTED INTO THE FEATURE MATRIX FOR ML ACCURACY BOOST ---
+    # India VIX features matrix training integration
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'India_VIX']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
@@ -111,41 +110,32 @@ else:
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
+    
+    # --- REAL TIME LOAD PROTECTION LOGS ---
+    load_adj_up_log, load_adj_down_log = [], []
+    
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+    
+    # Microstructure arrays extracted for mathematical dynamic override inside the loop
+    order_imbalances = df_predict['Order_Imbalance'].to_numpy()
+    body_imbalances = df_predict['Body_Imbalance'].to_numpy()
+    flow_velocities = df_predict['Flow_Velocity'].to_numpy()
 
     for i in range(len(prob_ups)):
         p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        oi, bi, fv = order_imbalances[i], body_imbalances[i], flow_velocities[i]
+        
+        # 1. AAPKA ORIGINAL ACCUMULATOR LOGIC (Ratti bhar bhi untouched)
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
         raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting UI Structure (Added India_VIX to display table so you can verify it live)
-    clean_display_cols = ['a_Close', 'b_Kalman_Price', 'India_VIX', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum']
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['India_VIX'] = display_df['India_VIX'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    # Inverting via index flip to freeze the latest active hour on Top Row
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
+        
+        # 2. INSTANT INSTALMENT / LOAD COMPENSATION ENGINE
+        # Microstructure speed
