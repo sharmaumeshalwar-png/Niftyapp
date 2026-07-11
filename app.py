@@ -60,7 +60,6 @@ with st.spinner("Executing Strict Hard-Cutoff Engine for BTC-USD..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['Rolling_Volatility'] + 1e-10)
     
     # --- HARD CUTOFF BENCHMARK ---
-    # Pichle 7 dino (168 ghante) ka average standard deviation baseline
     df['Volatility_7Day_Avg'] = df['Rolling_Volatility'].rolling(window=168).mean()
     
     # Target Direction State
@@ -90,22 +89,21 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Individual Feature Breakdown Engine
-    feat_probs = {}
+    # Raw Feature Probability Extraction Before Override
+    feat_raw_probs = {}
     for feat in features_matrix:
         feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
         feat_model.fit(X_train[[feat]], y_train)
-        col_name = f'P_Up_{feat}'
-        df_predict[col_name] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
-        feat_probs[col_name] = df_predict[col_name].to_numpy()
+        feat_raw_probs[feat] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
 
     # Dynamic Volatility Extraction for Predict Window
     vol_current = df.iloc[split_idx:]['Rolling_Volatility'].to_numpy()
     vol_baseline = df.iloc[split_idx:]['Volatility_7Day_Avg'].to_numpy()
     
-    # Live Accumulators & Raw Logs
+    # Live Accumulators & Raw Logs (Using Lists to safely mutate data)
     master_scores_log, feat_scores_log, raw_weighted_momentum_log = [], [], []
     prob_up_log, prob_down_log = [], []
+    gap_prob_log, vol_prob_log = [], []
     master_accumulator = 0
     
     raw_probabilities = model_flow.predict_proba(X_predict)
@@ -113,47 +111,55 @@ else:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     # -----------------------------------------------------------------
-    # THE HARD CUTOFF RULE EXECUTION LOOP
+    # THE SAFE MUTABLE HARD CUTOFF LOOP
     # -----------------------------------------------------------------
     for i in range(len(raw_probabilities)):
         p_down_raw = raw_probabilities[i, 0]
         p_up_raw = raw_probabilities[i, 1]
         
-        # CONDITION: Agar current standard deviation weekly average se kam hai -> RESET EVERYTHING TO NEUTRAL
+        feat_gap_raw = feat_raw_probs['Normalized_Gap'][i]
+        feat_vol_raw = feat_raw_probs['Rolling_Volatility'][i]
+        
+        # FIXED CRASH CONDITION: If current standard deviation weekly average se kam hai -> FORCE 0.500
         if vol_current[i] < vol_baseline[i]:
             p_up = 0.500
             p_down = 0.500
-            # Columns breakdown ko bhi override kar do taaki fake indications na dikhein
-            feat_probs['P_Up_Normalized_Gap'][i] = 0.500
-            feat_probs['P_Up_Rolling_Volatility'][i] = 0.500
+            p_gap = 0.500
+            p_vol = 0.500
         else:
             p_up = p_up_raw
             p_down = p_down_raw
+            p_gap = feat_gap_raw
+            p_vol = feat_vol_raw
             
         prob_up_log.append(p_up)
         prob_down_log.append(p_down)
+        gap_prob_log.append(p_gap)
+        vol_prob_log.append(p_vol)
 
-        # Master Accumulator Logic [-5, 5] (Ab rangebound me ye freeze rahega)
+        # Master Accumulator Logic [-5, 5]
         if p_up >= 0.55: master_accumulator += 1
         elif p_down >= 0.55: master_accumulator -= 1
         master_accumulator = max(-5, min(5, master_accumulator))
         master_scores_log.append(master_accumulator)
         
-        # Feature Accumulator Logic [-2, 2]
+        # Feature Accumulator Logic [-2, 2] based on overwritten safe metrics
         current_feat_score = 0
-        for feat in features_matrix:
-            f_prob = feat_probs[f'P_Up_{feat}'][i]
-            if f_prob >= 0.55: current_feat_score += 1
-            elif f_prob <= 0.45: current_feat_score -= 1
+        if p_gap >= 0.55: current_feat_score += 1
+        elif p_gap <= 0.45: current_feat_score -= 1
+        
+        if p_vol >= 0.55: current_feat_score += 1
+        elif p_vol <= 0.45: current_feat_score -= 1
+        
         feat_scores_log.append(current_feat_score)
         
         raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
 
-    # Assigning Clean Logs
+    # Assigning Back Safe Arrays to DataFrame
     df_predict['Prob_Up'] = prob_up_log
     df_predict['Prob_Down'] = prob_down_log
-    df_predict['P_Up_Normalized_Gap'] = feat_probs['P_Up_Normalized_Gap']
-    df_predict['P_Up_Rolling_Volatility'] = feat_probs['P_Up_Rolling_Volatility']
+    df_predict['P_Up_Normalized_Gap'] = gap_prob_log
+    df_predict['P_Up_Rolling_Volatility'] = vol_prob_log
     
     df_predict['Accumulator_Score'] = master_scores_log  
     df_predict['Feature_Accumulator'] = feat_scores_log  
