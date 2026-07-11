@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="BTC Absolute Leaf-1 Feature Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [Absolute Extreme Leaf-1 & Feature Decoder]")
-st.write("🎯 **Aapki Custom Setting:** Reverted to Extreme `min_samples_leaf=1` + 4 Column Feature Probability Breakdowns + 50:50 Split + Latest Active Candle Locked on Top")
+st.title("⚡ BTC-USD Live 1-Hour [Absolute Extreme Leaf-1 & Dual Accumulator]")
+st.write("🎯 **Aapki Custom Setting:** Reverted to Extreme `min_samples_leaf=1` + 4 Column Feature Breakdowns + **New Feature Accumulator [-4,4]** + 50:50 Split + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -96,41 +96,59 @@ else:
     df_predict['Prob_Up'] = probabilities[:, 1]
 
     # -----------------------------------------------------------------
-    # FIX: THE 4 COLUMN FEATURE DECODER ENGINE (Strict Single-Line List)
+    # THE 4 COLUMN FEATURE DECODER ENGINE
     # -----------------------------------------------------------------
     target_features = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     
+    # Temporarily store individual probability columns for array operation
+    feat_probs = {}
     for feat in target_features:
         feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
         feat_model.fit(X_train[[feat]], y_train)
-        df_predict[f'P_Up_{feat}'] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
+        col_name = f'P_Up_{feat}'
+        df_predict[col_name] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
+        feat_probs[col_name] = df_predict[col_name].to_numpy()
 
     # Live Accumulators & Raw Logs
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
+    master_scores_log, feat_scores_log, raw_weighted_momentum_log = [], [], []
+    master_accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
+    # Loop to calculate Master Accumulator AND the new 4-Feature Accumulator
     for i in range(len(prob_ups)):
+        # 1. Master Accumulator Logic [-5, 5]
         p_up, p_down = prob_ups[i], prob_downs[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
+        if p_up >= 0.55: master_accumulator += 1
+        elif p_down >= 0.55: master_accumulator -= 1
+        master_accumulator = max(-5, min(5, master_accumulator))
+        master_scores_log.append(master_accumulator)
+        
+        # 2. NEW: The 4-Feature Standalone Accumulator Logic [-4, 4] per row
+        current_feat_score = 0
+        for feat in target_features:
+            f_prob = feat_probs[f'P_Up_{feat}'][i]
+            if f_prob >= 0.55:
+                current_feat_score += 1
+            elif f_prob <= 0.45:
+                current_feat_score -= 1
+        feat_scores_log.append(current_feat_score)
+        
         raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
 
-    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Accumulator_Score'] = master_scores_log  
+    df_predict['Feature_Accumulator'] = feat_scores_log  # <-- Aapka naya requested column
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure with the new 4 individual breakdown columns
+    # Formatting UI Structure with both accumulators
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'P_Up_Order_Imbalance', 'P_Up_Body_Imbalance', 'P_Up_Normalized_Gap', 'P_Up_Flow_Velocity',
-        'Accumulator_Score', 'Weighted_Momentum'
+        'Accumulator_Score', 'Feature_Accumulator', 'Weighted_Momentum'
     ]
     
     display_df = df_predict[clean_display_cols].copy()
@@ -139,12 +157,12 @@ else:
     for col in display_df.columns:
         if 'Prob_' in col or 'P_Up_' in col:
             display_df[col] = display_df[col].round(3)
-        elif col != 'Accumulator_Score':
+        elif col not in ['Accumulator_Score', 'Feature_Accumulator']:
             display_df[col] = display_df[col].round(2)
     
     # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + 4 Core Microstructure Decoders (Latest Hour Locked on Top)")
+    st.subheader(f"📋 Live Original Matrix + Dual Accumulator System (Latest Hour Locked on Top)")
     st.dataframe(display_df, use_container_width=True, height=750)
