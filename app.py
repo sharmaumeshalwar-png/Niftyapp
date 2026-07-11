@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="BTC Absolute Leaf-1 Feature Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [Dual Accumulator Matrix]")
-st.write("🎯 **Aapki Custom Setting:** `min_samples_leaf=1` + 4 Column Feature Decoders + **NEW Feature Combo Accumulator Column** + 50:50 Split")
+st.title("⚡ BTC-USD Live 1-Hour [Absolute Extreme Leaf-1 & Feature Decoder]")
+st.write("🎯 **Aapki Custom Setting:** Reverted to Extreme `min_samples_leaf=1` + 4 Column Feature Probability Breakdowns + 50:50 Split + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -30,6 +30,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
+    # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -37,6 +38,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
+    # Fetch using exact BTC-USD ticker
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
@@ -50,7 +52,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
@@ -62,6 +64,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
@@ -79,13 +82,46 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # Master Model Training
-    model_flow = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
+    # --- ABSOLUTE LEAF-1 MODEL CALIBRATION ---
+    model_flow = RandomForestClassifier(
+        n_estimators=150, 
+        min_samples_leaf=1, 
+        random_state=42
+    )
     model_flow.fit(X_train, y_train)
 
+    # Master Probabilities
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Individual Sub-Feature Models Engine
-    target_features =
+    # -----------------------------------------------------------------
+    # FIX: THE 4 COLUMN FEATURE DECODER ENGINE (Strict Single-Line List)
+    # -----------------------------------------------------------------
+    target_features = ['Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    
+    for feat in target_features:
+        feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
+        feat_model.fit(X_train[[feat]], y_train)
+        df_predict[f'P_Up_{feat}'] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
+
+    # Live Accumulators & Raw Logs
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
+    
+    prob_ups = df_predict['Prob_Up'].to_numpy()
+    prob_downs = df_predict['Prob_Down'].to_numpy()
+    closes = df_predict['a_Close'].to_numpy()
+    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
+
+    for i in range(len(prob_ups)):
+        p_up, p_down = prob_ups[i], prob_downs[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_
