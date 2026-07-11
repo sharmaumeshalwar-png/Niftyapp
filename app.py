@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Real-Time Feature Contribution (%) Tracker**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **All Original W% Columns Exact Copy**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -84,26 +84,23 @@ else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # 1. Base Model Predictions
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # 2. Extract Global Feature Importances for Relative Contribution Math
+    # Real-Time row-level variance scaling math for W% columns
     importances = model_flow.feature_importances_
     
-    # Real-Time dynamic row-level variance scaling to check weight distribution
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
     X_train_mean = X_train.mean().to_numpy()
     X_train_std = X_train.std().to_numpy() + 1e-10
 
     for row in X_predict_arr:
-        # Har row ke liye feature ka distance variance map karte hain importance se jodkar
         deviation = np.abs(row - X_train_mean) / X_train_std
         raw_contrib = deviation * importances
         total_contrib = np.sum(raw_contrib) + 1e-10
-        norm_contrib = (raw_contrib / total_contrib) * 100  # Percentage mapping
+        norm_contrib = (raw_contrib / total_contrib) * 100
         feat_weights.append(norm_contrib)
 
     feat_weights_arr = np.array(feat_weights)
@@ -136,7 +133,7 @@ else:
     # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure with New Contribution Metrics
+    # Formatting UI Structure
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
@@ -149,7 +146,7 @@ else:
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Contribution numbers rounding
+    # Rounding W% columns
     for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
         display_df[c] = display_df[c].round(1).astype(str) + "%"
         
@@ -159,5 +156,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Dataset Matrix + Real-Time Feature Dominance (Top Row Frozen)")
+    st.subheader(f"📋 Live Original Matrix + Real-Time Feature Dominance (Latest Hour Locked on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
