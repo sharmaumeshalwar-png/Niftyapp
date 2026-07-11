@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Volatility-Injected Leaf-1 Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [4-Feature Microstructure + StdDev Injected Engine]")
-st.write("🎯 **Aapki Custom Setting:** Re-introduced All 4 Features + **Standard Deviation Injected into ML Matrix** + Reverted to Absolute `min_samples_leaf=1` + Dual Accumulator + 50:50 Split")
+st.set_page_config(page_title="BTC Laser Gap-Volatility Engine", layout="wide")
+st.title("⚡ BTC-USD Live 1-Hour [Normalized Gap & StdDev Only Engine]")
+st.write("🎯 **Aapki Custom Setting:** ONLY Normalized_Gap + ONLY Standard Deviation (Rolling Volatility) + Reverted to Absolute `min_samples_leaf=1` + 50:50 Split + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Volatility-Injected Data Fetch for BTC-USD..."):
+with st.spinner("Executing Laser Gap Data Fetch for BTC-USD..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -55,21 +55,15 @@ with st.spinner("Executing Volatility-Injected Data Fetch for BTC-USD..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Core 4 Microstructure Features
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
-    
-    # --- BHAI KA POINT: STANDARD DEVIATION AS AN ML FEATURE ---
+    # Strictly Only Gap and Volatility (Baki sab khatam)
     df['Rolling_Volatility'] = df['c_Combined'].rolling(window=24).std()
+    df['Normalized_Gap'] = df['c_Combined'] / (df['Rolling_Volatility'] + 1e-10)
     
     # Target Direction State
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # Features Matrix: Adding Rolling_Volatility directly to guide the 4 features
-    features_matrix = ['Normalized_Gap', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity', 'Rolling_Volatility']
+    # Only 2 Features in the whole engine now!
+    features_matrix = ['Normalized_Gap', 'Rolling_Volatility']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio)
@@ -92,20 +86,18 @@ else:
     )
     model_flow.fit(X_train, y_train)
 
-    # Master Probabilities based on 4-features + Volatility
+    # Master Probabilities
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Individual Feature Decoder (Keeping the original 4 core features for column logs)
-    core_4_features = ['Normalized_Gap', 'Order_Imbalance', 'Body_Imbalance', 'Flow_Velocity']
+    # Individual Column Decoders for our 2 features
     feat_probs = {}
-    for feat in core_4_features:
-        # Each feature is trained along with Rolling_Volatility to keep the filter active!
+    for feat in features_matrix:
         feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
-        feat_model.fit(X_train[[feat, 'Rolling_Volatility']], y_train)
+        feat_model.fit(X_train[[feat]], y_train)
         col_name = f'P_Up_{feat}'
-        df_predict[col_name] = feat_model.predict_proba(X_predict[[feat, 'Rolling_Volatility']])[:, 1]
+        df_predict[col_name] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
         feat_probs[col_name] = df_predict[col_name].to_numpy()
 
     # Live Accumulators & Raw Logs
@@ -125,9 +117,9 @@ else:
         master_accumulator = max(-5, min(5, master_accumulator))
         master_scores_log.append(master_accumulator)
         
-        # 4-Feature Accumulator Logic [-4, 4] per row
+        # Feature Accumulator Logic [-2, 2] per row (Kyunki ab sirf 2 features hain)
         current_feat_score = 0
-        for feat in core_4_features:
+        for feat in features_matrix:
             f_prob = feat_probs[f'P_Up_{feat}'][i]
             if f_prob >= 0.55: current_feat_score += 1
             elif f_prob <= 0.45: current_feat_score -= 1
@@ -143,7 +135,7 @@ else:
     # Formatting UI Structure
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'P_Up_Normalized_Gap', 'P_Up_Order_Imbalance', 'P_Up_Body_Imbalance', 'P_Up_Flow_Velocity',
+        'P_Up_Normalized_Gap', 'P_Up_Rolling_Volatility',
         'Accumulator_Score', 'Feature_Accumulator', 'Weighted_Momentum'
     ]
     
@@ -160,5 +152,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Volatility-Injected 4-Feature Matrix Engine (Latest Hour Locked on Top)")
+    st.subheader(f"📋 Laser Gap-Volatility Engine Matrix (Latest Hour Locked on Top)")
     st.dataframe(display_df, use_container_width=True, height=750)
