@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Hard-Cutoff Laser Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [Strict Hard-Cutoff Volatility Filter]")
-st.write("🎯 **Aapki Custom Setting:** Normalized_Gap + **Strict Out-of-Model Hard Cutoff** (Volatility < 7-Day Avg = Forced 0.50 Neutral) + `min_samples_leaf=1` + 50:50 Split")
+st.set_page_config(page_title="BTC Anti-Flip Laser Engine", layout="wide")
+st.title("⚡ BTC-USD Live 1-Hour [Anti-Flip Hysteresis Memory Engine]")
+st.write("🎯 **Aapki Custom Setting:** Normalized_Gap + Volatility Cutoff + **Strict Anti-Flip Memory Lock (70% Hysteresis Cutoff)** + `min_samples_leaf=1` + 50:50 Split")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict Hard-Cutoff Engine for BTC-USD..."):
+with st.spinner("Executing Anti-Flip Filter Engine for BTC-USD..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -59,7 +59,7 @@ with st.spinner("Executing Strict Hard-Cutoff Engine for BTC-USD..."):
     df['Rolling_Volatility'] = df['c_Combined'].rolling(window=24).std()
     df['Normalized_Gap'] = df['c_Combined'] / (df['Rolling_Volatility'] + 1e-10)
     
-    # --- HARD CUTOFF BENCHMARK ---
+    # Hard Cutoff Volatility Avg Baseline
     df['Volatility_7Day_Avg'] = df['Rolling_Volatility'].rolling(window=168).mean()
     
     # Target Direction State
@@ -82,11 +82,7 @@ if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
     # --- ABSOLUTE LEAF-1 MODEL CALIBRATION ---
-    model_flow = RandomForestClassifier(
-        n_estimators=150, 
-        min_samples_leaf=1, 
-        random_state=42
-    )
+    model_flow = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
     # Raw Feature Probability Extraction Before Override
@@ -100,18 +96,21 @@ else:
     vol_current = df.iloc[split_idx:]['Rolling_Volatility'].to_numpy()
     vol_baseline = df.iloc[split_idx:]['Volatility_7Day_Avg'].to_numpy()
     
-    # Live Accumulators & Raw Logs (Using Lists to safely mutate data)
+    # Memory and Logs Setup
     master_scores_log, feat_scores_log, raw_weighted_momentum_log = [], [], []
     prob_up_log, prob_down_log = [], []
     gap_prob_log, vol_prob_log = [], []
-    master_accumulator = 0
     
     raw_probabilities = model_flow.predict_proba(X_predict)
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
+    # --- INITIAL STATE FOR ANTI-FLIP MEMORY ---
+    current_state = 0.500  # Default neutral
+    master_accumulator = 0
+
     # -----------------------------------------------------------------
-    # THE SAFE MUTABLE HARD CUTOFF LOOP
+    # ANTI-FLIP HYSTERESIS LOOP EXECUTION
     # -----------------------------------------------------------------
     for i in range(len(raw_probabilities)):
         p_down_raw = raw_probabilities[i, 0]
@@ -120,42 +119,60 @@ else:
         feat_gap_raw = feat_raw_probs['Normalized_Gap'][i]
         feat_vol_raw = feat_raw_probs['Rolling_Volatility'][i]
         
-        # FIXED CRASH CONDITION: If current standard deviation weekly average se kam hai -> FORCE 0.500
+        # 1. Volatility Cutoff Filter
         if vol_current[i] < vol_baseline[i]:
             p_up = 0.500
             p_down = 0.500
             p_gap = 0.500
             p_vol = 0.500
+            current_state = 0.500 # Range bound wipes current trend memory
         else:
-            p_up = p_up_raw
-            p_down = p_down_raw
-            p_gap = feat_gap_raw
-            p_vol = feat_vol_raw
+            # 2. BHAI KA POINT: STRICT ANTI-FLIP MEMORY FILTER (Hysteresis)
+            if current_state == 0.500:
+                # Agar state neutral hai, toh 0.55+ hone par hi naya state banega
+                if p_up_raw >= 0.55: current_state = 1.0
+                elif p_down_raw >= 0.55: current_state = 0.0
+            elif current_state == 1.0:
+                # Agar hum bullish trend me locked hain, toh tabhi change hoga jab down probability strictly > 70% ho!
+                if p_down_raw >= 0.70: current_state = 0.0
+            elif current_state == 0.0:
+                # Agar hum bearish trend me locked hain, toh tabhi change hoga jab up probability strictly > 70% ho!
+                if p_up_raw >= 0.70: current_state = 1.0
+
+            # Override output probabilities based on locked state memory
+            if current_state == 1.0:
+                p_up, p_down = p_up_raw, p_down_raw
+                p_gap, p_vol = feat_gap_raw, feat_vol_raw
+            elif current_state == 0.0:
+                p_up, p_down = p_up_raw, p_down_raw
+                p_gap, p_vol = feat_gap_raw, feat_vol_raw
+            else:
+                p_up, p_down = 0.500, 0.500
+                p_gap, p_vol = 0.500, 0.500
             
         prob_up_log.append(p_up)
         prob_down_log.append(p_down)
         gap_prob_log.append(p_gap)
         vol_prob_log.append(p_vol)
 
-        # Master Accumulator Logic [-5, 5]
-        if p_up >= 0.55: master_accumulator += 1
-        elif p_down >= 0.55: master_accumulator -= 1
+        # 3. Smooth Accumulator (Will not flip randomly)
+        if p_up >= 0.55 and current_state == 1.0: master_accumulator += 1
+        elif p_down >= 0.55 and current_state == 0.0: master_accumulator -= 1
+        
         master_accumulator = max(-5, min(5, master_accumulator))
         master_scores_log.append(master_accumulator)
         
-        # Feature Accumulator Logic [-2, 2] based on overwritten safe metrics
+        # Feature Accumulator
         current_feat_score = 0
         if p_gap >= 0.55: current_feat_score += 1
         elif p_gap <= 0.45: current_feat_score -= 1
-        
         if p_vol >= 0.55: current_feat_score += 1
         elif p_vol <= 0.45: current_feat_score -= 1
-        
         feat_scores_log.append(current_feat_score)
         
         raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
 
-    # Assigning Back Safe Arrays to DataFrame
+    # Mapping safe arrays back to presentation layer
     df_predict['Prob_Up'] = prob_up_log
     df_predict['Prob_Down'] = prob_down_log
     df_predict['P_Up_Normalized_Gap'] = gap_prob_log
@@ -182,9 +199,9 @@ else:
         elif col not in ['Accumulator_Score', 'Feature_Accumulator']:
             display_df[col] = display_df[col].round(2)
     
-    # Inverting via index flip to freeze the latest active hour on Top Row
+    # Top Row Freeze
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Laser Engine Matrix with Strict 7-Day Volatility Cutoff Filter")
+    st.subheader(f"📋 Anti-Flip Laser Engine Grid (Hysteresis Memory Lock Enabled)")
     st.dataframe(display_df, use_container_width=True, height=750)
