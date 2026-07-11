@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
+st.set_page_config(page_title="BTC Velocity Focus Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Real-Time Feature Contribution (%) Tracker**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **ML Execution Isolated to Flow_Velocity Only**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -37,7 +37,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact BTC-USD ticker
+    # Fetch using exact BTC-USD ticker for continuous crypto data stream
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
@@ -56,7 +56,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space
+    # Microstructure Features Space (All features generated as-is to maintain shape)
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -64,54 +64,34 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
+    # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
+    # Full clean drop as per original logic
+    all_features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=all_features + ['State_Direction'], inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
-X_train = df_train[features_matrix].copy()
+
+# --- ML INPUT ISOLATION: Training & Prediction matrix strictly limited to Flow_Velocity Only ---
+X_train_velocity = df_train[['Flow_Velocity']].copy()
 y_train = df_train['State_Direction'].copy()
 
 df_predict = df.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix].copy()
+X_predict_velocity = df_predict[['Flow_Velocity']].copy()
 
-if len(X_predict) == 0:
+if len(X_predict_velocity) == 0:
     st.error("Prediction matrix error.")
 else:
+    # Model parameters kept 100% intact as per original specs
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
-    model_flow.fit(X_train, y_train)
+    model_flow.fit(X_train_velocity, y_train)
 
-    # 1. Base Model Predictions
-    probabilities = model_flow.predict_proba(X_predict)
+    probabilities = model_flow.predict_proba(X_predict_velocity)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
-
-    # 2. Extract Global Feature Importances for Relative Contribution Math
-    importances = model_flow.feature_importances_
-    
-    # Real-Time dynamic row-level variance scaling to check weight distribution
-    feat_weights = []
-    X_predict_arr = X_predict.to_numpy()
-    X_train_mean = X_train.mean().to_numpy()
-    X_train_std = X_train.std().to_numpy() + 1e-10
-
-    for row in X_predict_arr:
-        # Har row ke liye feature ka distance variance map karte hain importance se jodkar
-        deviation = np.abs(row - X_train_mean) / X_train_std
-        raw_contrib = deviation * importances
-        total_contrib = np.sum(raw_contrib) + 1e-10
-        norm_contrib = (raw_contrib / total_contrib) * 100  # Percentage mapping
-        feat_weights.append(norm_contrib)
-
-    feat_weights_arr = np.array(feat_weights)
-    df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
-    df_predict['W_OrderImb(%)'] = feat_weights_arr[:, 1]
-    df_predict['W_BodyImb(%)'] = feat_weights_arr[:, 2]
-    df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
-    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
@@ -136,28 +116,27 @@ else:
     # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure with New Contribution Metrics
+    # --- NEW DEDICATED COLUMN: Flow_Velocity ka direct Weighted Momentum via Kalman tracking ---
+    df_predict['Velocity_Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Flow_Velocity'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Formatting UI Structure (Injecting Flow_Velocity and its new momentum column into UI)
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
-        'Accumulator_Score', 'Weighted_Momentum'
+        'a_Close', 'b_Kalman_Price', 'Flow_Velocity', 'Velocity_Weighted_Momentum', 
+        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Flow_Velocity'] = display_df['Flow_Velocity'].round(2)
+    display_df['Velocity_Weighted_Momentum'] = display_df['Velocity_Weighted_Momentum'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    
-    # Contribution numbers rounding
-    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
-        display_df[c] = display_df[c].round(1).astype(str) + "%"
-        
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Dataset Matrix + Real-Time Feature Dominance (Top Row Frozen)")
+    st.subheader(f"📋 Live Velocity-Driven Matrix (Latest Active Candle Frozen on Top Row)")
     st.dataframe(display_df, use_container_width=True, height=750)
