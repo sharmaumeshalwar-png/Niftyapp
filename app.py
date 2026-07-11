@@ -6,12 +6,12 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Raw Momentum Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour [Original Raw Momentum Engine]")
-st.write("🎯 **Aapki Original Setting:** Pure Normalized_Gap Only + Absolute `min_samples_leaf=1` + Dual Accumulator + Strict 50:50 Train-Predict Split")
+st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
+st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Real-Time Feature Contribution (%) Tracker**")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Original Kalman Filter Function)
+# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0:
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Fetching Live Market Data for BTC-USD..."):
+with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=720) 
     end_date = current_time + timedelta(days=1) 
@@ -37,6 +37,7 @@ with st.spinner("Fetching Live Market Data for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
+    # Fetch using exact BTC-USD ticker
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
@@ -50,22 +51,25 @@ with st.spinner("Fetching Live Market Data for BTC-USD..."):
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition
+    # Base Matrix Definition (Price Kalman 1 Active)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Pure Original Normalized Gap Feature
+    # Microstructure Features Space
+    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
-    # Original Target Direction State
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # Feature Matrix Setup
-    features_matrix = ['Normalized_Gap']
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Original Strict 50:50 Ratio)
+# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -77,31 +81,41 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # --- ORIGINAL ABSOLUTE LEAF-1 MODEL CALIBRATION ---
-    model_flow = RandomForestClassifier(
-        n_estimators=150, 
-        min_samples_leaf=1, 
-        random_state=42
-    )
+    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
-    # Master Probabilities Output
+    # 1. Base Model Predictions
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Feature Breakdown Column Generation
-    feat_probs = {}
-    for feat in features_matrix:
-        feat_model = RandomForestClassifier(n_estimators=150, min_samples_leaf=1, random_state=42)
-        feat_model.fit(X_train[[feat]], y_train)
-        col_name = f'P_Up_{feat}'
-        df_predict[col_name] = feat_model.predict_proba(X_predict[[feat]])[:, 1]
-        feat_probs[col_name] = df_predict[col_name].to_numpy()
+    # 2. Extract Global Feature Importances for Relative Contribution Math
+    importances = model_flow.feature_importances_
+    
+    # Real-Time dynamic row-level variance scaling to check weight distribution
+    feat_weights = []
+    X_predict_arr = X_predict.to_numpy()
+    X_train_mean = X_train.mean().to_numpy()
+    X_train_std = X_train.std().to_numpy() + 1e-10
 
-    # Original Accumulators Flow Loop
-    master_scores_log, feat_scores_log, raw_weighted_momentum_log = [], [], []
-    master_accumulator = 0
+    for row in X_predict_arr:
+        # Har row ke liye feature ka distance variance map karte hain importance se jodkar
+        deviation = np.abs(row - X_train_mean) / X_train_std
+        raw_contrib = deviation * importances
+        total_contrib = np.sum(raw_contrib) + 1e-10
+        norm_contrib = (raw_contrib / total_contrib) * 100  # Percentage mapping
+        feat_weights.append(norm_contrib)
+
+    feat_weights_arr = np.array(feat_weights)
+    df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
+    df_predict['W_OrderImb(%)'] = feat_weights_arr[:, 1]
+    df_predict['W_BodyImb(%)'] = feat_weights_arr[:, 2]
+    df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
+    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
+
+    # Live Accumulators & Raw Logs
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
@@ -109,46 +123,41 @@ else:
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_ups)):
-        # Master Accumulator Loop [-5, 5]
-        p_up, p_down = prob_ups[i], prob_downs[i]
-        if p_up >= 0.55: master_accumulator += 1
-        elif p_down >= 0.55: master_accumulator -= 1
-        master_accumulator = max(-5, min(5, master_accumulator))
-        master_scores_log.append(master_accumulator)
-        
-        # Feature Accumulator Loop [-1, 1] (Kyunki ek hi core feature hai)
-        current_feat_score = 0
-        for feat in features_matrix:
-            f_prob = feat_probs[f'P_Up_{feat}'][i]
-            if f_prob >= 0.55: current_feat_score += 1
-            elif f_prob <= 0.45: current_feat_score -= 1
-        feat_scores_log.append(current_feat_score)
-        
-        raw_weighted_momentum_log.append(closes[i] - kalmans_price[i])
+        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(c_val - k_price_val)
 
-    df_predict['Accumulator_Score'] = master_scores_log  
-    df_predict['Feature_Accumulator'] = feat_scores_log  
+    df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
+
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure
+    # Formatting UI Structure with New Contribution Metrics
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'P_Up_Normalized_Gap', 'Accumulator_Score', 'Feature_Accumulator', 'Weighted_Momentum'
+        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'Accumulator_Score', 'Weighted_Momentum'
     ]
-    
     display_df = df_predict[clean_display_cols].copy()
     
-    # Precision rounding
-    for col in display_df.columns:
-        if 'Prob_' in col or 'P_Up_' in col:
-            display_df[col] = display_df[col].round(3)
-        elif col not in ['Accumulator_Score', 'Feature_Accumulator']:
-            display_df[col] = display_df[col].round(2)
+    display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
+    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     
-    # Original Top Row Freeze Sequence
+    # Contribution numbers rounding
+    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
+        display_df[c] = display_df[c].round(1).astype(str) + "%"
+        
+    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
+    
+    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Original Raw Momentum Engine Matrix (Latest Hour Locked on Top)")
+    st.subheader(f"📋 Live Dataset Matrix + Real-Time Feature Dominance (Top Row Frozen)")
     st.dataframe(display_df, use_container_width=True, height=750)
