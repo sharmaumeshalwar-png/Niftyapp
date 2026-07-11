@@ -124,4 +124,27 @@ else:
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # Formatting UI Structure with the new 4 individual breakdown columns
+    clean_display_cols = [
+        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
+        'P_Up_Order_Imbalance', 'P_Up_Body_Imbalance', 'P_Up_Normalized_Gap', 'P_Up_Flow_Velocity',
+        'Accumulator_Score', 'Weighted_Momentum'
+    ]
+    
+    display_df = df_predict[clean_display_cols].copy()
+    
+    # Precision rounding
+    for col in display_df.columns:
+        if 'Prob_' in col or 'P_Up_' in col:
+            display_df[col] = display_df[col].round(3)
+        elif col != 'Accumulator_Score':
+            display_df[col] = display_df[col].round(2)
+    
+    # Inverting via index flip to freeze the latest active hour on Top Row
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Original Matrix + 4 Core Microstructure Decoders (Latest Hour Locked on Top)")
+    st.dataframe(display_df, use_container_width=True, height=750)
