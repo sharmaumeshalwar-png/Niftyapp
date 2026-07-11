@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Whale Trap Zone Detector (64500-63000 Loop)** + Whipsaw Filter + **Green BUY / Red SELL Core Overrides** + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Memory Trap Zone Level Detector** + No Expiry / Pure Static Levels + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -118,7 +118,7 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 INSTITUTIONAL RANGE OVERRIDE ENGINE (Strict Structural Fit)
+    # 🧠 MEMORY TRAP ZONE ENGINE (No Fixed Ranges, Pure Dynamic Hits)
     # -----------------------------------------------------------------
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
@@ -127,47 +127,55 @@ else:
     final_prob_up_ui = []
     final_prob_down_ui = []
     
-    range_high = 0.0
-    range_low = 0.0
-    zone_active = False
+    # Store all captured flip levels permanently
+    trap_high_levels = []
+    trap_low_levels = []
 
     for idx in range(len(close_vals)):
         p_up = prob_up_vals[idx]
         p_down = prob_down_vals[idx]
         current_close = close_vals[idx]
         
+        # 1. Identify and record fresh flip points instantly
         if idx > 1:
             prev_close = close_vals[idx-1]
             prev_p_up = prob_up_vals[idx-1]
             prev_p_down = prob_down_vals[idx-1]
             
-            # Catching Up-to-Down Flip Trap
-            if prev_p_up >= 0.65 and current_close < prev_close and not zone_active:
-                range_high = prev_close
-                range_low = current_close * 0.985 
-                zone_active = True
+            # Up side signal flip block
+            if prev_p_up >= 0.65 and current_close < prev_close:
+                trap_high_levels.append(prev_close)
             
-            # Catching Down-to-Up Flip Trap
-            if prev_p_down >= 0.65 and current_close > prev_close and not zone_active:
-                range_low = prev_close
-                range_high = current_close * 1.015 
-                zone_active = True
+            # Down side signal flip block
+            if prev_p_down >= 0.65 and current_close > prev_close:
+                trap_low_levels.append(prev_close)
 
-        if zone_active:
-            if current_close > range_high and p_up >= 0.58:
+        # 2. Check if current price is hitting ANY recorded trap level (with 0.1% strict buffer zone)
+        is_trapped = False
+        for lvl in trap_high_levels:
+            if abs(current_close - lvl) / lvl <= 0.001:  # Strict localized threshold check
+                is_trapped = True
+                break
+        for lvl in trap_low_levels:
+            if abs(current_close - lvl) / lvl <= 0.001:
+                is_trapped = True
+                break
+
+        # 3. Apply label dynamically
+        if is_trapped:
+            final_prob_up_ui.append("⏳ TRAP ZONE")
+            final_prob_down_ui.append("⏳ TRAP ZONE")
+        else:
+            # Generate signal if probabilities break out cleanly
+            if p_up >= 0.58:
                 final_prob_up_ui.append("🟢 BUY SIGNAL")
                 final_prob_down_ui.append(str(round(p_down, 3)))
-                zone_active = False 
-            elif current_close < range_low and p_down >= 0.58:
+            elif p_down >= 0.58:
                 final_prob_up_ui.append(str(round(p_up, 3)))
                 final_prob_down_ui.append("🔴 SELL SIGNAL")
-                zone_active = False 
             else:
-                final_prob_up_ui.append("⏳ TRAP ZONE")
-                final_prob_down_ui.append("⏳ TRAP ZONE")
-        else:
-            final_prob_up_ui.append(str(round(p_up, 3)))
-            final_prob_down_ui.append(str(round(p_down, 3)))
+                final_prob_up_ui.append(str(round(p_up, 3)))
+                final_prob_down_ui.append(str(round(p_down, 3)))
 
     df_predict['Prob_Up'] = final_prob_up_ui
     df_predict['Prob_Down'] = final_prob_down_ui
@@ -211,5 +219,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Smart Range Overrides Locked on Top")
+    st.subheader(f"📋 Live Original Matrix + Memory Trap Zone Engine Locked on Top")
     st.dataframe(display_df, use_container_width=True, height=750)
