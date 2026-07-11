@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Memory Trap Zone Level Detector** + No Expiry / Pure Static Levels + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Inverted Weighted 25-EMA Tunnel (Max Weight on 25)** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -118,106 +118,58 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 MEMORY TRAP ZONE ENGINE (No Fixed Ranges, Pure Dynamic Hits)
+    # 🧠 INVERTED WEIGHTED EMA TUNNEL ENGINE (Max Weight on EMA 25)
     # -----------------------------------------------------------------
+    # Inverting the weights: EMA 25 gets weight 25, EMA 24 gets 24 ... EMA 1 gets weight 1
+    ema_lengths = np.arange(1, 26)
+    inverted_decay_weights = ema_lengths  # [1, 2, 3, ..., 25] -> Sabse akhri (25) ko sabse jada weight
+    total_weight_sum = np.sum(inverted_decay_weights)
+
+    high_ema_stack = []
+    low_ema_stack = []
+
+    for length in ema_lengths:
+        high_ema_stack.append(df['High'].ewm(span=int(length), adjust=False).mean())
+        low_ema_stack.append(df['Low'].ewm(span=int(length), adjust=False).mean())
+
+    weighted_high_tunnel = np.zeros(len(df))
+    weighted_low_tunnel = np.zeros(len(df))
+
+    for i in range(25):
+        weighted_high_tunnel += high_ema_stack[i].to_numpy() * (inverted_decay_weights[i] / total_weight_sum)
+        weighted_low_tunnel += low_ema_stack[i].to_numpy() * (inverted_decay_weights[i] / total_weight_sum)
+
+    df['Weighted_High_Tunnel'] = weighted_high_tunnel
+    df['Weighted_Low_Tunnel'] = weighted_low_tunnel
+
+    df_predict['Weighted_High_Tunnel'] = df['Weighted_High_Tunnel'].loc[df_predict.index]
+    df_predict['Weighted_Low_Tunnel'] = df['Weighted_Low_Tunnel'].loc[df_predict.index]
+
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
     close_vals = df_predict['a_Close'].to_numpy()
+    high_tunnel_vals = df_predict['Weighted_High_Tunnel'].to_numpy()
+    low_tunnel_vals = df_predict['Weighted_Low_Tunnel'].to_numpy()
     
     final_prob_up_ui = []
     final_prob_down_ui = []
-    
-    # Store all captured flip levels permanently
-    trap_high_levels = []
-    trap_low_levels = []
 
     for idx in range(len(close_vals)):
         p_up = prob_up_vals[idx]
         p_down = prob_down_vals[idx]
         current_close = close_vals[idx]
-        
-        # 1. Identify and record fresh flip points instantly
-        if idx > 1:
-            prev_close = close_vals[idx-1]
-            prev_p_up = prob_up_vals[idx-1]
-            prev_p_down = prob_down_vals[idx-1]
-            
-            # Up side signal flip block
-            if prev_p_up >= 0.65 and current_close < prev_close:
-                trap_high_levels.append(prev_close)
-            
-            # Down side signal flip block
-            if prev_p_down >= 0.65 and current_close > prev_close:
-                trap_low_levels.append(prev_close)
+        current_high_band = high_tunnel_vals[idx]
+        current_low_band = low_tunnel_vals[idx]
 
-        # 2. Check if current price is hitting ANY recorded trap level (with 0.1% strict buffer zone)
-        is_trapped = False
-        for lvl in trap_high_levels:
-            if abs(current_close - lvl) / lvl <= 0.001:  # Strict localized threshold check
-                is_trapped = True
-                break
-        for lvl in trap_low_levels:
-            if abs(current_close - lvl) / lvl <= 0.001:
-                is_trapped = True
-                break
-
-        # 3. Apply label dynamically
-        if is_trapped:
+        # Cross Execution Logic based on Inverted Deep Tunnel
+        if current_close > current_high_band:
+            final_prob_up_ui.append("🟢 BUY SIGNAL")
+            final_prob_down_ui.append(str(round(p_down, 3)))
+        elif current_close < current_low_band:
+            final_prob_up_ui.append(str(round(p_up, 3)))
+            final_prob_down_ui.append("🔴 SELL SIGNAL")
+        else:
             final_prob_up_ui.append("⏳ TRAP ZONE")
             final_prob_down_ui.append("⏳ TRAP ZONE")
-        else:
-            # Generate signal if probabilities break out cleanly
-            if p_up >= 0.58:
-                final_prob_up_ui.append("🟢 BUY SIGNAL")
-                final_prob_down_ui.append(str(round(p_down, 3)))
-            elif p_down >= 0.58:
-                final_prob_up_ui.append(str(round(p_up, 3)))
-                final_prob_down_ui.append("🔴 SELL SIGNAL")
-            else:
-                final_prob_up_ui.append(str(round(p_up, 3)))
-                final_prob_down_ui.append(str(round(p_down, 3)))
 
-    df_predict['Prob_Up'] = final_prob_up_ui
-    df_predict['Prob_Down'] = final_prob_down_ui
-
-    # Live Accumulators & Raw Logs
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-
-    for i in range(len(prob_up_vals)):
-        p_up, p_down, c_val, k_price_val = prob_up_vals[i], prob_down_vals[i], close_vals[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting UI Structure
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'KDiff_Prob_Up', 'KDiff_Prob_Down',
-        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
-        'Accumulator_Score', 'Weighted_Momentum'
-    ]
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
-    display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
-    
-    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
-        display_df[c] = display_df[c].round(1).astype(str) + "%"
-        
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Original Matrix + Memory Trap Zone Engine Locked on Top")
-    st.dataframe(display_df, use_container_width=True, height=750)
+    df_predict
