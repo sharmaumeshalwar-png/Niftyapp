@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Absolute Hint Engine", layout="wide")
+st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** 50:50 Train-Predict Split + All 5 Core Features Active + **W_Velocity(%) 0.0% Hint Restored** + Dedicated Velocity Momentum Column + Latest Active Candle Locked on Top")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **Real-Time Feature Contribution (%) Tracker**")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -56,7 +56,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
     
-    # Microstructure Features Space (All 5 features kept 100% active)
+    # Microstructure Features Space
     df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
@@ -69,7 +69,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio)
+# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -84,26 +84,34 @@ else:
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
+    # 1. Base Model Predictions
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down'] = probabilities[:, 0]
     df_predict['Prob_Up'] = probabilities[:, 1]
 
-    # Real-Time row-level variance scaling to bring back the exact percentage column
+    # 2. Extract Global Feature Importances for Relative Contribution Math
     importances = model_flow.feature_importances_
+    
+    # Real-Time dynamic row-level variance scaling to check weight distribution
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
     X_train_mean = X_train.mean().to_numpy()
     X_train_std = X_train.std().to_numpy() + 1e-10
 
     for row in X_predict_arr:
+        # Har row ke liye feature ka distance variance map karte hain importance se jodkar
         deviation = np.abs(row - X_train_mean) / X_train_std
         raw_contrib = deviation * importances
         total_contrib = np.sum(raw_contrib) + 1e-10
-        norm_contrib = (raw_contrib / total_contrib) * 100
+        norm_contrib = (raw_contrib / total_contrib) * 100  # Percentage mapping
         feat_weights.append(norm_contrib)
 
     feat_weights_arr = np.array(feat_weights)
-    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]  # Storing your raw hint column
+    df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
+    df_predict['W_OrderImb(%)'] = feat_weights_arr[:, 1]
+    df_predict['W_BodyImb(%)'] = feat_weights_arr[:, 2]
+    df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
+    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
@@ -125,29 +133,31 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
 
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum
+    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum (P=0.50 Tracking)
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # New Velocity Momentum Column
-    df_predict['Velocity_Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Flow_Velocity'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting UI Structure (Keeping it completely streamlined)
+    # Formatting UI Structure with New Contribution Metrics
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Velocity_Weighted_Momentum', 'W_Velocity(%)', 
-        'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum'
+        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
+        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'Accumulator_Score', 'Weighted_Momentum'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Velocity_Weighted_Momentum'] = display_df['Velocity_Weighted_Momentum'].round(2)
     display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
     display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['W_Velocity(%)'] = display_df['W_Velocity(%)'].round(1).astype(str) + "%"
+    
+    # Contribution numbers rounding
+    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
+        display_df[c] = display_df[c].round(1).astype(str) + "%"
+        
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
+    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Hint Matrix (Look for W_Velocity(%) = 0.0% on Top Row)")
+    st.subheader(f"📋 Live Dataset Matrix + Real-Time Feature Dominance (Top Row Frozen)")
     st.dataframe(display_df, use_container_width=True, height=750)
