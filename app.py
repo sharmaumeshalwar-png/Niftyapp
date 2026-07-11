@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="Nifty Original Core Engine", layout="wide")
 st.title("⚡ Nifty 50 Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top + **India VIX Bug Fixed & Instant Load Layer**")
+st.write("🎯 **Aapki Custom Setting:** Date Range Exclusive Fix (+1 Day Buffer) + 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + No Target/Hour Columns + Latest Active Candle Locked on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,7 +29,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
+with st.spinner("Executing Strict Live Data Fetch for Nifty..."):
     # -----------------------------------------------------------------
     # HARDCODED DATE CALCULATOR: Adding +1 Day Buffer to catch TODAY's live candles
     # -----------------------------------------------------------------
@@ -42,38 +42,17 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # FIX: Blank screen se bachne ke liye dono data alag-alag download honge
-    nifty_raw = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
-    vix_raw = yf.download("^INDIAVIX", start=start_str, end=end_str, interval="1h")
+    # Fetch using exact buffered date boundaries
+    raw_df = yf.download("^NSEI", start=start_str, end=end_str, interval="1h")
     
-    if len(nifty_raw) == 0:
-        st.error(f"YFinance API Limit Error for Nifty. Please refresh.")
+    if len(raw_df) == 0:
+        st.error(f"YFinance API Limit Error for range {start_str} to {end_str}. Please refresh.")
         st.stop()
         
-    # Nifty data structure extraction (Safely handling MultiIndex if any)
-    df = pd.DataFrame(index=nifty_raw.index)
+    df = pd.DataFrame(index=raw_df.index)
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in nifty_raw.columns and not isinstance(nifty_raw.columns, pd.MultiIndex):
-            df[col] = nifty_raw[col]
-        elif (col, '^NSEI') in nifty_raw.columns:
-            df[col] = nifty_raw[(col, '^NSEI')]
-
-    # VIX data structure extraction
-    vix_df = pd.DataFrame(index=vix_raw.index)
-    if 'Close' in vix_raw.columns and not isinstance(vix_raw.columns, pd.MultiIndex):
-        vix_df['India_VIX'] = vix_raw['Close']
-    elif ('Close', '^INDIAVIX') in vix_raw.columns:
-        vix_df['India_VIX'] = vix_raw[('Close', '^INDIAVIX')]
-    else:
-        vix_df['India_VIX'] = 15.0
-
-    # FIX: merge_asof lagaya hai taaki agar time mismatch ho toh nearest time match ho jaye aur data drop na ho
-    df = df.sort_index()
-    vix_df = vix_df.sort_index()
-    df = pd.merge_asof(df, vix_df, left_index=True, right_index=True, direction='backward')
-    
-    # Forward/Backward fill taaki koi NaN na bache aur dropna rows ko khali na kare
-    df['India_VIX'] = df['India_VIX'].ffill().bfill().fillna(15.0)
+        if col in raw_df.columns:
+            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
     df.index = pd.to_datetime(df.index)
 
@@ -93,8 +72,7 @@ with st.spinner("Executing Strict Live Data Fetch for Nifty & India VIX..."):
     # Clean Binary State Definition based on Microstructure direction
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
-    # Features Matrix
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'India_VIX']
+    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
@@ -118,71 +96,11 @@ else:
 
     # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
-    load_adj_up_log, load_adj_down_log = [], []
-    
     accumulator = 0
     
     prob_ups = df_predict['Prob_Up'].to_numpy()
     prob_downs = df_predict['Prob_Down'].to_numpy()
     closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-    
-    order_imbalances = df_predict['Order_Imbalance'].to_numpy()
-    body_imbalances = df_predict['Body_Imbalance'].to_numpy()
-    flow_velocities = df_predict['Flow_Velocity'].to_numpy()
 
     for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
-        oi, bi, fv = order_imbalances[i], body_imbalances[i], flow_velocities[i]
-        
-        # Original Logic (Untouched)
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-        
-        # Load Compensation Logic
-        load_bias = (oi - 0.5) + (bi - 0.5) + (np.tanh(fv / 10.0) * 0.2)
-        p_up_load = max(0.01, min(0.99, p_up + (load_bias * 0.15)))
-        p_down_load = max(0.01, min(0.99, p_down - (load_bias * 0.15)))
-        
-        total_p = p_up_load + p_down_load
-        p_up_load /= total_p
-        p_down_load /= total_p
-        
-        load_adj_up_log.append(p_up_load)
-        load_adj_down_log.append(p_down_load)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Load_Adj_Prob_Up'] = load_adj_up_log
-    df_predict['Load_Adj_Prob_Down'] = load_adj_down_log
-
-    # [Kalman 2 Execution]
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting UI Structure
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'India_VIX', 
-        'Prob_Up', 'Prob_Down', 
-        'Load_Adj_Prob_Up', 'Load_Adj_Prob_Down', 
-        'Accumulator_Score', 'Weighted_Momentum'
-    ]
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['India_VIX'] = display_df['India_VIX'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
-    display_df['Load_Adj_Prob_Up'] = display_df['Load_Adj_Prob_Up'].round(3)
-    display_df['Load_Adj_Prob_Down'] = display_df['Load_Adj_Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    # Inverting via index flip to freeze the latest active hour on Top Row
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Original Dataset Matrix (Latest Hour Locked on Top Row)")
-    st.dataframe(display_df, use_container_width=True, height=750)
