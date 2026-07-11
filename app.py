@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="BTC Feature Dominance Engine", layout="wide")
+st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** 50:50 Train-Predict Split + **VWAP completely REMOVED** + ML Score $[-5,5]$ + Latest Active Candle Locked on Top + **All Original W% Columns Exact Copy + Isolated Kalman Diff Probability Column Added**")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Whale Trap Zone Detector (64500-63000 Loop)** + Whipsaw Filter + **Green BUY / Red SELL Core Overrides** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -37,7 +37,6 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Fetch using exact BTC-USD ticker
     raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
     if len(raw_df) == 0:
@@ -51,7 +50,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
 
     df.index = pd.to_datetime(df.index)
 
-    # Base Matrix Definition (Price Kalman 1 Active)
+    # Base Matrix Definition
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
@@ -69,7 +68,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio calculated on 2-Year rows)
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -81,32 +80,25 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # -----------------------------------------------------------------
-    # MODEL 1: Original 5-Feature Model (Untouched Core System)
-    # -----------------------------------------------------------------
+    # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
     probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down'] = probabilities[:, 0]
-    df_predict['Prob_Up'] = probabilities[:, 1]
+    df_predict['Prob_Down_Raw'] = probabilities[:, 0]
+    df_predict['Prob_Up_Raw'] = probabilities[:, 1]
 
-    # -----------------------------------------------------------------
-    # MODEL 2: Isolated Kalman Diff Model (Only trains on c_Combined)
-    # -----------------------------------------------------------------
+    # Model 2: Isolated Kalman Diff Model
     X_train_kdiff = df_train[['c_Combined']].copy()
     X_predict_kdiff = df_predict[['c_Combined']].copy()
-    
     model_kdiff = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_kdiff.fit(X_train_kdiff, y_train)
-    
     prob_kdiff = model_kdiff.predict_proba(X_predict_kdiff)
-    df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
     df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
+    df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
 
-    # Real-Time row-level variance scaling math for W% columns
+    # Feature Importance / Dominance Math (W%)
     importances = model_flow.feature_importances_
-    
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
     X_train_mean = X_train.mean().to_numpy()
@@ -116,8 +108,7 @@ else:
         deviation = np.abs(row - X_train_mean) / X_train_std
         raw_contrib = deviation * importances
         total_contrib = np.sum(raw_contrib) + 1e-10
-        norm_contrib = (raw_contrib / total_contrib) * 100
-        feat_weights.append(norm_contrib)
+        feat_weights.append((raw_contrib / total_contrib) * 100)
 
     feat_weights_arr = np.array(feat_weights)
     df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
@@ -126,17 +117,68 @@ else:
     df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
-    # Live Accumulators & Raw Logs (Using original Prob_Up/Prob_Down)
+    # -----------------------------------------------------------------
+    # 🧠 INSTITUTIONAL RANGE OVERRIDE ENGINE (Strict Structural Fit)
+    # -----------------------------------------------------------------
+    prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
+    prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
+    close_vals = df_predict['a_Close'].to_numpy()
+    
+    final_prob_up_ui = []
+    final_prob_down_ui = []
+    
+    range_high = 0.0
+    range_low = 0.0
+    zone_active = False
+
+    for idx in range(len(close_vals)):
+        p_up = prob_up_vals[idx]
+        p_down = prob_down_vals[idx]
+        current_close = close_vals[idx]
+        
+        if idx > 1:
+            prev_close = close_vals[idx-1]
+            prev_p_up = prob_up_vals[idx-1]
+            prev_p_down = prob_down_vals[idx-1]
+            
+            # Catching Up-to-Down Flip Trap
+            if prev_p_up >= 0.65 and current_close < prev_close and not zone_active:
+                range_high = prev_close
+                range_low = current_close * 0.985 
+                zone_active = True
+            
+            # Catching Down-to-Up Flip Trap
+            if prev_p_down >= 0.65 and current_close > prev_close and not zone_active:
+                range_low = prev_close
+                range_high = current_close * 1.015 
+                zone_active = True
+
+        if zone_active:
+            if current_close > range_high and p_up >= 0.58:
+                final_prob_up_ui.append("🟢 BUY SIGNAL")
+                final_prob_down_ui.append(str(round(p_down, 3)))
+                zone_active = False 
+            elif current_close < range_low and p_down >= 0.58:
+                final_prob_up_ui.append(str(round(p_up, 3)))
+                final_prob_down_ui.append("🔴 SELL SIGNAL")
+                zone_active = False 
+            else:
+                final_prob_up_ui.append("⏳ TRAP ZONE")
+                final_prob_down_ui.append("⏳ TRAP ZONE")
+        else:
+            final_prob_up_ui.append(str(round(p_up, 3)))
+            final_prob_down_ui.append(str(round(p_down, 3)))
+
+    df_predict['Prob_Up'] = final_prob_up_ui
+    df_predict['Prob_Down'] = final_prob_down_ui
+
+    # Live Accumulators & Raw Logs
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
-    
-    prob_ups = df_predict['Prob_Up'].to_numpy()
-    prob_downs = df_predict['Prob_Down'].to_numpy()
-    closes = df_predict['a_Close'].to_numpy()
     kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
-    for i in range(len(prob_ups)):
-        p_up, p_down, c_val, k_price_val = prob_ups[i], prob_downs[i], closes[i], kalmans_price[i]
+    for i in range(len(prob_up_vals)):
+        p_up, p_down, c_val, k_price_val = prob_up_vals[i], prob_down_vals[i], close_vals[i], kalmans_price[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
@@ -145,14 +187,12 @@ else:
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-
-    # [Kalman 2 Execution] Runs directly on Raw_Weighted_Momentum
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
     # Formatting UI Structure
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'KDiff_Prob_Up', 'KDiff_Prob_Down', # Naye Isolated Columns
+        'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
     ]
@@ -160,20 +200,16 @@ else:
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Prob_Up'] = display_df['Prob_Up'].round(3)
-    display_df['Prob_Down'] = display_df['Prob_Down'].round(3)
     display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
     display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
     
-    # Rounding W% columns
     for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
         display_df[c] = display_df[c].round(1).astype(str) + "%"
         
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
-    # Inverting via index flip to freeze the latest active hour on Top Row
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Kalman Diff Isolated Probability (Latest Hour Locked on Top Row)")
+    st.subheader(f"📋 Live Original Matrix + Smart Range Overrides Locked on Top")
     st.dataframe(display_df, use_container_width=True, height=750)
