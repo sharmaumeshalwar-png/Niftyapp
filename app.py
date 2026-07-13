@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover + **VIDYA Weighted Momentum (Run strictly on Close - VIDYA)** + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover + **VIDYA Accumulator Score Injected Next to VIDYA Momentum** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -209,22 +209,43 @@ else:
     df_predict['Signal'] = signal_log
 
     # -----------------------------------------------------------------
-    # 🧠 VIDYA ENGINE & WEIGHTED MOMENTUM ON (Close - VIDYA)
+    # 🧠 VIDYA ENGINE & WEIGHTED MOMENTUM GENERATION
     # -----------------------------------------------------------------
     df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
     df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
-    
-    # STRICTLY RUNNING ON THE VALUES OF 'Close_Minus_Vidhya'
     df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(
         df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1
     )
     
-    # Mapping back to UI dataframe
+    # -----------------------------------------------------------------
+    # 🧠 NEW INTEGRATION: ACCUMULATOR SCORING ENGINE ON VIDYA MOMENTUM
+    # -----------------------------------------------------------------
+    vidya_mom_vals = df['VIDYA_Weighted_Momentum'].values
+    vidya_accum_log = np.zeros_like(vidya_mom_vals)
+    v_accum = 0
+    
+    # Calculating the accumulator state tracking historically
+    for idx in range(1, len(vidya_mom_vals)):
+        # Increment if current momentum is strictly expanding upward compared to the previous candle
+        if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]:
+            v_accum += 1
+        # Decrement if current momentum is falling downward
+        elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]:
+            v_accum -= 1
+            
+        # Clamping logic strictly to stay within safety boundaries [-5, +5]
+        v_accum = max(-5, min(5, v_accum))
+        vidya_accum_log[idx] = v_accum
+
+    df['VIDYA_Accumulator_Score'] = vidya_accum_log
+
+    # Mapping variables back to prediction df block
     df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
     df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
     df_predict['VIDYA_Weighted_Momentum'] = df['VIDYA_Weighted_Momentum'].loc[df_predict.index]
+    df_predict['VIDYA_Accumulator_Score'] = df['VIDYA_Accumulator_Score'].loc[df_predict.index].astype(int)
 
-    # Live Accumulators & Raw Logs
+    # Live Accumulators & Raw Logs (Core Machine Model)
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
     close_vals = df_predict['a_Close'].to_numpy()
@@ -253,7 +274,7 @@ else:
 
     # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
-        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', # <-- Locked right in front sequential block
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score', # <-- Injected sequentially in front
         'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
@@ -276,5 +297,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Pure VIDYA Kalman Momentum Active")
+    st.subheader(f"📋 Live Original Matrix + Pure VIDYA Momentum Accumulator Block Active")
     st.dataframe(display_df, use_container_width=True, height=750)
