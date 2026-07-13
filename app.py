@@ -7,8 +7,8 @@ from datetime import datetime
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Binance API Stream]")
-st.write("🎯 **Anti-Block Option:** Strict 6-Month Equivalent Data Stream via Binance + Double Kalman Filter Confirmation Matrix + VIDYA Accumulator")
+st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Price + Dual Kalman Lock]")
+st.write("🎯 **Aapki Super Safe Setting:** Price Validation + Double Kalman Filter Confirmation Matrix + VIDYA Accumulator")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -61,7 +61,6 @@ is_simulated = False
 
 with st.spinner("Streaming Live Data directly from Binance Network Pipe..."):
     try:
-        # Fetching max limit (1000 candles of 1-Hour ~ roughly 1.4 years of active trend data)
         url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000"
         response = requests.get(url, timeout=10)
         data = response.json()
@@ -82,7 +81,6 @@ with st.spinner("Streaming Live Data directly from Binance Network Pipe..."):
     except Exception as e:
         pass
 
-    # Safety Simulator Fallback Mode
     if df is None or len(df) < 100:
         is_simulated = True
         total_points = 1000
@@ -140,7 +138,6 @@ y_train = df_train['State_Direction'].copy()
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
-# CRITICAL ANTI-EMPTY SAFETY GUARDRAIL
 if len(X_predict) < 5:
     st.error("🚨 Stream data array too small for prediction.")
 else:
@@ -187,7 +184,7 @@ else:
             df_predict[col] = 20.0
 
     # -----------------------------------------------------------------
-    # 🧠 DUAL KALMAN TUNNEL & STRICT DUAL ALIGNMENT CROSSOVER LOGIC
+    # 🧠 DUAL KALMAN TUNNEL & STRICT PRICE CONFIRMATION CROSSOVER LOGIC
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1) 
     wma_sum = np.sum(wma_weights)       
@@ -199,6 +196,7 @@ else:
     df_predict['Fast_WMA_Tunnel'] = df['Fast_WMA_Tunnel'].loc[df_predict.index]
     df_predict['Slow_WMA_Tunnel'] = df['Slow_WMA_Tunnel'].loc[df_predict.index]
 
+    price_vals = df_predict['a_Close'].to_numpy()
     fast_vals = df_predict['b_Kalman_Price'].to_numpy()
     slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
     fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
@@ -210,11 +208,12 @@ else:
             signal_log.append("⏳ LOADING")
             continue
             
-        fast_bullish = fast_vals[idx] > fast_wma[idx]
-        slow_bullish = slow_vals[idx] > slow_wma[idx]
+        # STRICT CONDITION ADDED: Price must also be above/below both kalman filters
+        fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
+        slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
         
-        fast_bearish = fast_vals[idx] < fast_wma[idx]
-        slow_bearish = slow_vals[idx] < slow_wma[idx]
+        fast_bearish = (fast_vals[idx] < fast_wma[idx]) and (price_vals[idx] < fast_vals[idx])
+        slow_bearish = (slow_vals[idx] < slow_wma[idx]) and (price_vals[idx] < slow_vals[idx])
         
         if fast_bullish and slow_bullish:
             signal_log.append("🟢 BUY")
@@ -290,5 +289,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Clean Matrix + Synchronized Binance Public Engine Matrix Active")
+    st.subheader(f"📋 Live Price-Locked Matrix + Synchronized Binance Public Engine Matrix Active")
     st.dataframe(display_df, use_container_width=True, height=750)
