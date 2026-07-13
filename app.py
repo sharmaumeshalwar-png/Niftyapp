@@ -1,14 +1,14 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
+import yfinance as yf  # <-- Wapas Yahoo Finance structural pipeline locked
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Exactly 2-Year Data Window (730 Days) + 50:50 Train/Predict Split + Fast/Slow Kalman Filter + VIDYA Accumulator + Latest Candle Frozen on Top")
+st.write("🎯 **Aapki Custom Setting:** Exactly 2-Year Yahoo Finance Period Loop + 50:50 Train/Predict Split + Fast/Slow Kalman Filter + VIDYA Accumulator + Latest Candle Frozen on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -54,23 +54,16 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ ANTI-CRASH LIVE FETCH ENGINE WITH AUTOMATIC RECOVERY (2-YEARS FIXED)
+# 🛡️ ANTI-CRASH LIVE YAHOO FINANCE DATA ENGINE (FIXED METHOD)
 # -----------------------------------------------------------------
 df = None
 is_simulated = False
 
-with st.spinner("Executing Strict Live Data Fetch for BTC-USD (Exactly 2 Years / 730 Days)..."):
-    current_time = datetime.now()
-    # CHANGED: Shifted from 360 days to exactly 730 days (2 Years) as per instructions
-    start_date = current_time - timedelta(days=730) 
-    end_date = current_time + timedelta(days=1) 
-    
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-
+with st.spinner("Executing Yahoo Finance Fetch (period='2y', interval='1h')..."):
     try:
-        raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", progress=False)
-        if len(raw_df) > 100:
+        # FIXED: Using direct period="2y" structure instead of custom date ranges to bypass server reject
+        raw_df = yf.download("BTC-USD", period="2y", interval="1h", progress=False)
+        if raw_df is not None and len(raw_df) > 100:
             df = pd.DataFrame(index=raw_df.index)
             for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                 if col in raw_df.columns:
@@ -79,9 +72,10 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD (Exactly 2 Years /
     except Exception as e:
         pass
 
+    # Safe Recovery Fallback Matrix
     if df is None or len(df) < 100:
         is_simulated = True
-        total_points = 8640  # Scaling up baseline simulated data density for 2 years representation
+        total_points = 8640
         np.random.seed(42)
         base_price = 1000.0
         price_path = [base_price]
@@ -101,9 +95,9 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD (Exactly 2 Years /
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **YFinance API Call Restricted/Timed out.** Safe simulation mode auto-activated.")
+    st.warning("⚠️ **Yahoo Server pipe restricted.** Safe simulation mode auto-activated.")
 else:
-    st.success("🟢 **Real Live Market Engine Running smoothly (2-Year Core Dataset Active).**")
+    st.success("🟢 **Real Live Market Engine Running smoothly (Yahoo 2-Year Period Active).**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
@@ -280,5 +274,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + 2-Year Dual Kalman Anti-Whipsaw Framework Active")
+    st.subheader(f"📋 Live Original Matrix + 2-Year Direct Yahoo Kalman Matrix Active")
     st.dataframe(display_df, use_container_width=True, height=750)
