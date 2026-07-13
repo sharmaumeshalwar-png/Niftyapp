@@ -4,11 +4,12 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
+import time
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Live Market Data Flow + **Target WMA High/Low Prices** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Live Market Data Flow + **Try-Except Glitch Protection** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -29,8 +30,11 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Fetching Real-Time 6-Month 1-Hour Live Data for BTC-USD..."):
-    # Calculating exact 6-month historical window for live hourly candles
+# -----------------------------------------------------------------
+# 🛡️ ROBUST TRY-EXCEPT LIVE DATA FETCH MATRIX
+# -----------------------------------------------------------------
+df = None
+with st.spinner("Connecting to Live Market Streams (Applying Anti-Crash Layer)..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=180) 
     end_date = current_time + timedelta(days=1) 
@@ -38,18 +42,21 @@ with st.spinner("Fetching Real-Time 6-Month 1-Hour Live Data for BTC-USD..."):
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    # Live YFinance Stream Call
-    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
-    
-    if len(raw_df) == 0:
-        st.error("YFinance Live API Network Timeout. Please refresh the dashboard.")
+    for attempt in range(3): # Try up to 3 times if network drops
+        try:
+            raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", progress=False)
+            if len(raw_df) > 100: # Ensuring enough rows are fetched successfully
+                df = pd.DataFrame(index=raw_df.index)
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    if col in raw_df.columns:
+                        df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+                break
+        except Exception as e:
+            time.sleep(1) # Wait 1 second before retrying
+            
+    if df is None or len(df) == 0:
+        st.error("⚠️ **Yahoo Finance Live API Limit/Network Error!** Yahoo servers ne heavy request block ki hai. Kripya 10-15 seconds ruk kar dashboard reload ya refresh (Ctrl+R) karein.")
         st.stop()
-        
-    # Unpacking Multi-index columns safely if thrown by yfinance
-    df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in raw_df.columns:
-            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
     df.index = pd.to_datetime(df.index)
 
@@ -71,7 +78,7 @@ with st.spinner("Fetching Real-Time 6-Month 1-Hour Live Data for BTC-USD..."):
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio Locked on Real Data)
+# Dynamic Split Engine (Strict 50:50 Ratio Locked)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -121,15 +128,14 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 INTEGRATION: STRICT 12-WMA TUNNEL ON REAL DATA (Weights: 12,11,10...1)
+    # 🧠 INTEGRATION: STRICT 12-WMA TUNNEL ENGINE (Weights: 12,11,10...1)
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1)
-    wma_sum = np.sum(wma_weights) # 78
+    wma_sum = np.sum(wma_weights)
 
     def calculate_pure_wma(series):
         return series.rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
 
-    # Applying the arithmetic calculation to live high/low feeds
     df['WMA_High_Tunnel'] = calculate_pure_wma(df['High'])
     df['WMA_Low_Tunnel'] = calculate_pure_wma(df['Low'])
 
@@ -157,7 +163,6 @@ else:
             final_prob_down_ui.append("🔄 LOADING")
             continue
 
-        # Real Live Market Cross Evaluation Tree
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -188,7 +193,7 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Construction (Exact GitHub Formatting Replicated)
+    # UI Construction (Exact Format Locked)
     clean_display_cols = [
         'a_Close', 'Target_WMA_High', 'Target_WMA_Low', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
