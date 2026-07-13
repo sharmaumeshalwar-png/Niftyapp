@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Pure High/Low 12-EMA Tunnel** + Signals Removed + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Filtered W_Kalman (0.50 Initial P) Injected Next to Raw W_Kalman** + Signals Removed + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -141,11 +141,24 @@ else:
         feat_weights.append((raw_contrib / total_contrib) * 100)
 
     feat_weights_arr = np.array(feat_weights)
-    df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
-    df_predict['W_OrderImb(%)'] = feat_weights_arr[:, 1]
-    df_predict['W_BodyImb(%)'] = feat_weights_arr[:, 2]
-    df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
-    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
+    
+    # Storing raw numerical float calculations for Kalman math mapping
+    df_predict['Raw_Float_W_Kalman'] = feat_weights_arr[:, 0]
+    df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
+    df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
+    df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
+    df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
+
+    # -----------------------------------------------------------------
+    # 🧠 NEW INTEGRATION: STANDALONE KALMAN FILTER ON W_KALMANDIFF
+    # -----------------------------------------------------------------
+    # Applying dynamic filter on the importance tracking array with initial_p=0.50
+    df_predict['Raw_Filtered_W_Kalman'] = apply_kalman_filter_custom(
+        df_predict['Raw_Float_W_Kalman'].values, 
+        initial_p=0.50, 
+        q_val=0.001, 
+        r_val=0.1
+    )
 
     # Live Accumulators & Raw Logs
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
@@ -168,11 +181,21 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure
+    # UI Formatting Logic with Filtered W_Kalman injected directly in front of W_KalmanDiff
+    df_predict['W_KalmanDiff(%)'] = df_predict['Raw_Float_W_Kalman'].round(1).astype(str) + "%"
+    df_predict['Filtered_W_Kalman(%)'] = df_predict['Raw_Filtered_W_Kalman'].round(1).astype(str) + "%"
+    
+    df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
+
+    # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up_Raw', 'Prob_Down_Raw', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
-        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'W_KalmanDiff(%)', 'Filtered_W_Kalman(%)',  # <-- Injected just in front as requested
+        'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
     ]
     display_df = df_predict[clean_display_cols].copy()
@@ -183,14 +206,10 @@ else:
     display_df['Prob_Down_Raw'] = display_df['Prob_Down_Raw'].round(3)
     display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
     display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
-    
-    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
-        display_df[c] = display_df[c].round(1).astype(str) + "%"
-        
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Pure Probability Streams (Signals Removed)")
+    st.subheader(f"📋 Live Original Matrix + Filtered Feature Dominance Locked on Top")
     st.dataframe(display_df, use_container_width=True, height=750)
