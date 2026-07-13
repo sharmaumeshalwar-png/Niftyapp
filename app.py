@@ -1,215 +1,56 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime, timedelta
 
-# Page Configuration
-st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
-st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Strict 12-WMA Linear Weightage Tunnel (Weights: 12, 11, 10...1)** + Latest Candle Frozen on Top Row")
+st.set_page_config(page_title="WMA Simulation Test", layout="wide")
+st.title("🧪 Artificial Price 12-WMA Simulation Engine")
+st.write("Target: Check how linear weights prevent fake signals using sample inputs.")
 
-# =====================================================================
-# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
-# =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0:
-        return []
-    x = data_array[0]
-    p = initial_p  
-    q = q_val      
-    r = r_val        
-    filtered_values = []
-    for z in data_array:
-        p = p + q
-        k = p / (p + r)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+# 1. Generating Artificial Price Stream (Starting from ₹100)
+# Simulating a pump up to 250, then a sudden consolidation/whipsaw to test trap zone
+sample_highs = [100, 120, 130, 140, 150, 160, 165, 170, 175, 180, 190, 200, 210, 220, 230, 240, 250, 248, 247, 249, 246, 252]
+sample_lows  = [90,  110, 115, 125, 135, 145, 150, 155, 160, 165, 175, 185, 195, 205, 215, 225, 235, 230, 228, 232, 229, 236]
+sample_closes = [95,  115, 122, 132, 142, 152, 158, 162, 168, 172, 182, 192, 202, 212, 222, 232, 242, 240, 238, 241, 235, 250]
 
-with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
-    current_time = datetime.now()
-    start_date = current_time - timedelta(days=720) 
-    end_date = current_time + timedelta(days=1) 
+sim_df = pd.DataFrame({
+    'High': sample_highs,
+    'Low': sample_lows,
+    'Close': sample_closes
+})
+
+# 2. Arithmetic WMA Logic Setup
+wma_weights = np.arange(12, 0, -1) # [12, 11, 10, ... 1]
+wma_sum = np.sum(wma_weights)       # 78
+
+def calc_wma(series):
+    return series.rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+
+sim_df['WMA_High_Tunnel'] = calc_wma(sim_df['High'])
+sim_df['WMA_Low_Tunnel'] = calc_wma(sim_df['Low'])
+
+# 3. Signal Generation Tree
+status_log = []
+for idx in range(len(sim_df)):
+    c_close = sim_df['Close'].iloc[idx]
+    h_tunnel = sim_df['WMA_High_Tunnel'].iloc[idx]
+    l_tunnel = sim_df['WMA_Low_Tunnel'].iloc[idx]
     
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
+    if pd.isna(h_tunnel) or pd.isna(l_tunnel):
+        status_log.append("🔄 LOADING MATRIX (Need 12 Candles)")
+    elif c_close > h_tunnel:
+        status_log.append("🟢 BUY SIGNAL (Breakout)")
+    elif c_close < l_tunnel:
+        status_log.append("🔴 SELL SIGNAL (Breakdown)")
+    else:
+        status_log.append("⏳ TRAP ZONE (Price Caught Inside)")
 
-    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
-    
-    if len(raw_df) == 0:
-        st.error(f"YFinance API Limit Error. Please refresh.")
-        st.stop()
-        
-    df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in raw_df.columns:
-            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+sim_df['System_Output'] = status_log
 
-    df.index = pd.to_datetime(df.index)
+# Format Output for clear UI scannability
+display_df = sim_df.copy()
+display_df['WMA_High_Tunnel'] = display_df['WMA_High_Tunnel'].round(2)
+display_df['WMA_Low_Tunnel'] = display_df['WMA_Low_Tunnel'].round(2)
+display_df = display_df.iloc[::-1] # Reverse to keep latest on top
 
-    # Base Matrix Definition
-    df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
-    
-    # Microstructure Features Space
-    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
-    
-    df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
-    
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
-
-# Dynamic Split Engine (Strict 50:50 Ratio)
-split_idx = int(len(df) * 0.50)
-df_train = df.iloc[:split_idx]
-X_train = df_train[features_matrix].copy()
-y_train = df_train['State_Direction'].copy()
-
-df_predict = df.iloc[split_idx:].copy()
-X_predict = df_predict[features_matrix].copy()
-
-if len(X_predict) == 0:
-    st.error("Prediction matrix error.")
-else:
-    # Model 1: Core 5-Feature Model
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
-    model_flow.fit(X_train, y_train)
-
-    probabilities = model_flow.predict_proba(X_predict)
-    df_predict['Prob_Down_Raw'] = probabilities[:, 0]
-    df_predict['Prob_Up_Raw'] = probabilities[:, 1]
-
-    # Model 2: Isolated Kalman Diff Model
-    X_train_kdiff = df_train[['c_Combined']].copy()
-    X_predict_kdiff = df_predict[['c_Combined']].copy()
-    model_kdiff = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
-    model_kdiff.fit(X_train_kdiff, y_train)
-    prob_kdiff = model_kdiff.predict_proba(X_predict_kdiff)
-    df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
-    df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
-
-    # Feature Importance / Dominance Math (W%)
-    importances = model_flow.feature_importances_
-    feat_weights = []
-    X_predict_arr = X_predict.to_numpy()
-    X_train_mean = X_train.mean().to_numpy()
-    X_train_std = X_train.std().to_numpy() + 1e-10
-
-    for row in X_predict_arr:
-        deviation = np.abs(row - X_train_mean) / X_train_std
-        raw_contrib = deviation * importances
-        total_contrib = np.sum(raw_contrib) + 1e-10
-        feat_weights.append((raw_contrib / total_contrib) * 100)
-
-    feat_weights_arr = np.array(feat_weights)
-    df_predict['W_KalmanDiff(%)'] = feat_weights_arr[:, 0]
-    df_predict['W_OrderImb(%)'] = feat_weights_arr[:, 1]
-    df_predict['W_BodyImb(%)'] = feat_weights_arr[:, 2]
-    df_predict['W_NormGap(%)'] = feat_weights_arr[:, 3]
-    df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
-
-    # -----------------------------------------------------------------
-    # 🧠 STRICT LINEAR WEIGHTED TUNNEL ENGINE (12-WMA Arithmetic)
-    # -----------------------------------------------------------------
-    # Creating strict arithmetic weights: [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
-    wma_weights = np.arange(12, 0, -1)  # Descending arithmetic weights
-    wma_sum = np.sum(wma_weights)        # Sum = 78
-
-    # Function to calculate pure arithmetic WMA manually
-    def calculate_pure_wma(series, weights, total_sum):
-        return series.rolling(window=12).apply(lambda x: np.sum(x * weights) / total_sum, raw=True)
-
-    # Applying to High and Low arrays
-    df['Tunnel_High'] = calculate_pure_wma(df['High'], wma_weights, wma_sum)
-    df['Tunnel_Low'] = calculate_pure_wma(df['Low'], wma_weights, wma_sum)
-
-    # Aligning back with df_predict timeline
-    df_predict['Tunnel_High'] = df['Tunnel_High'].loc[df_predict.index]
-    df_predict['Tunnel_Low'] = df['Tunnel_Low'].loc[df_predict.index]
-
-    prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
-    prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
-    close_vals = df_predict['a_Close'].to_numpy()
-    high_tunnel_vals = df_predict['Tunnel_High'].to_numpy()
-    low_tunnel_vals = df_predict['Tunnel_Low'].to_numpy()
-    
-    final_prob_up_ui = []
-    final_prob_down_ui = []
-
-    for idx in range(len(close_vals)):
-        p_up = prob_up_vals[idx]
-        p_down = prob_down_vals[idx]
-        current_close = close_vals[idx]
-        current_high_band = high_tunnel_vals[idx]
-        current_low_band = low_tunnel_vals[idx]
-
-        # Handling initial NaN values if any safely
-        if np.isnan(current_high_band) or np.isnan(current_low_band):
-            final_prob_up_ui.append(str(round(p_up, 3)))
-            final_prob_down_ui.append(str(round(p_down, 3)))
-            continue
-
-        # Dynamic Arithmetic Tunnel Cross Rules
-        if current_close > current_high_band:
-            final_prob_up_ui.append("🟢 BUY SIGNAL")
-            final_prob_down_ui.append(str(round(p_down, 3)))
-        elif current_close < current_low_band:
-            final_prob_up_ui.append(str(round(p_up, 3)))
-            final_prob_down_ui.append("🔴 SELL SIGNAL")
-        else:
-            final_prob_up_ui.append("⏳ TRAP ZONE")
-            final_prob_down_ui.append("⏳ TRAP ZONE")
-
-    df_predict['Prob_Up'] = final_prob_up_ui
-    df_predict['Prob_Down'] = final_prob_down_ui
-
-    # Live Accumulators & Raw Logs
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
-
-    for i in range(len(prob_up_vals)):
-        p_up, p_down, c_val, k_price_val = prob_up_vals[i], prob_down_vals[i], close_vals[i], kalmans_price[i]
-        if p_up >= 0.55: accumulator += 1
-        elif p_down >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # Formatting UI Structure
-    clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
-        'KDiff_Prob_Up', 'KDiff_Prob_Down',
-        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
-        'Accumulator_Score', 'Weighted_Momentum'
-    ]
-    display_df = df_predict[clean_display_cols].copy()
-    
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
-    display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
-    
-    for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
-        display_df[c] = display_df[c].round(1).astype(str) + "%"
-        
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
-    display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Original Matrix + Strict 12-WMA Linear Tunnel Locked on Top")
-    st.dataframe(display_df, use_container_width=True, height=750)
+st.subheader("📋 Live Simulation Matrix Log")
+st.dataframe(display_df, use_container_width=True)
