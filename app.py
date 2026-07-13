@@ -128,8 +128,9 @@ y_train = df_train['State_Direction'].copy()
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
-if len(X_predict) == 0:
-    st.error("Prediction matrix error.")
+# CRITICAL ANTI-EMPTY SAFETY GUARDRAIL
+if len(X_predict) < 5:
+    st.error("🚨 Yahoo Data stream array too small for prediction. Please refresh or wait for live candle update.")
 else:
     # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
@@ -148,7 +149,7 @@ else:
     df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
     df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
 
-    # Feature Importance Math (W%)
+    # Feature Importance Math (W%) with Array Bounds Safety
     importances = model_flow.feature_importances_
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
@@ -162,7 +163,121 @@ else:
         feat_weights.append((raw_contrib / total_contrib) * 100)
 
     feat_weights_arr = np.array(feat_weights)
-    df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
-    df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
-    df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
-    df_predict['W_NormGap(%)_Raw'] =
+    
+    # Strictly check if weights array has exact dimensions before assignment
+    if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 5:
+        df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
+        df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
+        df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
+        df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
+        df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
+    else:
+        for col in ['W_KalmanDiff(%)_Raw', 'W_OrderImb(%)_Raw', 'W_BodyImb(%)_Raw', 'W_NormGap(%)_Raw', 'W_Velocity(%)_Raw']:
+            df_predict[col] = 20.0
+
+    # -----------------------------------------------------------------
+    # 🧠 DUAL KALMAN TUNNEL & STRICT DUAL ALIGNMENT CROSSOVER LOGIC
+    # -----------------------------------------------------------------
+    wma_weights = np.arange(12, 0, -1) 
+    wma_sum = np.sum(wma_weights)       
+
+    df['Fast_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+    df['Slow_WMA_Tunnel'] = df['Slow_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+    
+    df_predict['Slow_Kalman_Price'] = df['Slow_Kalman_Price'].loc[df_predict.index]
+    df_predict['Fast_WMA_Tunnel'] = df['Fast_WMA_Tunnel'].loc[df_predict.index]
+    df_predict['Slow_WMA_Tunnel'] = df['Slow_WMA_Tunnel'].loc[df_predict.index]
+
+    fast_vals = df_predict['b_Kalman_Price'].to_numpy()
+    slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
+    fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
+    slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
+    
+    signal_log = []
+    for idx in range(len(fast_vals)):
+        if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
+            signal_log.append("⏳ LOADING")
+            continue
+            
+        fast_bullish = fast_vals[idx] > fast_wma[idx]
+        slow_bullish = slow_vals[idx] > slow_wma[idx]
+        
+        fast_bearish = fast_vals[idx] < fast_wma[idx]
+        slow_bearish = slow_vals[idx] < slow_wma[idx]
+        
+        if fast_bullish and slow_bullish:
+            signal_log.append("🟢 BUY")
+        elif fast_bearish and slow_bearish:
+            signal_log.append("🔴 SELL")
+        else:
+            signal_log.append("⏳ WAIT ZONE")
+
+    df_predict['Signal'] = signal_log
+
+    # -----------------------------------------------------------------
+    # 🧠 VIDYA INDICATOR & ACCUMULATOR MATRICES
+    # -----------------------------------------------------------------
+    df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
+    df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
+    df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    vidya_mom_vals = df['VIDYA_Weighted_Momentum'].values
+    vidya_accum_log = np.zeros_like(vidya_mom_vals)
+    v_accum = 0
+    for idx in range(1, len(vidya_mom_vals)):
+        if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]: v_accum += 1
+        elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]: v_accum -= 1
+        v_accum = max(-5, min(5, v_accum))
+        vidya_accum_log[idx] = v_accum
+    df['VIDYA_Accumulator_Score'] = vidya_accum_log
+
+    df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
+    df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
+    df_predict['VIDYA_Weighted_Momentum'] = df['VIDYA_Weighted_Momentum'].loc[df_predict.index]
+    df_predict['VIDYA_Accumulator_Score'] = df['VIDYA_Accumulator_Score'].loc[df_predict.index].astype(int)
+
+    # Core Live Accumulators 
+    prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
+    prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
+    close_vals = df_predict['a_Close'].to_numpy()
+    
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
+    for i in range(len(prob_up_vals)):
+        p_up, p_down = prob_up_vals[i], prob_down_vals[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(close_vals[i] - fast_vals[i])
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # UI Conversion
+    df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
+
+    # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
+    clean_display_cols = [
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+        'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
+        'Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down',
+        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'Accumulator_Score', 'Weighted_Momentum'
+    ]
+    display_df = df_predict[clean_display_cols].copy()
+    
+    for c in ['a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
+        display_df[c] = display_df[c].round(2)
+    for c in ['Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down']:
+        display_df[c] = display_df[c].round(3)
+        
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Original Matrix + Synchronized Fast/Slow Kalman Anti-Whipsaw Filter Matrix Active")
+    st.dataframe(display_df, use_container_width=True, height=750)
