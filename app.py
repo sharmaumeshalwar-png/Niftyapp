@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original GitHub Structure + **₹1000 Artificial Price Table Injection** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original GitHub Structure + **Robust ₹1000 Injection Stream** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -27,14 +27,12 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Strict Live Data Fetch & Injecting ₹1000 Matrix..."):
-    # GitHub Ke Data Flow Engine Ko Bypass Kiye Bina, Engine Ke Liye Artificial High/Low/Close Table Injection (₹1000 Base)
-    # Total 28 rows taaki 12-WMA matrix bina crash kiye smoothly render ho ske
+with st.spinner("Executing Safe Data Fetch & Injecting Simulation Streams..."):
+    # Simulated 28-Hour Sequence starting from ₹1000 base
     art_high =  [1000, 1020, 1040, 1060, 1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1255, 1252, 1254, 1251, 1253, 1250, 1265, 1270, 1268, 1262, 1258, 1259, 1257, 1280]
     art_low =   [990,  1010, 1025, 1045, 1065, 1085, 1105, 1125, 1145, 1165, 1185, 1205, 1225, 1240, 1238, 1235, 1237, 1234, 1236, 1232, 1245, 1250, 1248, 1242, 1239, 1240, 1238, 1260]
     art_close = [995,  1015, 1032, 1052, 1072, 1092, 1112, 1132, 1152, 1172, 1192, 1212, 1232, 1250, 1244, 1242, 1246, 1240, 1243, 1238, 1255, 1260, 1254, 1248, 1244, 1245, 1242, 1272]
 
-    # Creating Index to replicate GitHub DateTime Sequence perfectly
     time_index = pd.date_range(end=pd.Timestamp.now(), periods=28, freq='1h')
     
     df = pd.DataFrame({
@@ -45,7 +43,7 @@ with st.spinner("Executing Strict Live Data Fetch & Injecting ₹1000 Matrix..."
         'Volume': [150000] * 28
     }, index=time_index)
 
-    # Base Matrix Definition (GitHub Locked Format)
+    # Base Matrix Definition (GitHub Style Locked)
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
@@ -55,13 +53,16 @@ with st.spinner("Executing Strict Live Data Fetch & Injecting ₹1000 Matrix..."
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=2).std() + 1e-10) # Adjusted window for test array length
+    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=2).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.fillna(0, inplace=True) # Fills base NaN safely to secure GitHub engine initialization
+    
+    # Anti-Crash Fill: Enforces mathematical variance stability inside train block
+    df.fillna(0, inplace=True)
+    df.replace([np.inf, -np.inf], 0, inplace=True)
 
 # Dynamic Split Engine (Strict 50:50 Ratio Locked)
 split_idx = int(len(df) * 0.50)
@@ -75,7 +76,7 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # Model 1: Core 5-Feature Model (GitHub Settings Locked)
+    # Model 1: Core 5-Feature Model (Safe Configuration Layer)
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
@@ -92,7 +93,7 @@ else:
     df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
     df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
 
-    # Feature Importance / Dominance Math (W%)
+    # Feature Importance Math (W%)
     importances = model_flow.feature_importances_
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
@@ -113,7 +114,7 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 INTEGRATION: STRICT 12-WMA LINEAR TUNNEL ENGINE (Weights: 12,11,10...1)
+    # 🧠 STRICT 12-WMA TUNNEL INTEGRATION (Weights: 12,11,10...1)
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1)
     wma_sum = np.sum(wma_weights) # 78
@@ -121,7 +122,6 @@ else:
     def calculate_pure_wma(series):
         return series.rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
 
-    # Applying the arithmetic tunnel to the ₹1000 injected array
     df['WMA_High_Tunnel'] = calculate_pure_wma(df['High'])
     df['WMA_Low_Tunnel'] = calculate_pure_wma(df['Low'])
 
@@ -149,7 +149,7 @@ else:
             final_prob_down_ui.append("🔄 LOADING")
             continue
 
-        # Strict WMA Price Action Trigger Logic
+        # Strict WMA Arithmetic Trigger Protocol
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -180,7 +180,7 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # Formatting UI Structure (Pure GitHub Formatting Kept Intact)
+    # UI Construction (Pure GitHub Format Mirroring)
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
@@ -195,7 +195,7 @@ else:
     display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
     
     for c in ['W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)']:
-        display_df[c] = display_df[c].round(1).astype(str) + "%"
+        display_df[c] = display_df[c].astype(str).apply(lambda x: x.split('.')[0] + '%')
         
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
