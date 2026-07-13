@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Price Kalman 12-WMA Crossover Signals Locked** + Filtered W_Kalman Removed + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover Signals + **Dynamic VIDYA Engine Injected** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
+# MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0:
@@ -28,6 +28,35 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
+
+def apply_vidya_custom(data_array, period=14):
+    """
+    Chande's Variable Index Dynamic Average (VIDYA)
+    Uses Chande Momentum Oscillator (CMO) absolute value as the volatility index factor.
+    """
+    if len(data_array) < period:
+        return data_array.copy()
+        
+    s = pd.Series(data_array)
+    diff = s.diff()
+    gains = diff.where(diff > 0, 0)
+    losses = (-diff).where(diff < 0, 0)
+    
+    sum_gains = gains.rolling(window=period).sum()
+    sum_losses = losses.rolling(window=period).sum()
+    
+    # Calculate Chande Momentum Oscillator (CMO)
+    cmo = (sum_gains - sum_losses) / (sum_gains + sum_losses + 1e-10)
+    k = cmo.abs().fillna(0).to_numpy()
+    
+    alpha = 2 / (period + 1)
+    vidya_values = np.zeros_like(data_array)
+    vidya_values[0] = data_array[0]
+    
+    for i in range(1, len(data_array)):
+        vidya_values[i] = (alpha * k[i] * data_array[i]) + (1 - alpha * k[i]) * vidya_values[i-1]
+        
+    return vidya_values
 
 # -----------------------------------------------------------------
 # 🛡️ ANTI-CRASH LIVE FETCH ENGINE WITH AUTOMATIC RECOVERY
@@ -151,10 +180,9 @@ else:
     # -----------------------------------------------------------------
     # 🧠 PURE KALMAN PRICE 12-WMA TUNNEL ENGINE & CROSSOVER SIGNALS
     # -----------------------------------------------------------------
-    wma_weights = np.arange(12, 0, -1) # [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
-    wma_sum = np.sum(wma_weights)       # 78
+    wma_weights = np.arange(12, 0, -1) 
+    wma_sum = np.sum(wma_weights)       
 
-    # Safe rolling 12-WMA execution strictly on the master b_Kalman_Price line
     df['Kalman_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(
         lambda x: np.sum(x * wma_weights) / wma_sum, raw=True
     )
@@ -172,7 +200,6 @@ else:
             signal_log.append("⏳ LOADING")
             continue
 
-        # Crossover matching matrix
         if k_val > kwma_val:
             signal_log.append("🟢 BUY")
         elif k_val < kwma_val:
@@ -181,6 +208,16 @@ else:
             signal_log.append("⏳ TRAP ZONE")
 
     df_predict['Signal'] = signal_log
+
+    # -----------------------------------------------------------------
+    # 🧠 NEW INTEGRATION: STANDALONE VIDYA GENERATION ON PRICE
+    # -----------------------------------------------------------------
+    df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
+    df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
+    
+    # Mapping to prediction df frame
+    df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
+    df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
 
     # Live Accumulators & Raw Logs
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
@@ -211,7 +248,8 @@ else:
 
     # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya',  # <-- Injected first right after close price
+        'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
@@ -219,6 +257,8 @@ else:
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['Vidhya'] = display_df['Vidhya'].round(2)
+    display_df['Close_Minus_Vidhya'] = display_df['Close_Minus_Vidhya'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Kalman_WMA_Tunnel'] = display_df['Kalman_WMA_Tunnel'].round(2)
     display_df['Prob_Up_Raw'] = display_df['Prob_Up_Raw'].round(3)
@@ -230,5 +270,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Pure Price Kalman 12-WMA Cross Active")
+    st.subheader(f"📋 Live Original Matrix + Dynamic Chande VIDYA Volatility Array Engine Active")
     st.dataframe(display_df, use_container_width=True, height=750)
