@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Fast + Slow Dual Kalman Filter Synchronization Matrix + VIDYA Accumulator Engine + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Favorite Setting:** Strict 6-Month Period Loop + Double Kalman Filter Confirmation Matrix + VIDYA Accumulator + Latest Candle Frozen on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -54,22 +54,16 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ ANTI-CRASH LIVE FETCH ENGINE WITH AUTOMATIC RECOVERY
+# 🛡️ ANTI-CRASH LIVE YAHOO FINANCE DATA ENGINE (STRICT 6-MONTH)
 # -----------------------------------------------------------------
 df = None
 is_simulated = False
 
-with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
-    current_time = datetime.now()
-    start_date = current_time - timedelta(days=360) 
-    end_date = current_time + timedelta(days=1) 
-    
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-
+with st.spinner("Executing Strict 6-Month Yahoo Finance Data Fetch..."):
     try:
-        raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", progress=False)
-        if len(raw_df) > 100:
+        # STRICTLY period="6m" to keep calculation boundaries synchronized and accurate
+        raw_df = yf.download("BTC-USD", period="6m", interval="1h", progress=False)
+        if raw_df is not None and len(raw_df) > 100:
             df = pd.DataFrame(index=raw_df.index)
             for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                 if col in raw_df.columns:
@@ -78,6 +72,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     except Exception as e:
         pass
 
+    # Safe Recovery Fallback Matrix
     if df is None or len(df) < 100:
         is_simulated = True
         total_points = 4320
@@ -100,15 +95,19 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **YFinance API Call Restricted/Timed out.** Safe simulation mode auto-activated.")
+    st.warning("⚠️ **Yahoo Server pipe restricted.** Safe simulation mode auto-activated.")
 else:
-    st.success("🟢 **Real Live Market Engine Running smoothly.**")
+    st.success("🟢 **Real Live Market Engine Running smoothly (Strict 6-Month Loop Active).**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
 
-# DUAL KALMAN GENERATION ON CLOSE PRICE (Fast vs Slow Engine)
+# =====================================================================
+# 🧠 DUAL INSTITUTIONAL KALMAN ENGINE GENERATION
+# =====================================================================
+# Fast Kalman: Captures quick swings (q=0.001, r=0.1)
 df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
+# Slow Kalman: Strict Institutional Trend Line (q=0.00001, r=0.9)
 df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
 
 df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
@@ -126,7 +125,7 @@ df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio)
+# Dynamic Split Engine (Strict 50:50 Ratio on 6-Month Data Window)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -206,7 +205,7 @@ else:
         fast_bearish = fast_vals[idx] < fast_wma[idx]
         slow_bearish = slow_vals[idx] < slow_wma[idx]
         
-        # Dual Confirmation Filter Strategy
+        # STRICT ENTRY RULE SET: Fast and Slow MUST agree to print a signal
         if fast_bullish and slow_bullish:
             signal_log.append("🟢 BUY")
         elif fast_bearish and slow_bearish:
