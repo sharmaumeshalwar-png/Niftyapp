@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover + **VIDYA Accumulator Score Injected Next to VIDYA Momentum** + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Fast + Slow Dual Kalman Filter Synchronization Matrix + VIDYA Accumulator Engine + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -30,10 +30,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 def apply_vidya_custom(data_array, period=14):
-    """
-    Chande's Variable Index Dynamic Average (VIDYA)
-    Uses Chande Momentum Oscillator (CMO) absolute value as the volatility index factor.
-    """
     if len(data_array) < period:
         return data_array.copy()
         
@@ -63,7 +59,7 @@ def apply_vidya_custom(data_array, period=14):
 df = None
 is_simulated = False
 
-with st.spinner("Executing Strict Live Data Fetch for BTC-USD (Max Safe Hourly Window)..."):
+with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
     current_time = datetime.now()
     start_date = current_time - timedelta(days=360) 
     end_date = current_time + timedelta(days=1) 
@@ -110,7 +106,11 @@ else:
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
+
+# DUAL KALMAN GENERATION ON CLOSE PRICE (Fast vs Slow Engine)
 df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
+df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
+
 df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
 
 # Microstructure Features Space
@@ -155,7 +155,7 @@ else:
     df_predict['KDiff_Prob_Up'] = prob_kdiff[:, 1]
     df_predict['KDiff_Prob_Down'] = prob_kdiff[:, 0]
 
-    # Feature Importance / Dominance Math (W%)
+    # Feature Importance Math (W%)
     importances = model_flow.feature_importances_
     feat_weights = []
     X_predict_arr = X_predict.to_numpy()
@@ -169,7 +169,6 @@ else:
         feat_weights.append((raw_contrib / total_contrib) * 100)
 
     feat_weights_arr = np.array(feat_weights)
-    
     df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
     df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
     df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
@@ -177,95 +176,87 @@ else:
     df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 KALMAN PRICE 12-WMA TUNNEL ENGINE & CROSSOVER SIGNALS
+    # 🧠 DUAL KALMAN TUNNEL & STRICT DUAL ALIGNMENT CROSSOVER LOGIC
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1) 
     wma_sum = np.sum(wma_weights)       
 
-    df['Kalman_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(
-        lambda x: np.sum(x * wma_weights) / wma_sum, raw=True
-    )
-    df_predict['Kalman_WMA_Tunnel'] = df['Kalman_WMA_Tunnel'].loc[df_predict.index]
+    # Calculate 12-WMA Tunnels for both Kalman lines
+    df['Fast_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+    df['Slow_WMA_Tunnel'] = df['Slow_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+    
+    df_predict['Slow_Kalman_Price'] = df['Slow_Kalman_Price'].loc[df_predict.index]
+    df_predict['Fast_WMA_Tunnel'] = df['Fast_WMA_Tunnel'].loc[df_predict.index]
+    df_predict['Slow_WMA_Tunnel'] = df['Slow_WMA_Tunnel'].loc[df_predict.index]
 
-    kalman_vals = df_predict['b_Kalman_Price'].to_numpy()
-    kalman_wma_vals = df_predict['Kalman_WMA_Tunnel'].to_numpy()
+    fast_vals = df_predict['b_Kalman_Price'].to_numpy()
+    slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
+    fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
+    slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
+    
     signal_log = []
-
-    for idx in range(len(kalman_vals)):
-        k_val = kalman_vals[idx]
-        kwma_val = kalman_wma_vals[idx]
-
-        if np.isnan(kwma_val):
+    for idx in range(len(fast_vals)):
+        if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
             signal_log.append("⏳ LOADING")
             continue
-
-        if k_val > kwma_val:
+            
+        fast_bullish = fast_vals[idx] > fast_wma[idx]
+        slow_bullish = slow_vals[idx] > slow_wma[idx]
+        
+        fast_bearish = fast_vals[idx] < fast_wma[idx]
+        slow_bearish = slow_vals[idx] < slow_wma[idx]
+        
+        # Dual Confirmation Filter Strategy
+        if fast_bullish and slow_bullish:
             signal_log.append("🟢 BUY")
-        elif k_val < kwma_val:
+        elif fast_bearish and slow_bearish:
             signal_log.append("🔴 SELL")
         else:
-            signal_log.append("⏳ TRAP ZONE")
+            signal_log.append("⏳ WAIT ZONE")
 
     df_predict['Signal'] = signal_log
 
     # -----------------------------------------------------------------
-    # 🧠 VIDYA ENGINE & WEIGHTED MOMENTUM GENERATION
+    # 🧠 VIDYA INDICATOR & ACCUMULATOR MATRICES
     # -----------------------------------------------------------------
     df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
     df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
-    df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(
-        df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1
-    )
+    df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    # -----------------------------------------------------------------
-    # 🧠 NEW INTEGRATION: ACCUMULATOR SCORING ENGINE ON VIDYA MOMENTUM
-    # -----------------------------------------------------------------
     vidya_mom_vals = df['VIDYA_Weighted_Momentum'].values
     vidya_accum_log = np.zeros_like(vidya_mom_vals)
     v_accum = 0
-    
-    # Calculating the accumulator state tracking historically
     for idx in range(1, len(vidya_mom_vals)):
-        # Increment if current momentum is strictly expanding upward compared to the previous candle
-        if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]:
-            v_accum += 1
-        # Decrement if current momentum is falling downward
-        elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]:
-            v_accum -= 1
-            
-        # Clamping logic strictly to stay within safety boundaries [-5, +5]
+        if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]: v_accum += 1
+        elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]: v_accum -= 1
         v_accum = max(-5, min(5, v_accum))
         vidya_accum_log[idx] = v_accum
-
     df['VIDYA_Accumulator_Score'] = vidya_accum_log
 
-    # Mapping variables back to prediction df block
     df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
     df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
     df_predict['VIDYA_Weighted_Momentum'] = df['VIDYA_Weighted_Momentum'].loc[df_predict.index]
     df_predict['VIDYA_Accumulator_Score'] = df['VIDYA_Accumulator_Score'].loc[df_predict.index].astype(int)
 
-    # Live Accumulators & Raw Logs (Core Machine Model)
+    # Core Live Accumulators 
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
     close_vals = df_predict['a_Close'].to_numpy()
     
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
-
     for i in range(len(prob_up_vals)):
-        p_up, p_down, c_val = prob_up_vals[i], prob_down_vals[i], close_vals[i]
+        p_up, p_down = prob_up_vals[i], prob_down_vals[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - kalman_vals[i])
+        raw_weighted_momentum_log.append(close_vals[i] - fast_vals[i])
 
     df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Formatting Logic
+    # UI Conversion
     df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
@@ -274,28 +265,21 @@ else:
 
     # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
-        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score', # <-- Injected sequentially in front
-        'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
-        'KDiff_Prob_Up', 'KDiff_Prob_Down',
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+        'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
+        'Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
-    display_df['a_Close'] = display_df['a_Close'].round(2)
-    display_df['Vidhya'] = display_df['Vidhya'].round(2)
-    display_df['Close_Minus_Vidhya'] = display_df['Close_Minus_Vidhya'].round(2)
-    display_df['VIDYA_Weighted_Momentum'] = display_df['VIDYA_Weighted_Momentum'].round(2)
-    display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
-    display_df['Kalman_WMA_Tunnel'] = display_df['Kalman_WMA_Tunnel'].round(2)
-    display_df['Prob_Up_Raw'] = display_df['Prob_Up_Raw'].round(3)
-    display_df['Prob_Down_Raw'] = display_df['Prob_Down_Raw'].round(3)
-    display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
-    display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
-    display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
-    
+    for c in ['a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
+        display_df[c] = display_df[c].round(2)
+    for c in ['Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down']:
+        display_df[c] = display_df[c].round(3)
+        
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Pure VIDYA Momentum Accumulator Block Active")
+    st.subheader(f"📋 Live Original Matrix + Synchronized Fast/Slow Kalman Anti-Whipsaw Filter Matrix Active")
     st.dataframe(display_df, use_container_width=True, height=750)
