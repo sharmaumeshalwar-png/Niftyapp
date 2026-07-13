@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Filtered W_Kalman (0.50 Initial P) Injected Next to Raw W_Kalman** + Signals Removed + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Price Kalman 12-WMA Crossover Signals Locked** + Filtered W_Kalman Removed + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -76,7 +76,7 @@ with st.spinner("Executing Strict Live Data Fetch for BTC-USD (Max Safe Hourly W
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **YFinance API Call Restricted/Timed out.** App crash hone se bachane ke liye safe simulation mode auto-activate ho gaya hai!")
+    st.warning("⚠️ **YFinance API Call Restricted/Timed out.** Safe simulation mode auto-activated.")
 else:
     st.success("🟢 **Real Live Market Engine Running smoothly.**")
 
@@ -142,23 +142,45 @@ else:
 
     feat_weights_arr = np.array(feat_weights)
     
-    # Storing raw numerical float calculations for Kalman math mapping
-    df_predict['Raw_Float_W_Kalman'] = feat_weights_arr[:, 0]
+    df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
     df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
     df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
     df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
     df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 NEW INTEGRATION: STANDALONE KALMAN FILTER ON W_KALMANDIFF
+    # 🧠 PURE KALMAN PRICE 12-WMA TUNNEL ENGINE & CROSSOVER SIGNALS
     # -----------------------------------------------------------------
-    # Applying dynamic filter on the importance tracking array with initial_p=0.50
-    df_predict['Raw_Filtered_W_Kalman'] = apply_kalman_filter_custom(
-        df_predict['Raw_Float_W_Kalman'].values, 
-        initial_p=0.50, 
-        q_val=0.001, 
-        r_val=0.1
+    wma_weights = np.arange(12, 0, -1) # [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    wma_sum = np.sum(wma_weights)       # 78
+
+    # Safe rolling 12-WMA execution strictly on the master b_Kalman_Price line
+    df['Kalman_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(
+        lambda x: np.sum(x * wma_weights) / wma_sum, raw=True
     )
+    df_predict['Kalman_WMA_Tunnel'] = df['Kalman_WMA_Tunnel'].loc[df_predict.index]
+
+    kalman_vals = df_predict['b_Kalman_Price'].to_numpy()
+    kalman_wma_vals = df_predict['Kalman_WMA_Tunnel'].to_numpy()
+    signal_log = []
+
+    for idx in range(len(kalman_vals)):
+        k_val = kalman_vals[idx]
+        kwma_val = kalman_wma_vals[idx]
+
+        if np.isnan(kwma_val):
+            signal_log.append("⏳ LOADING")
+            continue
+
+        # Crossover matching matrix
+        if k_val > kwma_val:
+            signal_log.append("🟢 BUY")
+        elif k_val < kwma_val:
+            signal_log.append("🔴 SELL")
+        else:
+            signal_log.append("⏳ TRAP ZONE")
+
+    df_predict['Signal'] = signal_log
 
     # Live Accumulators & Raw Logs
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
@@ -167,24 +189,21 @@ else:
     
     scores_log, raw_weighted_momentum_log = [], []
     accumulator = 0
-    kalmans_price = df_predict['b_Kalman_Price'].to_numpy()
 
     for i in range(len(prob_up_vals)):
-        p_up, p_down, c_val, k_price_val = prob_up_vals[i], prob_down_vals[i], close_vals[i], kalmans_price[i]
+        p_up, p_down, c_val = prob_up_vals[i], prob_down_vals[i], close_vals[i]
         if p_up >= 0.55: accumulator += 1
         elif p_down >= 0.55: accumulator -= 1
         accumulator = max(-5, min(5, accumulator))
         scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(c_val - k_price_val)
+        raw_weighted_momentum_log.append(c_val - kalman_vals[i])
 
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Formatting Logic with Filtered W_Kalman injected directly in front of W_KalmanDiff
-    df_predict['W_KalmanDiff(%)'] = df_predict['Raw_Float_W_Kalman'].round(1).astype(str) + "%"
-    df_predict['Filtered_W_Kalman(%)'] = df_predict['Raw_Filtered_W_Kalman'].round(1).astype(str) + "%"
-    
+    # UI Formatting Logic
+    df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
@@ -192,16 +211,16 @@ else:
 
     # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up_Raw', 'Prob_Down_Raw', 
+        'a_Close', 'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
-        'W_KalmanDiff(%)', 'Filtered_W_Kalman(%)',  # <-- Injected just in front as requested
-        'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
     ]
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
+    display_df['Kalman_WMA_Tunnel'] = display_df['Kalman_WMA_Tunnel'].round(2)
     display_df['Prob_Up_Raw'] = display_df['Prob_Up_Raw'].round(3)
     display_df['Prob_Down_Raw'] = display_df['Prob_Down_Raw'].round(3)
     display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
@@ -211,5 +230,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Filtered Feature Dominance Locked on Top")
+    st.subheader(f"📋 Live Original Matrix + Pure Price Kalman 12-WMA Cross Active")
     st.dataframe(display_df, use_container_width=True, height=750)
