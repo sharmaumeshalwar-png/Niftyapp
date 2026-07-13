@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover Signals + **Dynamic VIDYA Engine Injected** + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + Price Kalman 12-WMA Crossover + **VIDYA Weighted Momentum (0.50 Initial P) Injected** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -45,7 +45,6 @@ def apply_vidya_custom(data_array, period=14):
     sum_gains = gains.rolling(window=period).sum()
     sum_losses = losses.rolling(window=period).sum()
     
-    # Calculate Chande Momentum Oscillator (CMO)
     cmo = (sum_gains - sum_losses) / (sum_gains + sum_losses + 1e-10)
     k = cmo.abs().fillna(0).to_numpy()
     
@@ -178,7 +177,7 @@ else:
     df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 PURE KALMAN PRICE 12-WMA TUNNEL ENGINE & CROSSOVER SIGNALS
+    # 🧠 KALMAN PRICE 12-WMA TUNNEL ENGINE & CROSSOVER SIGNALS
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1) 
     wma_sum = np.sum(wma_weights)       
@@ -210,14 +209,20 @@ else:
     df_predict['Signal'] = signal_log
 
     # -----------------------------------------------------------------
-    # 🧠 NEW INTEGRATION: STANDALONE VIDYA GENERATION ON PRICE
+    # 🧠 VIDYA ENGINE & NEW VIDYA WEIGHTED MOMENTUM GENERATION
     # -----------------------------------------------------------------
     df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
     df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
     
-    # Mapping to prediction df frame
+    # NEW: Run 0.50 initial_p Kalman Filter on (Close - VIDYA) array to extract clean Momentum
+    df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(
+        df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1
+    )
+    
+    # Mapping to active prediction df block
     df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
     df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
+    df_predict['VIDYA_Weighted_Momentum'] = df['VIDYA_Weighted_Momentum'].loc[df_predict.index]
 
     # Live Accumulators & Raw Logs
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
@@ -248,7 +253,7 @@ else:
 
     # Sequential UI Columns Definition Matrix (Strict Ordered Lock)
     clean_display_cols = [
-        'a_Close', 'Vidhya', 'Close_Minus_Vidhya',  # <-- Injected first right after close price
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', # <-- Injected right here in front
         'b_Kalman_Price', 'Kalman_WMA_Tunnel', 'Prob_Up_Raw', 'Prob_Down_Raw', 'Signal', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
@@ -259,6 +264,7 @@ else:
     display_df['a_Close'] = display_df['a_Close'].round(2)
     display_df['Vidhya'] = display_df['Vidhya'].round(2)
     display_df['Close_Minus_Vidhya'] = display_df['Close_Minus_Vidhya'].round(2)
+    display_df['VIDYA_Weighted_Momentum'] = display_df['VIDYA_Weighted_Momentum'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['Kalman_WMA_Tunnel'] = display_df['Kalman_WMA_Tunnel'].round(2)
     display_df['Prob_Up_Raw'] = display_df['Prob_Up_Raw'].round(3)
@@ -270,5 +276,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Dynamic Chande VIDYA Volatility Array Engine Active")
+    st.subheader(f"📋 Live Original Matrix + Pure VIDYA Kalman Momentum Extraction Active")
     st.dataframe(display_df, use_container_width=True, height=750)
