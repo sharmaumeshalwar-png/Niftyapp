@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original GitHub Structure + **Robust ₹1000 Injection Stream** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** GitHub Format + **Target WMA High/Low Prices Injected** + Strict 12-WMA Linear Tunnel + Latest Row Frozen on Top")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -27,20 +27,42 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Executing Safe Data Fetch & Injecting Simulation Streams..."):
-    # Simulated 28-Hour Sequence starting from ₹1000 base
-    art_high =  [1000, 1020, 1040, 1060, 1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1255, 1252, 1254, 1251, 1253, 1250, 1265, 1270, 1268, 1262, 1258, 1259, 1257, 1280]
-    art_low =   [990,  1010, 1025, 1045, 1065, 1085, 1105, 1125, 1145, 1165, 1185, 1205, 1225, 1240, 1238, 1235, 1237, 1234, 1236, 1232, 1245, 1250, 1248, 1242, 1239, 1240, 1238, 1260]
-    art_close = [995,  1015, 1032, 1052, 1072, 1092, 1112, 1132, 1152, 1172, 1192, 1212, 1232, 1250, 1244, 1242, 1246, 1240, 1243, 1238, 1255, 1260, 1254, 1248, 1244, 1245, 1242, 1272]
+with st.spinner("Generating Strict 6-Month 1-Hour Hourly Trend Matrix (4320 Rows)..."):
+    # Total points = 180 days * 24 hours = 4320 hourly rows
+    total_points = 4320
+    np.random.seed(42) # Statistical lock for calculation integrity
+    
+    # Simulating a deep hourly price path starting from ₹1000 base
+    base_price = 1000.0
+    price_path = [base_price]
+    
+    # Generating realistic 1-hour fractal trends with micro cycles and heavy sideways patches
+    for i in range(1, total_points):
+        cycle = np.sin(i / 150) * 4.0
+        if 2500 <= i <= 3100:
+            drift = 0.0
+            noise = np.random.normal(0, 4) 
+        else:
+            drift = 1.2 if cycle > 0 else -1.5
+            noise = np.random.normal(0, 12) 
+            
+        next_close = max(100, price_path[-1] + drift + noise)
+        price_path.append(next_close)
+        
+    art_close = np.array(price_path)
+    art_high = art_close + np.random.uniform(2, 15, size=total_points)
+    art_low = art_close - np.random.uniform(2, 15, size=total_points)
+    art_open = art_close - np.random.uniform(-8, 8, size=total_points)
 
-    time_index = pd.date_range(end=pd.Timestamp.now(), periods=28, freq='1h')
+    # Creating Hourly Index
+    time_index = pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h')
     
     df = pd.DataFrame({
-        'Open': [x - 5 for x in art_close],
+        'Open': art_open,
         'High': art_high,
         'Low': art_low,
         'Close': art_close,
-        'Volume': [150000] * 28
+        'Volume': [850000] * total_points
     }, index=time_index)
 
     # Base Matrix Definition (GitHub Style Locked)
@@ -53,18 +75,17 @@ with st.spinner("Executing Safe Data Fetch & Injecting Simulation Streams..."):
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=2).std() + 1e-10)
+    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10) 
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     
-    # Anti-Crash Fill: Enforces mathematical variance stability inside train block
     df.fillna(0, inplace=True)
     df.replace([np.inf, -np.inf], 0, inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio Locked)
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -76,7 +97,7 @@ X_predict = df_predict[features_matrix].copy()
 if len(X_predict) == 0:
     st.error("Prediction matrix error.")
 else:
-    # Model 1: Core 5-Feature Model (Safe Configuration Layer)
+    # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
 
@@ -114,7 +135,7 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 STRICT 12-WMA TUNNEL INTEGRATION (Weights: 12,11,10...1)
+    # 🧠 STRICT 12-WMA TUNNEL ENGINE (Weights: 12,11,10...1)
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1)
     wma_sum = np.sum(wma_weights) # 78
@@ -125,14 +146,14 @@ else:
     df['WMA_High_Tunnel'] = calculate_pure_wma(df['High'])
     df['WMA_Low_Tunnel'] = calculate_pure_wma(df['Low'])
 
-    df_predict['WMA_High_Tunnel'] = df['WMA_High_Tunnel'].loc[df_predict.index]
-    df_predict['WMA_Low_Tunnel'] = df['WMA_Low_Tunnel'].loc[df_predict.index]
+    df_predict['Target_WMA_High'] = df['WMA_High_Tunnel'].loc[df_predict.index]
+    df_predict['Target_WMA_Low'] = df['WMA_Low_Tunnel'].loc[df_predict.index]
 
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
     close_vals = df_predict['a_Close'].to_numpy()
-    high_tunnel_vals = df_predict['WMA_High_Tunnel'].to_numpy()
-    low_tunnel_vals = df_predict['WMA_Low_Tunnel'].to_numpy()
+    high_tunnel_vals = df_predict['Target_WMA_High'].to_numpy()
+    low_tunnel_vals = df_predict['Target_WMA_Low'].to_numpy()
     
     final_prob_up_ui = []
     final_prob_down_ui = []
@@ -149,7 +170,7 @@ else:
             final_prob_down_ui.append("🔄 LOADING")
             continue
 
-        # Strict WMA Arithmetic Trigger Protocol
+        # Trigger conditions mapped visually
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -180,9 +201,9 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Construction (Pure GitHub Format Mirroring)
+    # UI Construction WITH TARGET PRICES INJECTED NEXT TO CLOSE PRICE
     clean_display_cols = [
-        'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
+        'a_Close', 'Target_WMA_High', 'Target_WMA_Low', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
         'Accumulator_Score', 'Weighted_Momentum'
@@ -190,6 +211,8 @@ else:
     display_df = df_predict[clean_display_cols].copy()
     
     display_df['a_Close'] = display_df['a_Close'].round(2)
+    display_df['Target_WMA_High'] = display_df['Target_WMA_High'].round(2)
+    display_df['Target_WMA_Low'] = display_df['Target_WMA_Low'].round(2)
     display_df['b_Kalman_Price'] = display_df['b_Kalman_Price'].round(2)
     display_df['KDiff_Prob_Up'] = display_df['KDiff_Prob_Up'].round(3)
     display_df['KDiff_Prob_Down'] = display_df['KDiff_Prob_Down'].round(3)
@@ -202,5 +225,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Injected ₹1000 Table Flow Locked on Top")
+    st.subheader(f"📋 Live GitHub Layout + Target Trigger Prices (Showing {len(display_df)} Predicted Hours)")
     st.dataframe(display_df, use_container_width=True, height=750)
