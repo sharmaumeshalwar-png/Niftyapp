@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** 2-Year Kalman Warmup + Strictly Last 6-Months Fresh ML Training + 50:50 Predict Split + Fast/Slow Kalman Filter + Latest Candle Frozen on Top")
+st.write("🎯 **Aapki Custom Setting:** Fast + Slow Dual Kalman Filter Synchronization Matrix + VIDYA Accumulator Engine + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -54,15 +54,22 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ ANTI-CRASH LIVE YAHOO FINANCE DATA ENGINE (2-YEAR FIXED)
+# 🛡️ ANTI-CRASH LIVE FETCH ENGINE WITH AUTOMATIC RECOVERY
 # -----------------------------------------------------------------
 df = None
 is_simulated = False
 
-with st.spinner("Executing Yahoo Finance Fetch for 2-Year Smooth Kalman Baseline..."):
+with st.spinner("Executing Strict Live Data Fetch for BTC-USD..."):
+    current_time = datetime.now()
+    start_date = current_time - timedelta(days=360) 
+    end_date = current_time + timedelta(days=1) 
+    
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
+
     try:
-        raw_df = yf.download("BTC-USD", period="2y", interval="1h", progress=False)
-        if raw_df is not None and len(raw_df) > 100:
+        raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", progress=False)
+        if len(raw_df) > 100:
             df = pd.DataFrame(index=raw_df.index)
             for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                 if col in raw_df.columns:
@@ -73,7 +80,7 @@ with st.spinner("Executing Yahoo Finance Fetch for 2-Year Smooth Kalman Baseline
 
     if df is None or len(df) < 100:
         is_simulated = True
-        total_points = 8640
+        total_points = 4320
         np.random.seed(42)
         base_price = 1000.0
         price_path = [base_price]
@@ -93,14 +100,14 @@ with st.spinner("Executing Yahoo Finance Fetch for 2-Year Smooth Kalman Baseline
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **Yahoo Server pipe restricted.** Safe simulation mode auto-activated.")
+    st.warning("⚠️ **YFinance API Call Restricted/Timed out.** Safe simulation mode auto-activated.")
 else:
     st.success("🟢 **Real Live Market Engine Running smoothly.**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
 
-# DUAL KALMAN GENERATION ON FULL 2-YEAR CLOSE PRICE (Smooth Line)
+# DUAL KALMAN GENERATION ON CLOSE PRICE (Fast vs Slow Engine)
 df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
 df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
 
@@ -119,20 +126,13 @@ df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# -----------------------------------------------------------------
-# 🎯 ROLLING WINDOW FILTER: RESTRAIN ML TO THE LAST 6 MONTHS ONLY
-# -----------------------------------------------------------------
-# 6 Months Hourly data is roughly ~4320 bars. We clip the dataframe tail for ML.
-ml_cutoff_date = df.index.max() - timedelta(days=180)
-df_ml_window = df[df.index >= ml_cutoff_date].copy()
-
-# Dynamic Split Engine (Strict 50:50 Ratio inside the 6-Month Window)
-split_idx = int(len(df_ml_window) * 0.50)
-df_train = df_ml_window.iloc[:split_idx]
+# Dynamic Split Engine (Strict 50:50 Ratio)
+split_idx = int(len(df) * 0.50)
+df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
 y_train = df_train['State_Direction'].copy()
 
-df_predict = df_ml_window.iloc[split_idx:].copy()
+df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
@@ -181,6 +181,7 @@ else:
     wma_weights = np.arange(12, 0, -1) 
     wma_sum = np.sum(wma_weights)       
 
+    # Calculate 12-WMA Tunnels for both Kalman lines
     df['Fast_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
     df['Slow_WMA_Tunnel'] = df['Slow_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
     
@@ -205,6 +206,7 @@ else:
         fast_bearish = fast_vals[idx] < fast_wma[idx]
         slow_bearish = slow_vals[idx] < slow_wma[idx]
         
+        # Dual Confirmation Filter Strategy
         if fast_bullish and slow_bullish:
             signal_log.append("🟢 BUY")
         elif fast_bearish and slow_bearish:
@@ -279,5 +281,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + 2-Year Kalman Smooth Warmup + Rolling 6-Month ML Window")
+    st.subheader(f"📋 Live Original Matrix + Synchronized Fast/Slow Kalman Anti-Whipsaw Filter Matrix Active")
     st.dataframe(display_df, use_container_width=True, height=750)
