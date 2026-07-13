@@ -5,10 +5,10 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
-# Page Configuration
-st.set_page_config(page_title="Nifty 1-Year Institutional Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Index Engine")
-st.write("🎯 **Pure 0.0001% Replication:** 1-Year History | 1-Hour Timeframe | Strict 50:50 Train-Predict Split Matrix")
+# Page Configuration (Exact Same Format as BTC)
+st.set_page_config(page_title="BTC-Style Nifty Range Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Engine [BTC-Style Clean Matrix]")
+st.write("🎯 **Pure replication:** Nifty 50 Spot Pipeline | Strictly No Math Alterations")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -59,58 +59,57 @@ def apply_vidya_custom(data_array, period=14):
 df = None
 is_simulated = False
 
-# Strictly Locked Parameters for 1-Year / 1-Hour Run
-selected_period = "1y"    # 1 Year Historical Window
-selected_interval = "1h"  # 1 Hour Timeframe
+# BTC-Equivalent 1-Year Period & 1-Hour Interval for Spot
+selected_period = "1y"
+selected_interval = "1h"
 
-with st.spinner("Streaming 1 Year of 1-Hour Ticks from Yahoo Finance (NSE Pipe)..."):
+with st.spinner("Compiling 1 Year of 1-Hour Ticks via Nifty Spot Feed..."):
     try:
-        # Nifty 50 Index ticker: ^NSEI
+        # Nifty 50 Spot Index Symbol: ^NSEI
         df = yf.download(tickers="^NSEI", period=selected_period, interval=selected_interval)
         
-        # Multi-index columns clean-up if any
+        # Multi-index columns clean-up (yfinance specific multi-level check)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 100:
+        if len(df) > 500:
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
         else:
             df = None
     except Exception as e:
-        st.sidebar.error(f"API Error: {e}")
         df = None
 
-    # Safety Simulator Fallback Mode (Generates Synthetic 1-Year Nifty 1-Hour data if API fails)
-    if df is None or len(df) < 100:
+    # Safety Simulator Fallback Mode (Generates 2,470 rows if APIs drop)
+    if df is None or len(df) < 500:
         is_simulated = True
-        total_points = 2470  # Roughly 1 year of trading hours (approx 247 trading days * 10 hours per day equivalent)
+        total_points = 2470  # Roughly 1 year of trading hours (approx 247 trading days * 10 hours)
         np.random.seed(42)
-        base_price = 24200.0  
+        base_price = 24200.0
         price_path = [base_price]
         for i in range(1, total_points):
-            cycle = np.sin(i / 300) * 3.0
-            drift = 0.8 if cycle > 0 else -1.0
-            noise = np.random.normal(0, 8)
+            cycle = np.sin(i / 300) * 5.0
+            drift = 1.1 if cycle > 0 else -1.3
+            noise = np.random.normal(0, 15)
             price_path.append(max(5000, price_path[-1] + drift + noise))
             
         art_close = np.array(price_path)
         df = pd.DataFrame({
-            'Open': art_close - np.random.uniform(-5, 5, size=total_points),
-            'High': art_close + np.random.uniform(2, 10, size=total_points),
-            'Low': art_close - np.random.uniform(2, 10, size=total_points),
+            'Open': art_close - np.random.uniform(-10, 10, size=total_points),
+            'High': art_close + np.random.uniform(2, 20, size=total_points),
+            'Low': art_close - np.random.uniform(2, 20, size=total_points),
             'Close': art_close,
-            'Volume': [180000] * total_points
+            'Volume': [150000] * total_points
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **NSE Feed offline.** Running Safe 1-Year Synthetic Simulation.")
+    st.warning("⚠️ **Network pipe restricted.** Running Safe 1-Year Synthetic Simulation.")
 else:
-    st.success(f"🟢 **Successfully Synced {len(df)} Real Historical 1-Hour Candles via Yahoo Finance Pipeline!**")
+    st.success(f"🟢 **Successfully Synced {len(df)} Real Historical Hours directly via Nifty Spot Pipeline!**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
 
-# DUAL INSTITUTIONAL KALMAN ENGINE GENERATION
+# DUAL INSTITUTIONAL KALMAN ENGINE GENERATION (EXACTLY SAME PARAMS)
 df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
 df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
 
@@ -129,7 +128,7 @@ df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
 features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
 df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# STRICT 50:50 RATIO PARTITION SPLIT ON EXPANDED DATA
+# Dynamic Split Engine (Strict 50:50 Ratio Window on Expanded Data)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -138,9 +137,8 @@ y_train = df_train['State_Direction'].copy()
 df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
-# CRITICAL ANTI-EMPTY SAFETY GUARDRAIL
 if len(X_predict) < 5:
-    st.error("🚨 Stream data array too small for prediction.")
+    st.error("🚨 Historical stream data array too small for prediction.")
 else:
     # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
@@ -194,4 +192,101 @@ else:
     df['Slow_WMA_Tunnel'] = df['Slow_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
     
     df_predict['Slow_Kalman_Price'] = df['Slow_Kalman_Price'].loc[df_predict.index]
-    df_predict
+    df_predict['Fast_WMA_Tunnel'] = df['Fast_WMA_Tunnel'].loc[df_predict.index]
+    df_predict['Slow_WMA_Tunnel'] = df['Slow_WMA_Tunnel'].loc[df_predict.index]
+
+    price_vals = df_predict['a_Close'].to_numpy()
+    fast_vals = df_predict['b_Kalman_Price'].to_numpy()
+    slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
+    fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
+    slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
+    
+    signal_log = []
+    for idx in range(len(fast_vals)):
+        if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
+            signal_log.append("⏳ LOADING")
+            continue
+            
+        # STRICT 4-GATE TRIGGER LOCK (Identical Logic)
+        fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
+        slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
+        
+        fast_bearish = (fast_vals[idx] < fast_wma[idx]) and (price_vals[idx] < fast_vals[idx])
+        slow_bearish = (slow_vals[idx] < slow_wma[idx]) and (price_vals[idx] < slow_vals[idx])
+        
+        if fast_bullish and slow_bullish:
+            signal_log.append("🟢 BUY")
+        elif fast_bearish and slow_bearish:
+            signal_log.append("🔴 SELL")
+        else:
+            signal_log.append("⏳ WAIT ZONE")
+
+    df_predict['Signal'] = signal_log
+
+    # -----------------------------------------------------------------
+    # 🧠 VIDYA INDICATOR & ACCUMULATOR MATRICES
+    # -----------------------------------------------------------------
+    df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
+    df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
+    df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    vidya_mom_vals = df['VIDYA_Weighted_Momentum'].values
+    vidya_accum_log = np.zeros_like(vidya_mom_vals)
+    v_accum = 0
+    for idx in range(1, len(vidya_mom_vals)):
+        if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]: v_accum += 1
+        elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]: v_accum -= 1
+        v_accum = max(-5, min(5, v_accum))
+        vidya_accum_log[idx] = v_accum
+    df['VIDYA_Accumulator_Score'] = vidya_accum_log
+
+    df_predict['Vidhya'] = df['Vidhya'].loc[df_predict.index]
+    df_predict['Close_Minus_Vidhya'] = df['Close_Minus_Vidhya'].loc[df_predict.index]
+    df_predict['VIDYA_Weighted_Momentum'] = df['VIDYA_Weighted_Momentum'].loc[df_predict.index]
+    df_predict['VIDYA_Accumulator_Score'] = df['VIDYA_Accumulator_Score'].loc[df_predict.index].astype(int)
+
+    # Core Live Accumulators 
+    prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
+    prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
+    close_vals = df_predict['a_Close'].to_numpy()
+    
+    scores_log, raw_weighted_momentum_log = [], []
+    accumulator = 0
+    for i in range(len(prob_up_vals)):
+        p_up, p_down = prob_up_vals[i], prob_down_vals[i]
+        if p_up >= 0.55: accumulator += 1
+        elif p_down >= 0.55: accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
+        scores_log.append(accumulator)
+        raw_weighted_momentum_log.append(close_vals[i] - fast_vals[i])
+
+    df_predict['Accumulator_Score'] = scores_log  
+    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+    # UI Conversion
+    df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
+    df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
+
+    # Sequential UI Columns Definition Matrix (Exact BTC Order)
+    clean_display_cols = [
+        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+        'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
+        'Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down',
+        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+        'Accumulator_Score', 'Weighted_Momentum'
+    ]
+    display_df = df_predict[clean_display_cols].copy()
+    
+    for c in ['a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
+        display_df[c] = display_df[c].round(2)
+    for c in ['Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down']:
+        display_df[c] = display_df[c].round(3)
+        
+    display_df = display_df.iloc[::-1]
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
+
+    st.subheader(f"📋 Live Nifty Spot Master Matrix (1-Year Scale)")
+    st.dataframe(display_df, use_container_width=True, height=750)
