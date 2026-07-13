@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Pure High/Low 12-EMA Tunnel** + Unconditional Trap/Signal Trigger + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original W% Columns + **Strict 12-WMA Linear Weightage Tunnel (Weights: 12, 11, 10...1)** + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -118,11 +118,21 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 PURE UNCONDITIONAL HIGH/LOW 12-EMA TUNNEL ENGINE
+    # 🧠 STRICT LINEAR WEIGHTED TUNNEL ENGINE (12-WMA Arithmetic)
     # -----------------------------------------------------------------
-    df['Tunnel_High'] = df['High'].ewm(span=12, adjust=False).mean()
-    df['Tunnel_Low'] = df['Low'].ewm(span=12, adjust=False).mean()
+    # Creating strict arithmetic weights: [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    wma_weights = np.arange(12, 0, -1)  # Descending arithmetic weights
+    wma_sum = np.sum(wma_weights)        # Sum = 78
 
+    # Function to calculate pure arithmetic WMA manually
+    def calculate_pure_wma(series, weights, total_sum):
+        return series.rolling(window=12).apply(lambda x: np.sum(x * weights) / total_sum, raw=True)
+
+    # Applying to High and Low arrays
+    df['Tunnel_High'] = calculate_pure_wma(df['High'], wma_weights, wma_sum)
+    df['Tunnel_Low'] = calculate_pure_wma(df['Low'], wma_weights, wma_sum)
+
+    # Aligning back with df_predict timeline
     df_predict['Tunnel_High'] = df['Tunnel_High'].loc[df_predict.index]
     df_predict['Tunnel_Low'] = df['Tunnel_Low'].loc[df_predict.index]
 
@@ -142,7 +152,13 @@ else:
         current_high_band = high_tunnel_vals[idx]
         current_low_band = low_tunnel_vals[idx]
 
-        # Strict Price Breakout Rules (No Double Filtering)
+        # Handling initial NaN values if any safely
+        if np.isnan(current_high_band) or np.isnan(current_low_band):
+            final_prob_up_ui.append(str(round(p_up, 3)))
+            final_prob_down_ui.append(str(round(p_down, 3)))
+            continue
+
+        # Dynamic Arithmetic Tunnel Cross Rules
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -150,7 +166,6 @@ else:
             final_prob_up_ui.append(str(round(p_up, 3)))
             final_prob_down_ui.append("🔴 SELL SIGNAL")
         else:
-            # Enters here unconditionally if trapped between high/low EMA boundaries
             final_prob_up_ui.append("⏳ TRAP ZONE")
             final_prob_down_ui.append("⏳ TRAP ZONE")
 
@@ -196,5 +211,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original Matrix + Unconditional 12-EMA Tunnel Locked on Top")
+    st.subheader(f"📋 Live Original Matrix + Strict 12-WMA Linear Tunnel Locked on Top")
     st.dataframe(display_df, use_container_width=True, height=750)
