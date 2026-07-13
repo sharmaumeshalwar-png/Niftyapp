@@ -1,12 +1,14 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** GitHub Format + **Target WMA High/Low Prices Injected** + Strict 12-WMA Linear Tunnel + Latest Row Frozen on Top")
+st.write("🎯 **Aapki Custom Setting:** Live Market Data Flow + **Target WMA High/Low Prices** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -27,43 +29,29 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Generating Strict 6-Month 1-Hour Hourly Trend Matrix (4320 Rows)..."):
-    # Total points = 180 days * 24 hours = 4320 hourly rows
-    total_points = 4320
-    np.random.seed(42) # Statistical lock for calculation integrity
+with st.spinner("Fetching Real-Time 6-Month 1-Hour Live Data for BTC-USD..."):
+    # Calculating exact 6-month historical window for live hourly candles
+    current_time = datetime.now()
+    start_date = current_time - timedelta(days=180) 
+    end_date = current_time + timedelta(days=1) 
     
-    # Simulating a deep hourly price path starting from ₹1000 base
-    base_price = 1000.0
-    price_path = [base_price]
-    
-    # Generating realistic 1-hour fractal trends with micro cycles and heavy sideways patches
-    for i in range(1, total_points):
-        cycle = np.sin(i / 150) * 4.0
-        if 2500 <= i <= 3100:
-            drift = 0.0
-            noise = np.random.normal(0, 4) 
-        else:
-            drift = 1.2 if cycle > 0 else -1.5
-            noise = np.random.normal(0, 12) 
-            
-        next_close = max(100, price_path[-1] + drift + noise)
-        price_path.append(next_close)
-        
-    art_close = np.array(price_path)
-    art_high = art_close + np.random.uniform(2, 15, size=total_points)
-    art_low = art_close - np.random.uniform(2, 15, size=total_points)
-    art_open = art_close - np.random.uniform(-8, 8, size=total_points)
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
 
-    # Creating Hourly Index
-    time_index = pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h')
+    # Live YFinance Stream Call
+    raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h")
     
-    df = pd.DataFrame({
-        'Open': art_open,
-        'High': art_high,
-        'Low': art_low,
-        'Close': art_close,
-        'Volume': [850000] * total_points
-    }, index=time_index)
+    if len(raw_df) == 0:
+        st.error("YFinance Live API Network Timeout. Please refresh the dashboard.")
+        st.stop()
+        
+    # Unpacking Multi-index columns safely if thrown by yfinance
+    df = pd.DataFrame(index=raw_df.index)
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in raw_df.columns:
+            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+
+    df.index = pd.to_datetime(df.index)
 
     # Base Matrix Definition (GitHub Style Locked)
     df['a_Close'] = df['Close']
@@ -75,17 +63,15 @@ with st.spinner("Generating Strict 6-Month 1-Hour Hourly Trend Matrix (4320 Rows
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10) 
+    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    
-    df.fillna(0, inplace=True)
-    df.replace([np.inf, -np.inf], 0, inplace=True)
+    df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
 
-# Dynamic Split Engine (Strict 50:50 Ratio)
+# Dynamic Split Engine (Strict 50:50 Ratio Locked on Real Data)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -95,7 +81,7 @@ df_predict = df.iloc[split_idx:].copy()
 X_predict = df_predict[features_matrix].copy()
 
 if len(X_predict) == 0:
-    st.error("Prediction matrix error.")
+    st.error("Prediction matrix boundary error.")
 else:
     # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
@@ -135,7 +121,7 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 STRICT 12-WMA TUNNEL ENGINE (Weights: 12,11,10...1)
+    # 🧠 INTEGRATION: STRICT 12-WMA TUNNEL ON REAL DATA (Weights: 12,11,10...1)
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1)
     wma_sum = np.sum(wma_weights) # 78
@@ -143,6 +129,7 @@ else:
     def calculate_pure_wma(series):
         return series.rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
 
+    # Applying the arithmetic calculation to live high/low feeds
     df['WMA_High_Tunnel'] = calculate_pure_wma(df['High'])
     df['WMA_Low_Tunnel'] = calculate_pure_wma(df['Low'])
 
@@ -170,7 +157,7 @@ else:
             final_prob_down_ui.append("🔄 LOADING")
             continue
 
-        # Trigger conditions mapped visually
+        # Real Live Market Cross Evaluation Tree
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -201,7 +188,7 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Construction WITH TARGET PRICES INJECTED NEXT TO CLOSE PRICE
+    # UI Construction (Exact GitHub Formatting Replicated)
     clean_display_cols = [
         'a_Close', 'Target_WMA_High', 'Target_WMA_Low', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
@@ -225,5 +212,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live GitHub Layout + Target Trigger Prices (Showing {len(display_df)} Predicted Hours)")
+    st.subheader(f"📋 Live Market Matrix + Target Trigger Prices (Real-Time BTC Stream Enabled)")
     st.dataframe(display_df, use_container_width=True, height=750)
