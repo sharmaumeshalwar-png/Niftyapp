@@ -2,12 +2,11 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime, timedelta
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Original GitHub Structure + **6-Month (180 Days) Artificial Data Stream** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
+st.write("🎯 **Aapki Custom Setting:** Original GitHub Structure + **Robust ₹1000 Injection Stream** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -28,40 +27,20 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-with st.spinner("Generating Strict 6-Month Artificial Trend Matrix..."):
-    # Creating exactly 180 rows (6 Months of representative daily data points)
-    total_points = 180
-    np.random.seed(42) # Statistical lock for calculation integrity
-    
-    # Simulating a structural price path starting from ₹1000 base
-    base_price = 1000.0
-    price_path = [base_price]
-    
-    # Generating realistic daily trends with cycles and sudden consolidations
-    for i in range(1, total_points):
-        # Adding institutional drift + random noise
-        drift = 2.5 if i < 80 else (-3.0 if i < 130 else 0.5) 
-        if 140 <= i <= 165: # Inducing a flat boring sideways market to strictly test TRAP ZONE
-            drift = 0.0
-        
-        noise = np.random.normal(0, 15)
-        next_close = max(100, price_path[-1] + drift + noise)
-        price_path.append(next_close)
-        
-    art_close = np.array(price_path)
-    art_high = art_close + np.random.uniform(5, 25, size=total_points)
-    art_low = art_close - np.random.uniform(5, 25, size=total_points)
-    art_open = art_close - np.random.uniform(-10, 10, size=total_points)
+with st.spinner("Executing Safe Data Fetch & Injecting Simulation Streams..."):
+    # Simulated 28-Hour Sequence starting from ₹1000 base
+    art_high =  [1000, 1020, 1040, 1060, 1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1255, 1252, 1254, 1251, 1253, 1250, 1265, 1270, 1268, 1262, 1258, 1259, 1257, 1280]
+    art_low =   [990,  1010, 1025, 1045, 1065, 1085, 1105, 1125, 1145, 1165, 1185, 1205, 1225, 1240, 1238, 1235, 1237, 1234, 1236, 1232, 1245, 1250, 1248, 1242, 1239, 1240, 1238, 1260]
+    art_close = [995,  1015, 1032, 1052, 1072, 1092, 1112, 1132, 1152, 1172, 1192, 1212, 1232, 1250, 1244, 1242, 1246, 1240, 1243, 1238, 1255, 1260, 1254, 1248, 1244, 1245, 1242, 1272]
 
-    # Creating Index to replicate GitHub DateTime Sequence perfectly for 6 months
-    time_index = pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='D')
+    time_index = pd.date_range(end=pd.Timestamp.now(), periods=28, freq='1h')
     
     df = pd.DataFrame({
-        'Open': art_open,
+        'Open': [x - 5 for x in art_close],
         'High': art_high,
         'Low': art_low,
         'Close': art_close,
-        'Volume': [550000] * total_points
+        'Volume': [150000] * 28
     }, index=time_index)
 
     # Base Matrix Definition (GitHub Style Locked)
@@ -74,14 +53,14 @@ with st.spinner("Generating Strict 6-Month Artificial Trend Matrix..."):
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=12).std() + 1e-10)
+    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=2).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
     
     df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
     
     features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     
-    # Structural Anti-Crash Fill Layers
+    # Anti-Crash Fill: Enforces mathematical variance stability inside train block
     df.fillna(0, inplace=True)
     df.replace([np.inf, -np.inf], 0, inplace=True)
 
@@ -135,7 +114,7 @@ else:
     df_predict['W_Velocity(%)'] = feat_weights_arr[:, 4]
 
     # -----------------------------------------------------------------
-    # 🧠 STRICT 12-WMA TUNNEL ENGINE (Weights: 12,11,10...1)
+    # 🧠 STRICT 12-WMA TUNNEL INTEGRATION (Weights: 12,11,10...1)
     # -----------------------------------------------------------------
     wma_weights = np.arange(12, 0, -1)
     wma_sum = np.sum(wma_weights) # 78
@@ -170,7 +149,7 @@ else:
             final_prob_down_ui.append("🔄 LOADING")
             continue
 
-        # Strict WMA Trigger Execution Tree
+        # Strict WMA Arithmetic Trigger Protocol
         if current_close > current_high_band:
             final_prob_up_ui.append("🟢 BUY SIGNAL")
             final_prob_down_ui.append(str(round(p_down, 3)))
@@ -201,7 +180,7 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Construction (Pure GitHub Layout Mirroring)
+    # UI Construction (Pure GitHub Format Mirroring)
     clean_display_cols = [
         'a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
@@ -221,7 +200,7 @@ else:
     display_df['Weighted_Momentum'] = display_df['Weighted_Momentum'].round(2) 
     
     display_df = display_df.iloc[::-1]
-    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d')
+    display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Original GitHub Format + 6-Month Injected Stream Locked on Top")
+    st.subheader(f"📋 Live Original Matrix + Injected ₹1000 Table Flow Locked on Top")
     st.dataframe(display_df, use_container_width=True, height=750)
