@@ -4,12 +4,10 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
-import time
 
 # Page Configuration
 st.set_page_config(page_title="BTC Institutional Range Engine", layout="wide")
 st.title("⚡ BTC-USD Live 1-Hour Standalone [Strict Live Flow Override]")
-st.write("🎯 **Aapki Custom Setting:** Live Market Data Flow + **Try-Except Glitch Protection** + Strict 12-WMA Linear Tunnel + Latest Candle Frozen on Top Row")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter Function)
@@ -31,54 +29,81 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 # -----------------------------------------------------------------
-# 🛡️ ROBUST TRY-EXCEPT LIVE DATA FETCH MATRIX
+# 🛡️ BULLET-PROOF DATA ENGINE WITH AUTOMATIC SIMULATION FALLBACK
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Connecting to Live Market Streams (Applying Anti-Crash Layer)..."):
+is_fallback_active = False
+
+try:
     current_time = datetime.now()
     start_date = current_time - timedelta(days=180) 
     end_date = current_time + timedelta(days=1) 
     
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-
-    for attempt in range(3): # Try up to 3 times if network drops
-        try:
-            raw_df = yf.download("BTC-USD", start=start_str, end=end_str, interval="1h", progress=False)
-            if len(raw_df) > 100: # Ensuring enough rows are fetched successfully
-                df = pd.DataFrame(index=raw_df.index)
-                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                    if col in raw_df.columns:
-                        df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
-                break
-        except Exception as e:
-            time.sleep(1) # Wait 1 second before retrying
-            
-    if df is None or len(df) == 0:
-        st.error("⚠️ **Yahoo Finance Live API Limit/Network Error!** Yahoo servers ne heavy request block ki hai. Kripya 10-15 seconds ruk kar dashboard reload ya refresh (Ctrl+R) karein.")
-        st.stop()
-
-    df.index = pd.to_datetime(df.index)
-
-    # Base Matrix Definition (GitHub Style Locked)
-    df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
-    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+    # Attempting real live market fetch
+    raw_df = yf.download("BTC-USD", start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), interval="1h", progress=False)
     
-    # Microstructure Features Space
-    df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
-    
-    df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
-    
-    features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
+    if len(raw_df) > 100:
+        df = pd.DataFrame(index=raw_df.index)
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            if col in raw_df.columns:
+                df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+        df.index = pd.to_datetime(df.index)
+except Exception as live_err:
+    pass
 
-# Dynamic Split Engine (Strict 50:50 Ratio Locked)
+# If live API fails, activate the 4,320 Rows Fail-Safe Stream instantly
+if df is None or len(df) < 100:
+    is_fallback_active = True
+    total_points = 4320
+    np.random.seed(42)
+    
+    base_price = 1000.0
+    price_path = [base_price]
+    for i in range(1, total_points):
+        cycle = np.sin(i / 150) * 4.0
+        if 2500 <= i <= 3100:
+            drift = 0.0
+            noise = np.random.normal(0, 3) 
+        else:
+            drift = 1.2 if cycle > 0 else -1.5
+            noise = np.random.normal(0, 14) 
+        price_path.append(max(100, price_path[-1] + drift + noise))
+        
+    art_close = np.array(price_path)
+    df = pd.DataFrame({
+        'Open': art_close - np.random.uniform(-8, 8, size=total_points),
+        'High': art_close + np.random.uniform(2, 16, size=total_points),
+        'Low': art_close - np.random.uniform(2, 16, size=total_points),
+        'Close': art_close,
+        'Volume': [850000] * total_points
+    }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
+
+# Status Display Banner
+if is_fallback_active:
+    st.warning("⚠️ **Yahoo Finance Live API Blocked/Offline!** Dashboard ko breakdown se bachane ke liye **Fail-Safe Internal Simulated Stream (₹1000 Base, 4,320 Hourly Rows)** ko automatic inject kar diya gaya hai. Aap calculations test kar sakte hain.")
+else:
+    st.success("🟢 **Real-Time Live Market Data Stream Connected Successfully!**")
+
+st.write("🎯 **Aapki Custom Setting:** GitHub Format Locked + Target WMA High/Low Prices + Strict 12-WMA Linear Tunnel + Latest Row Frozen on Top")
+
+# Base Matrix Calculations (GitHub Format Intact)
+df['a_Close'] = df['Close']
+df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
+df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+
+# Microstructure Features Space
+df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
+df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
+df['Flow_Velocity'] = df['c_Combined'].diff(1)
+df['State_Direction'] = np.where(df['c_Combined'] > 0, 1, 0)
+
+features_matrix = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+df.dropna(subset=features_matrix + ['State_Direction'], inplace=True)
+
+# Dynamic Split Engine (Strict 50:50 Ratio)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx]
 X_train = df_train[features_matrix].copy()
@@ -93,7 +118,6 @@ else:
     # Model 1: Core 5-Feature Model
     model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
     model_flow.fit(X_train, y_train)
-
     probabilities = model_flow.predict_proba(X_predict)
     df_predict['Prob_Down_Raw'] = probabilities[:, 0]
     df_predict['Prob_Up_Raw'] = probabilities[:, 1]
@@ -193,7 +217,7 @@ else:
     df_predict['Raw_Weighted_Momentum'] = raw_weighted_momentum_log 
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(df_predict['Raw_Weighted_Momentum'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Construction (Exact Format Locked)
+    # UI Construction (Exact Template Replicated)
     clean_display_cols = [
         'a_Close', 'Target_WMA_High', 'Target_WMA_Low', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 
         'KDiff_Prob_Up', 'KDiff_Prob_Down',
@@ -217,5 +241,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Market Matrix + Target Trigger Prices (Real-Time BTC Stream Enabled)")
+    st.subheader(f"📋 Operational Dashboard Matrix (Active Data Rows: {len(display_df)})")
     st.dataframe(display_df, use_container_width=True, height=750)
