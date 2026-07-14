@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Fast WMA Gravity", layout="wide")
-st.title("⚡ Nifty Live 1-Year Fast WMA Tunnel Gravity Engine")
-st.write("🎯 **Pure Real-Time Engine:** High-Contrast Probabilities (0.99 to 0.01) based on Fast WMA Tunnel Slope & Price Alignment")
+st.set_page_config(page_title="BTC Fast WMA Gravity Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Live 1-Year Fast WMA Gravity Engine")
+st.write("🎯 **Pure Real-Time Engine:** 24/7 Crypto Stream | High-Contrast Probabilities (0.99 to 0.01) based on BTC Price & Fast WMA Alignment")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -55,15 +55,15 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ DIRECT REAL TIME DATA ONLY (1-YEAR TRADING RANGE)
+# 🛡️ DIRECT REAL TIME DATA ONLY (1-YEAR CRYPTO STREAM)
 # -----------------------------------------------------------------
 df = None
 selected_period = "1y"  
-selected_interval = "1h" 
+selected_interval = "4h" # 4-Hour interval works best for Bitcoin structural swings
 
-with st.spinner("Fetching 1-Year Live Data directly from Exchange Server..."):
+with st.spinner("Fetching 1-Year Live BTC Data directly from Exchange Server..."):
     try:
-        df = yf.download(tickers="^NSEI", period=selected_period, interval=selected_interval)
+        df = yf.download(tickers="BTC-USD", period=selected_period, interval=selected_interval)
         
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -71,19 +71,20 @@ with st.spinner("Fetching 1-Year Live Data directly from Exchange Server..."):
         if len(df) > 100: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
+            # Crypto is 24/7, keeping it in local machine timezone / UTC or converting to standard trading display
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data from exchange server.")
+            st.error("🚨 Error: Insufficient crypto data from exchange server.")
             st.stop()
             
     except Exception as e:
         st.error(f"🚨 API Connection Failed: {e}")
         st.stop()
 
-st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Nifty Spot Candles across 1 Year in IST!**")
+st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Bitcoin Candles across 1 Year!**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
@@ -133,11 +134,9 @@ df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 # -----------------------------------------------------------------
-# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER
+# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER (BTC EDITION)
 # -----------------------------------------------------------------
-# 1. Slope of Fast WMA (Movement)
 df_train['Fast_WMA_Slope'] = df_train['Fast_WMA_Tunnel'].diff(1).fillna(0)
-# 2. Price Position relative to Fast WMA (Gravity Distance)
 df_train['Price_To_Fast_WMA_Gap'] = df_train['a_Close'] - df_train['Fast_WMA_Tunnel']
 
 df_predict['Fast_WMA_Slope'] = df_predict['Fast_WMA_Tunnel'].diff(1).fillna(0)
@@ -167,7 +166,7 @@ for i in range(len(df_predict)):
     # Core logic: If both Slope is Up AND Price is above Tunnel -> Massive 0.99
     # If Slope is Down AND Price is below Tunnel -> Massive 0.01
     if norm_gap > 0 and slope_val > 0:
-        conf_factor = 1 / (1 + np.exp(-15.0 * norm_gap)) # Extra aggressive scaler
+        conf_factor = 1 / (1 + np.exp(-15.0 * norm_gap)) 
         p_up = 0.50 + 0.495 * conf_factor
         p_down = 1.0 - p_up
     elif norm_gap < 0 and slope_val < 0:
@@ -175,7 +174,7 @@ for i in range(len(df_predict)):
         p_down = 0.50 + 0.495 * conf_factor
         p_up = 1.0 - p_down
     else:
-        # If there is divergence (Price & Slope don't align), we scale smoothly but still maintain high dynamic contrast
+        # Divergence alignment configuration
         if norm_gap > 0:
             conf_factor = 1 / (1 + np.exp(-8.0 * norm_gap))
             p_up = 0.50 + 0.47 * conf_factor
@@ -263,5 +262,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Fast WMA Tunnel Gravity Prob Engine]")
+st.subheader(f"📋 Live BTC-USD Master Matrix [Fast WMA Tunnel Gravity Prob Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
