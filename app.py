@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Velocity Prob Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Velocity % Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | High-Contrast Probabilities (0.99 to 0.01) Based Purely on Slow WMA Velocity %")
+st.set_page_config(page_title="Nifty IST Momentum Prob Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Weighted Momentum Edition]")
+st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | High-Contrast Probabilities (0.99 to 0.01) Based Purely on Weighted Momentum")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -131,37 +131,51 @@ df['Target_Next_Direction'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 
 # Robust forward fill to secure database shapes
 df.ffill().bfill()
 
+# Generate Weighted Momentum strictly across the timeline
+raw_weighted_momentum = df['a_Close'] - df['b_Kalman_Price']
+df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
 # Dynamic Split Engine (Strict 1-Year history divided 50:50)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 # -----------------------------------------------------------------
-# 🤖 SLOW WMA VELOCITY PERCENT PROBABILITY SOLVER
+# 🤖 WEIGHTED MOMENTUM BASED HIGH-CONTRAST PROBABILITY SOLVER
 # -----------------------------------------------------------------
-# Velocity % formula based on Slow WMA
-df_train['Slow_WMA_Velocity_Pct'] = (df_train['Slow_WMA_Tunnel'].diff(1) / (df_train['Slow_WMA_Tunnel'].shift(1) + 1e-10)) * 100
-df_train['Slow_WMA_Velocity_Pct'] = df_train['Slow_WMA_Velocity_Pct'].fillna(0)
+# We define features strictly based on Weighted Momentum
+df_train['Mom_State'] = np.where(df_train['Weighted_Momentum'] > 0, 1, 0)
+df_train['Mom_Velocity'] = df_train['Weighted_Momentum'].diff(1).fillna(0)
 
-df_predict['Slow_WMA_Velocity_Pct'] = (df_predict['Slow_WMA_Tunnel'].diff(1) / (df_predict['Slow_WMA_Tunnel'].shift(1) + 1e-10)) * 100
-df_predict['Slow_WMA_Velocity_Pct'] = df_predict['Slow_WMA_Velocity_Pct'].fillna(0)
+df_predict['Mom_State'] = np.where(df_predict['Weighted_Momentum'] > 0, 1, 0)
+df_predict['Mom_Velocity'] = df_predict['Weighted_Momentum'].diff(1).fillna(0)
 
-# 🚀 UPGRADE: HIGH-CONTRAST SIGMOID SCALER ON VELOCITY PERCENT
+mom_features = ['Weighted_Momentum', 'Mom_State', 'Mom_Velocity']
+
+# ML Train Core
+model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
+model_flow.fit(df_train[mom_features], df_train['Target_Next_Direction'])
+
+# Extract base predictions
+probabilities = model_flow.predict_proba(df_predict[mom_features])
+prob_down_raw = probabilities[:, 0]
+prob_up_raw = probabilities[:, 1]
+
+# 🚀 UPGRADE: HIGH-CONTRAST SIGMOID SCALER STRICTLY ON WEIGHTED MOMENTUM
 extreme_prob_up = []
 extreme_prob_down = []
 
-vel_std = df_predict['Slow_WMA_Velocity_Pct'].std() + 1e-10
+mom_std = df_predict['Weighted_Momentum'].std() + 1e-10
 for i in range(len(df_predict)):
-    # Standardizing velocity % value
-    norm_vel = df_predict['Slow_WMA_Velocity_Pct'].iloc[i] / vel_std
+    norm_mom = df_predict['Weighted_Momentum'].iloc[i] / mom_std
     
     # Passing through dynamic scaling sigmoid (high coefficient to force 0.99 or 0.01)
-    if norm_vel > 0:
-        conf_factor = 1 / (1 + np.exp(-4.5 * norm_vel))
+    if norm_mom > 0:
+        conf_factor = 1 / (1 + np.exp(-4.5 * norm_mom))
         p_up = 0.50 + 0.49 * conf_factor
         p_down = 1.0 - p_up
     else:
-        conf_factor = 1 / (1 + np.exp(4.5 * norm_vel))
+        conf_factor = 1 / (1 + np.exp(4.5 * norm_mom))
         p_down = 0.50 + 0.49 * conf_factor
         p_up = 1.0 - p_down
         
@@ -193,28 +207,39 @@ for idx in range(len(fast_vals)):
     else: signal_log.append("⏳ WAIT ZONE")
 df_predict['Signal'] = signal_log
 
-# Live Accumulators Tracking Space (Aligning strictly to velocity-based probabilities)
-scores_log, raw_weighted_momentum_log = [], []
+# Live Accumulators Tracking Space (Aligning strictly to momentum-based probabilities)
+scores_log = []
 accumulator = 0
 for i in range(len(extreme_prob_up)):
     if extreme_prob_up[i] >= 0.75: accumulator += 1
     elif extreme_prob_down[i] >= 0.75: accumulator -= 1
     accumulator = max(-5, min(5, accumulator))
     scores_log.append(accumulator)
-    raw_weighted_momentum_log.append(price_vals[i] - fast_vals[i])
 
 df_predict['Accumulator_Score'] = scores_log  
-df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Format dynamic Velocity for display
-df_predict['W_Velocity_Pct'] = df_predict['Slow_WMA_Velocity_Pct'].round(4).astype(str) + "%"
+# Format dynamic weights based on Momentum Features
+importances = model_flow.feature_importances_
+feat_weights = []
+X_predict_arr = df_predict[mom_features].to_numpy()
+X_train_mean = df_train[mom_features].mean().to_numpy()
+X_train_std = df_train[mom_features].std().to_numpy() + 1e-10
+
+for row in X_predict_arr:
+    deviation = np.abs(row - X_train_mean) / X_train_std
+    raw_contrib = deviation * importances
+    total_contrib = np.sum(raw_contrib) + 1e-10
+    feat_weights.append((raw_contrib / total_contrib) * 100)
+
+feat_weights_arr = np.array(feat_weights)
+df_predict['W_Mom(%)'] = feat_weights_arr[:, 0].round(1).astype(str) + "%"
 
 # Display Columns Alignment Matrix
 clean_display_cols = [
     'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
     'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
     'Prob_Up_Raw', 'Prob_Down_Raw',
-    'W_Velocity_Pct',
+    'W_Mom(%)',
     'Accumulator_Score', 'Weighted_Momentum'
 ]
 display_df = df_predict[clean_display_cols].copy()
@@ -228,5 +253,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Slow WMA Velocity % Prob Engine]")
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Weighted Momentum Prob Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
