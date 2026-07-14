@@ -8,8 +8,8 @@ import pytz
 
 # Page Configuration
 st.set_page_config(page_title="Nifty IST Kalman Extreme Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Kalman Basis Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | High-Contrast Probabilities (0.99 to 0.01) Based Strictly on Kalman Filter Differences")
+st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Pure Kalman Extreme 0.99-0.01 Edition]")
+st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | Strictly Forcing High-Contrast Probabilities (0.99 to 0.01) via Kalman Gravity")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -143,7 +143,6 @@ df_predict = df.iloc[split_idx:].copy()
 # -----------------------------------------------------------------
 # 🤖 PURE KALMAN BASED HIGH-CONTRAST PROBABILITY SOLVER
 # -----------------------------------------------------------------
-# We define features strictly based on Kalman difference (c_Combined)
 df_train['Kalman_Gap'] = df_train['c_Combined']
 df_train['Kalman_Gap_Velocity'] = df_train['c_Combined'].diff(1).fillna(0)
 df_train['Kalman_Gap_State'] = np.where(df_train['c_Combined'] > 0, 1, 0)
@@ -154,7 +153,7 @@ df_predict['Kalman_Gap_State'] = np.where(df_predict['c_Combined'] > 0, 1, 0)
 
 kalman_features = ['Kalman_Gap', 'Kalman_Gap_Velocity', 'Kalman_Gap_State']
 
-# ML Train strictly based on Kalman signals
+# Random Forest core
 model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
 model_flow.fit(df_train[kalman_features], df_train['Target_Next_Direction'])
 
@@ -163,25 +162,32 @@ probabilities = model_flow.predict_proba(df_predict[kalman_features])
 prob_down_raw = probabilities[:, 0]
 prob_up_raw = probabilities[:, 1]
 
-# 🚀 UPGRADE: HIGH-CONTRAST SIGMOID SCALER STRICTLY ON KALMAN DIFFERENCE
+# 🚀 UPGRADE: ENHANCED SIGMOID FOR ABSOLUTE CONTRAST (0.99 OR 0.01 ONLY)
 extreme_prob_up = []
 extreme_prob_down = []
 
+# standard deviation calculate karenge Kalman Gap ka
 kalman_std = df_predict['Kalman_Gap'].std() + 1e-10
+
 for i in range(len(df_predict)):
-    # Standardizing Kalman gap value
     norm_gap = df_predict['Kalman_Gap'].iloc[i] / kalman_std
     
-    # Sigmoid mapping to force absolute extreme 0.99 / 0.01 ranges
+    # Highly Aggressive Sigmoid (Scaling factor is increased to 12.0 for instantaneous extreme shifts)
     if norm_gap > 0:
-        conf_factor = 1 / (1 + np.exp(-4.5 * norm_gap))
-        p_up = 0.50 + 0.49 * conf_factor
+        # Jab close Kalman ke upar ho toh high value confirm 0.99+
+        conf_factor = 1 / (1 + np.exp(-12.0 * norm_gap))
+        p_up = 0.50 + 0.495 * conf_factor
         p_down = 1.0 - p_up
     else:
-        conf_factor = 1 / (1 + np.exp(4.5 * norm_gap))
-        p_down = 0.50 + 0.49 * conf_factor
+        # Jab close Kalman ke neeche ho toh low value confirm 0.01-
+        conf_factor = 1 / (1 + np.exp(12.0 * norm_gap))
+        p_down = 0.50 + 0.495 * conf_factor
         p_up = 1.0 - p_down
         
+    # Strictly bounding values to mathematically safe limits [0.005, 0.995]
+    p_up = max(0.005, min(0.995, p_up))
+    p_down = max(0.005, min(0.995, p_down))
+    
     extreme_prob_up.append(p_up)
     extreme_prob_down.append(p_down)
 
@@ -210,7 +216,7 @@ for idx in range(len(fast_vals)):
     else: signal_log.append("⏳ WAIT ZONE")
 df_predict['Signal'] = signal_log
 
-# Live Accumulators Tracking Space
+# Live Accumulators Tracking Space (Perfect sync with extreme signals)
 scores_log = []
 accumulator = 0
 for i in range(len(extreme_prob_up)):
@@ -221,7 +227,7 @@ for i in range(len(extreme_prob_up)):
 
 df_predict['Accumulator_Score'] = scores_log  
 
-# Feature Importance mapping based on Kalman Features
+# Feature weights based on Kalman Features
 importances = model_flow.feature_importances_
 feat_weights = []
 X_predict_arr = df_predict[kalman_features].to_numpy()
@@ -256,5 +262,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Kalman Basis Prob Engine]")
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Kalman Pure Extreme Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
