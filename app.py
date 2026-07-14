@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Dynamic Correlation Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Engine [Live Correlation Tracker]")
-st.write("🎯 **Pure Real-Time Engine:** Live yfinance Feed with Dynamic Close vs Fast WMA Correlation Metric")
+st.set_page_config(page_title="Nifty IST Synced Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [With Correlation Column]")
+st.write("🎯 **Pure Real-Time Engine:** Live yfinance Feed | Strictly No Simulation Fallback | Dynamic Rolling Correlation Column")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -245,6 +245,9 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
+    # 📈 NEW: 24-Hour Rolling Correlation Column Calculation
+    df_predict['Correlation'] = df_predict['a_Close'].rolling(window=24).corr(df_predict['Fast_WMA_Tunnel'])
+
     # UI Conversion
     df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
@@ -252,9 +255,9 @@ else:
     df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
 
-    # Sequential UI Columns Definition Matrix
+    # Sequential UI Columns Definition Matrix (Included 'Correlation' Column)
     clean_display_cols = [
-        'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+        'a_Close', 'Correlation', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
         'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
         'Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down',
         'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
@@ -262,29 +265,13 @@ else:
     ]
     display_df = df_predict[clean_display_cols].copy()
     
-    # -----------------------------------------------------------------
-    # 📈 LIVE DYNAMIC CORRELATION CALCULATION (ADDED ON USER DEMAND)
-    # -----------------------------------------------------------------
-    # Calculating correlation between Close Price (a_Close) and Fast WMA Tunnel
-    corr_score = display_df['a_Close'].corr(display_df['Fast_WMA_Tunnel'])
-    
-    # Displaying the correlation as a bold visual metric card
-    st.markdown("### 📊 Dynamic System Health Metrics")
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        st.metric(
-            label="🔗 Close Price vs Fast WMA Tunnel Correlation", 
-            value=f"{corr_score:.4f}",
-            delta="High Positive Co-dependency" if corr_score > 0.90 else "Dynamic Divergence Active",
-            help="Value close to +1.0 indicates a strong, synchronized trend. Sudden drop points to a sharp breakout/breakdown opportunity!"
-        )
-    with col_m2:
-        st.write("💡 **Trading Insight:** If correlation drops rapidly below **0.92**, look closely at the **Signal** column; a trend reversal crossover is highly likely in the subsequent hourly ticks.")
-
     for c in ['a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
         display_df[c] = display_df[c].round(2)
     for c in ['Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down']:
         display_df[c] = display_df[c].round(3)
+        
+    # High Precision 4-decimal representation for Correlation Column
+    display_df['Correlation'] = display_df['Correlation'].round(4)
         
     # Latest candle strictly locked on top row
     display_df = display_df.iloc[::-1]
@@ -292,5 +279,5 @@ else:
     # Strict Indian Standard Time representation
     display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Nifty Spot Master Matrix [Real-Time IST Feed with Correlation]")
+    st.subheader(f"📋 Live Nifty Spot Master Matrix [Real-Time IST with Correlation Column]")
     st.dataframe(display_df, use_container_width=True, height=750)
