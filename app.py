@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Extreme Slow WMA Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Extreme Slow WMA Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | High-Contrast Probabilities (0.99 to 0.01) Based on Slow WMA Gravity")
+st.set_page_config(page_title="Nifty IST Velocity Prob Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Velocity % Edition]")
+st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | High-Contrast Probabilities (0.99 to 0.01) Based Purely on Slow WMA Velocity %")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -137,46 +137,31 @@ df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 # -----------------------------------------------------------------
-# 🤖 SLOW WMA BASED HIGH-CONTRAST PROBABILITY SOLVER
+# 🤖 SLOW WMA VELOCITY PERCENT PROBABILITY SOLVER
 # -----------------------------------------------------------------
-# Mathematical definitions
-df_train['Slow_WMA_Gap'] = df_train['a_Close'] - df_train['Slow_WMA_Tunnel']
-df_train['Slow_WMA_Velocity'] = df_train['Slow_WMA_Tunnel'].diff(1).fillna(0)
-df_train['Slow_WMA_State'] = np.where(df_train['a_Close'] > df_train['Slow_WMA_Tunnel'], 1, 0)
+# Velocity % formula based on Slow WMA
+df_train['Slow_WMA_Velocity_Pct'] = (df_train['Slow_WMA_Tunnel'].diff(1) / (df_train['Slow_WMA_Tunnel'].shift(1) + 1e-10)) * 100
+df_train['Slow_WMA_Velocity_Pct'] = df_train['Slow_WMA_Velocity_Pct'].fillna(0)
 
-df_predict['Slow_WMA_Gap'] = df_predict['a_Close'] - df_predict['Slow_WMA_Tunnel']
-df_predict['Slow_WMA_Velocity'] = df_predict['Slow_WMA_Tunnel'].diff(1).fillna(0)
-df_predict['Slow_WMA_State'] = np.where(df_predict['a_Close'] > df_predict['Slow_WMA_Tunnel'], 1, 0)
+df_predict['Slow_WMA_Velocity_Pct'] = (df_predict['Slow_WMA_Tunnel'].diff(1) / (df_predict['Slow_WMA_Tunnel'].shift(1) + 1e-10)) * 100
+df_predict['Slow_WMA_Velocity_Pct'] = df_predict['Slow_WMA_Velocity_Pct'].fillna(0)
 
-slow_wma_features = ['Slow_WMA_Gap', 'Slow_WMA_Velocity', 'Slow_WMA_State']
-
-# Dynamic Model trained strictly on Slow WMA parameters
-model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
-model_flow.fit(df_train[slow_wma_features], df_train['Target_Next_Direction'])
-
-# Extracting base probabilities
-probabilities = model_flow.predict_proba(df_predict[slow_wma_features])
-prob_down_raw = probabilities[:, 0]
-prob_up_raw = probabilities[:, 1]
-
-# 🚀 UPGRADE: HIGH-CONTRAST SIGMOID SCALER (Forcing 0.99 & 0.01 behavior based on Slow WMA Gravity)
+# 🚀 UPGRADE: HIGH-CONTRAST SIGMOID SCALER ON VELOCITY PERCENT
 extreme_prob_up = []
 extreme_prob_down = []
 
-gap_std = df_predict['Slow_WMA_Gap'].std() + 1e-10
-for i in range(len(prob_up_raw)):
-    # Standardizing current price distance from Slow WMA
-    norm_gap = df_predict['Slow_WMA_Gap'].iloc[i] / gap_std
+vel_std = df_predict['Slow_WMA_Velocity_Pct'].std() + 1e-10
+for i in range(len(df_predict)):
+    # Standardizing velocity % value
+    norm_vel = df_predict['Slow_WMA_Velocity_Pct'].iloc[i] / vel_std
     
-    # Scale confidence exponentially based on distance from Slow WMA Channel
-    if norm_gap > 0:
-        # Bullish: Push Up probability towards 0.99, shrink Down probability towards 0.01
-        conf_factor = 1 / (1 + np.exp(-3.5 * norm_gap)) # Sigmoid activation
+    # Passing through dynamic scaling sigmoid (high coefficient to force 0.99 or 0.01)
+    if norm_vel > 0:
+        conf_factor = 1 / (1 + np.exp(-4.5 * norm_vel))
         p_up = 0.50 + 0.49 * conf_factor
         p_down = 1.0 - p_up
     else:
-        # Bearish: Push Down probability towards 0.99, shrink Up probability towards 0.01
-        conf_factor = 1 / (1 + np.exp(3.5 * norm_gap))
+        conf_factor = 1 / (1 + np.exp(4.5 * norm_vel))
         p_down = 0.50 + 0.49 * conf_factor
         p_up = 1.0 - p_down
         
@@ -208,29 +193,7 @@ for idx in range(len(fast_vals)):
     else: signal_log.append("⏳ WAIT ZONE")
 df_predict['Signal'] = signal_log
 
-# Feature Importance mapping
-importances = model_flow.feature_importances_
-feat_weights = []
-X_predict_arr = df_predict[slow_wma_features].to_numpy()
-X_train_mean = df_train[slow_wma_features].mean().to_numpy()
-X_train_std = df_train[slow_wma_features].std().to_numpy() + 1e-10
-
-for row in X_predict_arr:
-    deviation = np.abs(row - X_train_mean) / X_train_std
-    raw_contrib = deviation * importances
-    total_contrib = np.sum(raw_contrib) + 1e-10
-    feat_weights.append((raw_contrib / total_contrib) * 100)
-
-feat_weights_arr = np.array(feat_weights)
-if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 3:
-    df_predict['W_Gap(%)_Raw'] = feat_weights_arr[:, 0]
-    df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 1]
-    df_predict['W_State(%)_Raw'] = feat_weights_arr[:, 2]
-else:
-    for col in ['W_Gap(%)_Raw', 'W_Velocity(%)_Raw', 'W_State(%)_Raw']:
-        df_predict[col] = 33.3
-
-# Live Accumulators Tracking Space (Aligning strictly to high-contrast probabilities)
+# Live Accumulators Tracking Space (Aligning strictly to velocity-based probabilities)
 scores_log, raw_weighted_momentum_log = [], []
 accumulator = 0
 for i in range(len(extreme_prob_up)):
@@ -243,17 +206,15 @@ for i in range(len(extreme_prob_up)):
 df_predict['Accumulator_Score'] = scores_log  
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# UI Conversion Formatting
-df_predict['W_Gap(%)'] = df_predict['W_Gap(%)_Raw'].round(1).astype(str) + "%"
-df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
-df_predict['W_State(%)'] = df_predict['W_State(%)_Raw'].round(1).astype(str) + "%"
+# Format dynamic Velocity for display
+df_predict['W_Velocity_Pct'] = df_predict['Slow_WMA_Velocity_Pct'].round(4).astype(str) + "%"
 
 # Display Columns Alignment Matrix
 clean_display_cols = [
     'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
     'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
     'Prob_Up_Raw', 'Prob_Down_Raw',
-    'W_Gap(%)', 'W_Velocity(%)', 'W_State(%)',
+    'W_Velocity_Pct',
     'Accumulator_Score', 'Weighted_Momentum'
 ]
 display_df = df_predict[clean_display_cols].copy()
@@ -267,5 +228,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Extreme Slow WMA Prob Engine]")
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Slow WMA Velocity % Prob Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
