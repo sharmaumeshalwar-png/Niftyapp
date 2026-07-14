@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Synced Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Strict Live Data]")
-st.write("🎯 **Pure Real-Time Engine:** 100% Live yfinance Feed | Strictly No Simulation Fallback")
+st.set_page_config(page_title="Nifty IST Dynamic Correlation Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Engine [Live Correlation Tracker]")
+st.write("🎯 **Pure Real-Time Engine:** Live yfinance Feed with Dynamic Close vs Fast WMA Correlation Metric")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -63,10 +63,10 @@ selected_interval = "1h"
 
 with st.spinner("Fetching Live Data directly from Exchange Server..."):
     try:
-        # Direct Nifty Spot Fetch (No fallback simulation block)
+        # Direct Nifty Spot Fetch
         df = yf.download(tickers="^NSEI", period=selected_period, interval=selected_interval)
         
-        # Multi-index columns clean-up if any
+        # Multi-index columns clean-up
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -262,6 +262,25 @@ else:
     ]
     display_df = df_predict[clean_display_cols].copy()
     
+    # -----------------------------------------------------------------
+    # 📈 LIVE DYNAMIC CORRELATION CALCULATION (ADDED ON USER DEMAND)
+    # -----------------------------------------------------------------
+    # Calculating correlation between Close Price (a_Close) and Fast WMA Tunnel
+    corr_score = display_df['a_Close'].corr(display_df['Fast_WMA_Tunnel'])
+    
+    # Displaying the correlation as a bold visual metric card
+    st.markdown("### 📊 Dynamic System Health Metrics")
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric(
+            label="🔗 Close Price vs Fast WMA Tunnel Correlation", 
+            value=f"{corr_score:.4f}",
+            delta="High Positive Co-dependency" if corr_score > 0.90 else "Dynamic Divergence Active",
+            help="Value close to +1.0 indicates a strong, synchronized trend. Sudden drop points to a sharp breakout/breakdown opportunity!"
+        )
+    with col_m2:
+        st.write("💡 **Trading Insight:** If correlation drops rapidly below **0.92**, look closely at the **Signal** column; a trend reversal crossover is highly likely in the subsequent hourly ticks.")
+
     for c in ['a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
         display_df[c] = display_df[c].round(2)
     for c in ['Prob_Up_Raw', 'Prob_Down_Raw', 'KDiff_Prob_Up', 'KDiff_Prob_Down']:
@@ -270,8 +289,8 @@ else:
     # Latest candle strictly locked on top row
     display_df = display_df.iloc[::-1]
     
-    # 🕒 Strict Indian Standard Time representation
+    # Strict Indian Standard Time representation
     display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Nifty Spot Master Matrix [Real-Time IST Feed]")
+    st.subheader(f"📋 Live Nifty Spot Master Matrix [Real-Time IST Feed with Correlation]")
     st.dataframe(display_df, use_container_width=True, height=750)
