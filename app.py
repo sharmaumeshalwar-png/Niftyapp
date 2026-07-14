@@ -3,266 +3,158 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime
-import pytz
 
 # Page Configuration
-st.set_page_config(page_title="BTC 2Y Hourly Gravity Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Live 2-Year 1-Hour Gravity Engine")
-st.write("🎯 **Pure Real-Time Engine:** 2-Years Hourly Crypto Stream | Strict 50:50 Split | High-Contrast Probabilities (0.99 to 0.01)")
+st.set_page_config(page_title="BTC Volatility Regime Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Solid Regime Engine")
+st.write("🎯 **Anti-Chop Framework:** Hurst Exponent + ATR Filter | Zero Noise Signals")
 
 # =====================================================================
-# MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
+# MATHEMATICAL ENGINES (Kalman, Hurst, and ATR)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0:
-        return []
-    x = data_array[0]
-    p = initial_p  
-    q = q_val      
-    r = r_val        
+    if len(data_array) == 0: return []
+    x, p = data_array[0], initial_p  
     filtered_values = []
     for z in data_array:
-        p = p + q
-        k = p / (p + r)
+        p = p + q_val
+        k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
-def apply_vidya_custom(data_array, period=14):
-    if len(data_array) < period:
-        return data_array.copy()
+def calculate_rolling_hurst(price_series, window=100):
+    """Calculates rolling Hurst Exponent to identify Choppy vs Trending regimes"""
+    hurst_values = np.full(len(price_series), 0.5) # Default to random walk
+    log_returns = np.log(price_series / np.roll(price_series, 1))
+    log_returns[0] = 0
+    
+    for i in range(window, len(price_series)):
+        window_data = log_returns[i-window+1:i+1]
+        # Calculate accumulated deviations
+        cum_dev = np.cumsum(window_data - np.mean(window_data))
+        r_val = np.max(cum_dev) - np.min(cum_dev)
+        s_val = np.std(window_data) + 1e-10
+        rs_ratio = r_val / s_val
         
-    s = pd.Series(data_array)
-    diff = s.diff()
-    gains = diff.where(diff > 0, 0)
-    losses = (-diff).where(diff < 0, 0)
-    
-    sum_gains = gains.rolling(window=period).sum()
-    sum_losses = losses.rolling(window=period).sum()
-    
-    cmo = (sum_gains - sum_losses) / (sum_gains + sum_losses + 1e-10)
-    k = cmo.abs().fillna(0).to_numpy()
-    
-    alpha = 2 / (period + 1)
-    vidya_values = np.zeros_like(data_array)
-    vidya_values[0] = data_array[0]
-    
-    for i in range(1, len(data_array)):
-        vidya_values[i] = (alpha * k[i] * data_array[i]) + (1 - alpha * k[i]) * vidya_values[i-1]
-        
-    return vidya_values
+        # Approximate Hurst Exponent via linear fit log(R/S) / log(n)
+        h = np.log(rs_ratio) / np.log(window)
+        hurst_values[i] = np.clip(h, 0.0, 1.0)
+    return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ DIRECT REAL TIME DATA ONLY (2-YEAR HIGH DENSITY CRYPTO STREAM)
+# 🛡️ SYSTEM DATA INGESTION (2-YEAR HIGH DENSITY STREAM)
 # -----------------------------------------------------------------
 df = None
-selected_period = "2y"   # Locked strictly to 2 Years
-selected_interval = "1h" # Locked strictly to 1 Hour Candle
-
-with st.spinner("Fetching 2-Year Hourly Live BTC Data directly from Exchange Server..."):
+with st.spinner("Fetching 2-Year Hourly Live BTC Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period=selected_period, interval=selected_interval)
-        
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 100: 
+        if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            
-            # Localized to IST for clear unified monitoring
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient historical database lines from exchange server.")
+            st.error("🚨 Error: Insufficient lines from server.")
             st.stop()
-            
     except Exception as e:
-        st.error(f"🚨 API Connection Failed: {e}")
+        st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Bitcoin 1-Hour Candles across 2 Years in IST!**")
+st.success(f"🟢 **Synced {len(df)} Real-Time Bitcoin 1-Hour Candles (IST)!**")
 
-# Base Matrix Definition
-df['a_Close'] = df['Close']
+# Setup Primary Math
+df['Close_Raw'] = df['Close']
+close_arr = df['Close_Raw'].values
 
-# DUAL INSTITUTIONAL KALMAN ENGINE GENERATION
-df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
-df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
-df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
+# Calculate Noise-Filtered Baseline
+df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# TUNNEL CALCULATIONS
-wma_weights = np.arange(12, 0, -1) 
-wma_sum = np.sum(wma_weights)       
-df['Fast_WMA_Tunnel'] = df['b_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
-df['Slow_WMA_Tunnel'] = df['Slow_Kalman_Price'].rolling(window=12).apply(lambda x: np.sum(x * wma_weights) / wma_sum, raw=True)
+# Calculate ATR (Average True Range)
+high_low = df['High'] - df['Low']
+high_close = np.abs(df['High'] - df['Close'].shift(1))
+low_close = np.abs(df['Low'] - df['Close'].shift(1))
+true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+df['ATR'] = true_range.rolling(14).mean().ffill().bfill()
+df['Volatility_Ratio'] = df['ATR'] / df['Close_Raw']
 
-# VIDYA CALCULATIONS
-df['Vidhya'] = apply_vidya_custom(df['a_Close'].values, period=14)
-df['Close_Minus_Vidhya'] = df['a_Close'] - df['Vidhya']
-df['VIDYA_Weighted_Momentum'] = apply_kalman_filter_custom(df['Close_Minus_Vidhya'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+# Calculate Market Memory (Hurst Exponent)
+df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-vidya_mom_vals = df['VIDYA_Weighted_Momentum'].values
-vidya_accum_log = np.zeros_like(vidya_mom_vals)
-v_accum = 0
-for idx in range(1, len(vidya_mom_vals)):
-    if vidya_mom_vals[idx] > vidya_mom_vals[idx-1]: v_accum += 1
-    elif vidya_mom_vals[idx] < vidya_mom_vals[idx-1]: v_accum -= 1
-    v_accum = max(-5, min(5, v_accum))
-    vidya_accum_log[idx] = v_accum
-df['VIDYA_Accumulator_Score'] = vidya_accum_log
+# Target Engine Setup
+df['Target_Next_Direction'] = np.where(df['Close_Raw'].shift(-1) > df['Close_Raw'], 1, 0)
 
-# KALMAN GAP DEV CALCULATION
-df['Kalman_Gap_Dev'] = apply_kalman_filter_custom((df['a_Close'] - df['Fast_WMA_Tunnel']).values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# Target Direction (1 if next close is higher, 0 if lower)
-df['Target_Next_Direction'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 1, 0)
-
-# Robust forward fill to secure database shapes
-df.ffill().bfill()
-
-# Generate standard Weighted Momentum
-raw_weighted_momentum = df['a_Close'] - df['b_Kalman_Price']
-df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# Dynamic Split Engine (Strict 2-Year history divided 50:50)
+# Split Engine 50:50
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-# st.info(f"📊 Dataset Partition Status: Training Row count: {len(df_train)} | Predictive Row count: {len(df_predict)}")
-
-# -----------------------------------------------------------------
-# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER (2-YEAR 1-HOUR MODE)
-# -----------------------------------------------------------------
-df_train['Fast_WMA_Slope'] = df_train['Fast_WMA_Tunnel'].diff(1).fillna(0)
-df_train['Price_To_Fast_WMA_Gap'] = df_train['a_Close'] - df_train['Fast_WMA_Tunnel']
-
-df_predict['Fast_WMA_Slope'] = df_predict['Fast_WMA_Tunnel'].diff(1).fillna(0)
-df_predict['Price_To_Fast_WMA_Gap'] = df_predict['a_Close'] - df_predict['Fast_WMA_Tunnel']
-
-gravity_features = ['Fast_WMA_Slope', 'Price_To_Fast_WMA_Gap']
-
-# ML Train core strictly based on Fast WMA Gravity
-model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
-model_flow.fit(df_train[gravity_features], df_train['Target_Next_Direction'])
-
-# Extract predictions
-probabilities = model_flow.predict_proba(df_predict[gravity_features])
-prob_down_raw = probabilities[:, 0]
-prob_up_raw = probabilities[:, 1]
-
-# 🚀 UPGRADE: SIGMOID MAPPING FOR HIGH-CONTRAST 0.99 / 0.01 EXTREMES ON 1H INTERVAL
-extreme_prob_up = []
-extreme_prob_down = []
-
-gap_std = df_predict['Price_To_Fast_WMA_Gap'].std() + 1e-10
-
-for i in range(len(df_predict)):
-    norm_gap = df_predict['Price_To_Fast_WMA_Gap'].iloc[i] / gap_std
-    slope_val = df_predict['Fast_WMA_Slope'].iloc[i]
-    
-    # Core logic: If both Slope is Up AND Price is above Tunnel -> Massive 0.99
-    # If Slope is Down AND Price is below Tunnel -> Massive 0.01
-    if norm_gap > 0 and slope_val > 0:
-        conf_factor = 1 / (1 + np.exp(-15.0 * norm_gap)) 
-        p_up = 0.50 + 0.495 * conf_factor
-        p_down = 1.0 - p_up
-    elif norm_gap < 0 and slope_val < 0:
-        conf_factor = 1 / (1 + np.exp(15.0 * norm_gap))
-        p_down = 0.50 + 0.495 * conf_factor
-        p_up = 1.0 - p_down
-    else:
-        # Divergence alignment configuration
-        if norm_gap > 0:
-            conf_factor = 1 / (1 + np.exp(-8.0 * norm_gap))
-            p_up = 0.50 + 0.47 * conf_factor
-            p_down = 1.0 - p_up
-        else:
-            conf_factor = 1 / (1 + np.exp(8.0 * norm_gap))
-            p_down = 0.50 + 0.47 * conf_factor
-            p_up = 1.0 - p_down
-            
-    # Safeguard bounds to strict 0.01 - 0.99 levels
-    p_up = max(0.01, min(0.99, p_up))
-    p_down = max(0.01, min(0.99, p_down))
-    
-    extreme_prob_up.append(p_up)
-    extreme_prob_down.append(p_down)
-
-df_predict['Prob_Up_Raw'] = extreme_prob_up
-df_predict['Prob_Down_Raw'] = extreme_prob_down
-
-# Crossover Logic Engine
-price_vals = df_predict['a_Close'].to_numpy()
-fast_vals = df_predict['b_Kalman_Price'].to_numpy()
-slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
-fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
-slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
+# 🤖 ADVANCED REGIME SIGNALS (Anti-Chop Core)
+hurst_arr = df_predict['Hurst'].to_numpy()
+vol_ratio = df_predict['Volatility_Ratio'].to_numpy()
+raw_close = df_predict['Close_Raw'].to_numpy()
+kalman_line = df_predict['Kalman_Baseline'].to_numpy()
 
 signal_log = []
-for idx in range(len(fast_vals)):
-    if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
-        signal_log.append("⏳ LOADING")
-        continue
-    fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
-    slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
-    fast_bearish = (fast_vals[idx] < fast_wma[idx]) and (price_vals[idx] < fast_vals[idx])
-    slow_bearish = (slow_vals[idx] < slow_wma[idx]) and (price_vals[idx] < slow_vals[idx])
-    
-    if fast_bullish and slow_bullish: signal_log.append("🟢 BUY")
-    elif fast_bearish and slow_bearish: signal_log.append("🔴 SELL")
-    else: signal_log.append("⏳ WAIT ZONE")
+for idx in range(len(df_predict)):
+    # 1. Condition for Choppy Market (Hurst between 0.42 and 0.53 means random walk/consolidation)
+    if 0.42 <= hurst_arr[idx] <= 0.54:
+        signal_log.append("⚠️ CHOPPY ZONE")
+    else:
+        # 2. Trending Market Logic
+        if raw_close[idx] > kalman_line[idx] and hurst_arr[idx] > 0.54:
+            signal_log.append("🟢 BUY")
+        elif raw_close[idx] < kalman_line[idx] and hurst_arr[idx] > 0.54:
+            signal_log.append("🔴 SELL")
+        # 3. Mean Reversion Logic (Low Hurst means price will bounce back to baseline)
+        elif hurst_arr[idx] < 0.42:
+            if raw_close[idx] < (kalman_line[idx] - df_predict['ATR'].iloc[idx]):
+                signal_log.append("🟢 BUY (REVERSAL)")
+            elif raw_close[idx] > (kalman_line[idx] + df_predict['ATR'].iloc[idx]):
+                signal_log.append("🔴 SELL (REVERSAL)")
+            else:
+                signal_log.append("⚠️ CHOPPY ZONE")
+        else:
+            signal_log.append("⚠️ CHOPPY ZONE")
+
 df_predict['Signal'] = signal_log
 
-# Live Accumulators Tracking Space
-scores_log = []
-accumulator = 0
-for i in range(len(extreme_prob_up)):
-    if extreme_prob_up[i] >= 0.75: accumulator += 1
-    elif extreme_prob_down[i] >= 0.75: accumulator -= 1
-    accumulator = max(-5, min(5, accumulator))
-    scores_log.append(accumulator)
+# 🚀 HIGH CONTRAST PROBABILITIES SIMULATION BASED ON REGIME CONFIDENCE
+prob_up = []
+prob_down = []
+for idx in range(len(df_predict)):
+    sig = signal_log[idx]
+    if "BUY" in sig:
+        prob_up.append(0.99 if hurst_arr[idx] > 0.58 else 0.85)
+        prob_down.append(0.01 if hurst_arr[idx] > 0.58 else 0.15)
+    elif "SELL" in sig:
+        prob_up.append(0.01 if hurst_arr[idx] > 0.58 else 0.15)
+        prob_down.append(0.99 if hurst_arr[idx] > 0.58 else 0.85)
+    else: # Choppy Zone
+        prob_up.append(0.50)
+        prob_down.append(0.50)
 
-df_predict['Accumulator_Score'] = scores_log  
+df_predict['Prob_Up'] = prob_up
+df_predict['Prob_Down'] = prob_down
 
-# Feature weights based on Gravity Features
-importances = model_flow.feature_importances_
-feat_weights = []
-X_predict_arr = df_predict[gravity_features].to_numpy()
-X_train_mean = df_train[gravity_features].mean().to_numpy()
-X_train_std = df_train[gravity_features].std().to_numpy() + 1e-10
+# Format Layout Columns Matrix
+clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'Signal', 'Prob_Up', 'Prob_Down']
+display_df = df_predict[clean_cols].copy()
 
-for row in X_predict_arr:
-    deviation = np.abs(row - X_train_mean) / X_train_std
-    raw_contrib = deviation * importances
-    total_contrib = np.sum(raw_contrib) + 1e-10
-    feat_weights.append((raw_contrib / total_contrib) * 100)
-
-feat_weights_arr = np.array(feat_weights)
-df_predict['W_Slope(%)'] = feat_weights_arr[:, 0].round(1).astype(str) + "%"
-
-# Display Columns Alignment Matrix
-clean_display_cols = [
-    'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
-    'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
-    'Prob_Up_Raw', 'Prob_Down_Raw',
-    'W_Slope(%)',
-    'Accumulator_Score', 'Weighted_Momentum'
-]
-display_df = df_predict[clean_display_cols].copy()
-
-for c in ['a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
+# Roundings
+for c in ['Close_Raw', 'Kalman_Baseline', 'ATR']:
     display_df[c] = display_df[c].round(2)
-for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
+for c in ['Hurst', 'Prob_Up', 'Prob_Down']:
     display_df[c] = display_df[c].round(3)
-    
-# Inverting rows for latest candles on top
+
+# Reverse for latest candles on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live BTC-USD 2-Year 1-Hour Master Matrix")
+st.subheader(f"📋 Live Anti-Chop Bitcoin Master Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
