@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Kalman Extreme Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Pure Kalman Extreme 0.99-0.01 Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 1-Year Data | Strictly Forcing High-Contrast Probabilities (0.99 to 0.01) via Kalman Gravity")
+st.set_page_config(page_title="Nifty IST Fast WMA Gravity", layout="wide")
+st.title("⚡ Nifty Live 1-Year Fast WMA Tunnel Gravity Engine")
+st.write("🎯 **Pure Real-Time Engine:** High-Contrast Probabilities (0.99 to 0.01) based on Fast WMA Tunnel Slope & Price Alignment")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -93,14 +93,6 @@ df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_
 df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
 df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
 
-# Microstructure Features Space
-df['Sign_Change'] = (np.sign(df['c_Combined']) != np.sign(df['c_Combined'].shift(1))).astype(int)
-df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(window=24).std() + 1e-10)
-df['Flow_Velocity'] = df['c_Combined'].diff(1)
-
 # TUNNEL CALCULATIONS
 wma_weights = np.arange(12, 0, -1) 
 wma_sum = np.sum(wma_weights)       
@@ -141,52 +133,61 @@ df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 # -----------------------------------------------------------------
-# 🤖 PURE KALMAN BASED HIGH-CONTRAST PROBABILITY SOLVER
+# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER
 # -----------------------------------------------------------------
-df_train['Kalman_Gap'] = df_train['c_Combined']
-df_train['Kalman_Gap_Velocity'] = df_train['c_Combined'].diff(1).fillna(0)
-df_train['Kalman_Gap_State'] = np.where(df_train['c_Combined'] > 0, 1, 0)
+# 1. Slope of Fast WMA (Movement)
+df_train['Fast_WMA_Slope'] = df_train['Fast_WMA_Tunnel'].diff(1).fillna(0)
+# 2. Price Position relative to Fast WMA (Gravity Distance)
+df_train['Price_To_Fast_WMA_Gap'] = df_train['a_Close'] - df_train['Fast_WMA_Tunnel']
 
-df_predict['Kalman_Gap'] = df_predict['c_Combined']
-df_predict['Kalman_Gap_Velocity'] = df_predict['c_Combined'].diff(1).fillna(0)
-df_predict['Kalman_Gap_State'] = np.where(df_predict['c_Combined'] > 0, 1, 0)
+df_predict['Fast_WMA_Slope'] = df_predict['Fast_WMA_Tunnel'].diff(1).fillna(0)
+df_predict['Price_To_Fast_WMA_Gap'] = df_predict['a_Close'] - df_predict['Fast_WMA_Tunnel']
 
-kalman_features = ['Kalman_Gap', 'Kalman_Gap_Velocity', 'Kalman_Gap_State']
+gravity_features = ['Fast_WMA_Slope', 'Price_To_Fast_WMA_Gap']
 
-# Random Forest core
+# ML Train core strictly based on Fast WMA Gravity
 model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
-model_flow.fit(df_train[kalman_features], df_train['Target_Next_Direction'])
+model_flow.fit(df_train[gravity_features], df_train['Target_Next_Direction'])
 
 # Extract predictions
-probabilities = model_flow.predict_proba(df_predict[kalman_features])
+probabilities = model_flow.predict_proba(df_predict[gravity_features])
 prob_down_raw = probabilities[:, 0]
 prob_up_raw = probabilities[:, 1]
 
-# 🚀 UPGRADE: ENHANCED SIGMOID FOR ABSOLUTE CONTRAST (0.99 OR 0.01 ONLY)
+# 🚀 UPGRADE: SIGMOID MAPPING FOR HIGH-CONTRAST 0.99 / 0.01 EXTREMES
 extreme_prob_up = []
 extreme_prob_down = []
 
-# standard deviation calculate karenge Kalman Gap ka
-kalman_std = df_predict['Kalman_Gap'].std() + 1e-10
+gap_std = df_predict['Price_To_Fast_WMA_Gap'].std() + 1e-10
 
 for i in range(len(df_predict)):
-    norm_gap = df_predict['Kalman_Gap'].iloc[i] / kalman_std
+    norm_gap = df_predict['Price_To_Fast_WMA_Gap'].iloc[i] / gap_std
+    slope_val = df_predict['Fast_WMA_Slope'].iloc[i]
     
-    # Highly Aggressive Sigmoid (Scaling factor is increased to 12.0 for instantaneous extreme shifts)
-    if norm_gap > 0:
-        # Jab close Kalman ke upar ho toh high value confirm 0.99+
-        conf_factor = 1 / (1 + np.exp(-12.0 * norm_gap))
+    # Core logic: If both Slope is Up AND Price is above Tunnel -> Massive 0.99
+    # If Slope is Down AND Price is below Tunnel -> Massive 0.01
+    if norm_gap > 0 and slope_val > 0:
+        conf_factor = 1 / (1 + np.exp(-15.0 * norm_gap)) # Extra aggressive scaler
         p_up = 0.50 + 0.495 * conf_factor
         p_down = 1.0 - p_up
-    else:
-        # Jab close Kalman ke neeche ho toh low value confirm 0.01-
-        conf_factor = 1 / (1 + np.exp(12.0 * norm_gap))
+    elif norm_gap < 0 and slope_val < 0:
+        conf_factor = 1 / (1 + np.exp(15.0 * norm_gap))
         p_down = 0.50 + 0.495 * conf_factor
         p_up = 1.0 - p_down
-        
-    # Strictly bounding values to mathematically safe limits [0.005, 0.995]
-    p_up = max(0.005, min(0.995, p_up))
-    p_down = max(0.005, min(0.995, p_down))
+    else:
+        # If there is divergence (Price & Slope don't align), we scale smoothly but still maintain high dynamic contrast
+        if norm_gap > 0:
+            conf_factor = 1 / (1 + np.exp(-8.0 * norm_gap))
+            p_up = 0.50 + 0.47 * conf_factor
+            p_down = 1.0 - p_up
+        else:
+            conf_factor = 1 / (1 + np.exp(8.0 * norm_gap))
+            p_down = 0.50 + 0.47 * conf_factor
+            p_up = 1.0 - p_down
+            
+    # Safeguard bounds to strict 0.01 - 0.99 levels
+    p_up = max(0.01, min(0.99, p_up))
+    p_down = max(0.01, min(0.99, p_down))
     
     extreme_prob_up.append(p_up)
     extreme_prob_down.append(p_down)
@@ -216,7 +217,7 @@ for idx in range(len(fast_vals)):
     else: signal_log.append("⏳ WAIT ZONE")
 df_predict['Signal'] = signal_log
 
-# Live Accumulators Tracking Space (Perfect sync with extreme signals)
+# Live Accumulators Tracking Space
 scores_log = []
 accumulator = 0
 for i in range(len(extreme_prob_up)):
@@ -227,12 +228,12 @@ for i in range(len(extreme_prob_up)):
 
 df_predict['Accumulator_Score'] = scores_log  
 
-# Feature weights based on Kalman Features
+# Feature weights based on Gravity Features
 importances = model_flow.feature_importances_
 feat_weights = []
-X_predict_arr = df_predict[kalman_features].to_numpy()
-X_train_mean = df_train[kalman_features].mean().to_numpy()
-X_train_std = df_train[kalman_features].std().to_numpy() + 1e-10
+X_predict_arr = df_predict[gravity_features].to_numpy()
+X_train_mean = df_train[gravity_features].mean().to_numpy()
+X_train_std = df_train[gravity_features].std().to_numpy() + 1e-10
 
 for row in X_predict_arr:
     deviation = np.abs(row - X_train_mean) / X_train_std
@@ -241,14 +242,14 @@ for row in X_predict_arr:
     feat_weights.append((raw_contrib / total_contrib) * 100)
 
 feat_weights_arr = np.array(feat_weights)
-df_predict['W_Kalman(%)'] = feat_weights_arr[:, 0].round(1).astype(str) + "%"
+df_predict['W_Slope(%)'] = feat_weights_arr[:, 0].round(1).astype(str) + "%"
 
 # Display Columns Alignment Matrix
 clean_display_cols = [
     'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
     'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
     'Prob_Up_Raw', 'Prob_Down_Raw',
-    'W_Kalman(%)',
+    'W_Slope(%)',
     'Accumulator_Score', 'Weighted_Momentum'
 ]
 display_df = df_predict[clean_display_cols].copy()
@@ -262,5 +263,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Kalman Pure Extreme Engine]")
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Fast WMA Tunnel Gravity Prob Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
