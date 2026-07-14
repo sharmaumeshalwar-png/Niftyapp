@@ -1,14 +1,15 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
+import requests
+import time
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
-# Page Configuration (Exact Same Format as BTC)
-st.set_page_config(page_title="BTC-Style Nifty Range Engine", layout="wide")
-st.title("⚡ Nifty Live 1-Year 1-Hour Engine [BTC-Style Clean Matrix]")
-st.write("🎯 **Pure replication:** Nifty 50 Spot Pipeline | Strictly No Math Alterations")
+# Page Configuration
+st.set_page_config(page_title="BTC 2-Year Institutional Range Engine", layout="wide")
+st.title("⚡ BTC-USD Live 2-Year 1-Hour Engine [Pagination Matrix]")
+st.write("🎯 **Historical Scale:** Pure 2-Year 1-Hour Stream via Paginated Binance Pipe + Strict Price-Kalman Guardrails")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -54,43 +55,69 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ WATER-TIGHT NIFTY 1-YEAR INGESTION (YFINANCE EXCLUSIVE STREAM)
+# 🛡️ PAGINATED BINANCE PUBLIC API ENGINE (FETCHES PURE 2-YEAR DATA)
 # -----------------------------------------------------------------
 df = None
 is_simulated = False
 
-# BTC-Equivalent 1-Year Period & 1-Hour Interval for Spot
-selected_period = "1y"
-selected_interval = "1h"
-
-with st.spinner("Compiling 1 Year of 1-Hour Ticks via Nifty Spot Feed..."):
+with st.spinner("Compiling 2 Years of 1-Hour Ticks via Paginated Binance Stream..."):
     try:
-        # Nifty 50 Spot Index Symbol: ^NSEI
-        df = yf.download(tickers="^NSEI", period=selected_period, interval=selected_interval)
+        all_candles = []
+        # Calculate timestamps for 2 years ago
+        end_time = int(time.time() * 1000)
+        start_target = int((datetime.now() - timedelta(days=730)).timestamp() * 1000)
         
-        # Multi-index columns clean-up (yfinance specific multi-level check)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        current_end = end_time
+        # Loop to fetch 1000 candles at a time until 2 years are covered
+        while current_end > start_target:
+            url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000&endTime={current_end}"
+            response = requests.get(url, timeout=15)
+            data = response.json()
             
-        if len(df) > 500:
-            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-        else:
-            df = None
-    except Exception as e:
-        df = None
+            if not isinstance(data, list) or len(data) == 0:
+                break
+                
+            all_candles = data + all_candles  # Prepend historical batch
+            # Update end time to the earliest candle's timestamp minus 1 millisecond
+            first_candle_time = data[0][0]
+            if current_end == first_candle_time:
+                break
+            current_end = first_candle_time - 1
+            
+            # Safety break to comply with rate limits
+            time.sleep(0.1)
+            if len(all_candles) >= 18000:  # Cap at 2-year equivalent rows
+                break
 
-    # Safety Simulator Fallback Mode (Generates 2,470 rows if APIs drop)
+        if len(all_candles) > 500:
+            parsed_data = []
+            for item in all_candles:
+                parsed_data.append({
+                    'Timestamp': pd.to_datetime(item[0], unit='ms'),
+                    'Open': float(item[1]),
+                    'High': float(item[2]),
+                    'Low': float(item[3]),
+                    'Close': float(item[4]),
+                    'Volume': float(item[5])
+                })
+            df = pd.DataFrame(parsed_data)
+            df.drop_duplicates(subset=['Timestamp'], inplace=True)
+            df.set_index('Timestamp', inplace=True)
+    except Exception as e:
+        pass
+
+    # Safety Simulator Fallback Mode (Generates 17,500 rows if APIs drop)
     if df is None or len(df) < 500:
         is_simulated = True
-        total_points = 2470  # Roughly 1 year of trading hours (approx 247 trading days * 10 hours)
+        total_points = 17520  # 24 hours * 730 days
         np.random.seed(42)
-        base_price = 24200.0
+        base_price = 63000.0
         price_path = [base_price]
         for i in range(1, total_points):
             cycle = np.sin(i / 300) * 5.0
             drift = 1.1 if cycle > 0 else -1.3
             noise = np.random.normal(0, 15)
-            price_path.append(max(5000, price_path[-1] + drift + noise))
+            price_path.append(max(10000, price_path[-1] + drift + noise))
             
         art_close = np.array(price_path)
         df = pd.DataFrame({
@@ -98,18 +125,18 @@ with st.spinner("Compiling 1 Year of 1-Hour Ticks via Nifty Spot Feed..."):
             'High': art_close + np.random.uniform(2, 20, size=total_points),
             'Low': art_close - np.random.uniform(2, 20, size=total_points),
             'Close': art_close,
-            'Volume': [150000] * total_points
+            'Volume': [950000] * total_points
         }, index=pd.date_range(end=pd.Timestamp.now(), periods=total_points, freq='1h'))
 
 if is_simulated:
-    st.warning("⚠️ **Network pipe restricted.** Running Safe 1-Year Synthetic Simulation.")
+    st.warning("⚠️ **Network pipe restricted.** Running Safe 2-Year Synthetic Simulation.")
 else:
-    st.success(f"🟢 **Successfully Synced {len(df)} Real Historical Hours directly via Nifty Spot Pipeline!**")
+    st.success(f"🟢 **Successfully Synced {len(df)} Real Historical Hours directly via Paginated Binance Pipeline!**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
 
-# DUAL INSTITUTIONAL KALMAN ENGINE GENERATION (EXACTLY SAME PARAMS)
+# DUAL INSTITUTIONAL KALMAN ENGINE GENERATION
 df['b_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.001, r_val=0.1)
 df['Slow_Kalman_Price'] = apply_kalman_filter_custom(df['a_Close'].values, initial_p=50.0, q_val=0.00001, r_val=0.9)
 
@@ -207,7 +234,7 @@ else:
             signal_log.append("⏳ LOADING")
             continue
             
-        # STRICT 4-GATE TRIGGER LOCK (Identical Logic)
+        # STRICT 4-GATE TRIGGER LOCK 
         fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
         slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
         
@@ -270,7 +297,7 @@ else:
     df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
 
-    # Sequential UI Columns Definition Matrix (Exact BTC Order)
+    # Sequential UI Columns Definition Matrix
     clean_display_cols = [
         'a_Close', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
         'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
@@ -288,5 +315,5 @@ else:
     display_df = display_df.iloc[::-1]
     display_df.index = pd.to_datetime(display_df.index).strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Nifty Spot Master Matrix (1-Year Scale)")
+    st.subheader(f"📋 Live 2-Year Aggregated Engine Display Matrix Active")
     st.dataframe(display_df, use_container_width=True, height=750)
