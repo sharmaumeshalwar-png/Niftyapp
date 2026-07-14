@@ -9,7 +9,7 @@ import pytz
 # Page Configuration
 st.set_page_config(page_title="Nifty IST Supreme ML Engine", layout="wide")
 st.title("⚡ Nifty Live 2-Year 1-Hour Standalone Engine [Supreme ML Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 2-Year Data History | All Columns Synthesized by Random Forest Supreme Brain")
+st.write("🎯 **Pure Real-Time Engine:** 2-Year Data History | Robust Multi-Column Random Forest Solver")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -55,11 +55,11 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ DIRECT REAL TIME DATA ONLY - UPGRADED TO 2 YEARS
+# 🛡️ DIRECT REAL TIME DATA ONLY - 2 YEARS FETCH
 # -----------------------------------------------------------------
 df = None
-selected_period = "2y"  # Strict 2-Year historical data depth requested
-selected_interval = "1h" # 1-Hour candle framework strictly maintained
+selected_period = "2y"  
+selected_interval = "1h" 
 
 with st.spinner("Fetching 2-Year Live Data directly from Exchange Server..."):
     try:
@@ -68,7 +68,7 @@ with st.spinner("Fetching 2-Year Live Data directly from Exchange Server..."):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 500: # Ensuring vast array depth for 2 years
+        if len(df) > 100: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
             if df.index.tz is None:
@@ -126,19 +126,19 @@ df['VIDYA_Accumulator_Score'] = vidya_accum_log
 df['Kalman_Gap_Dev'] = apply_kalman_filter_custom((df['a_Close'] - df['Fast_WMA_Tunnel']).values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # -----------------------------------------------------------------
-# 🤖 NEW: THE SUPREME ML MULTI-COLUMN BRAIN ENGINE
+# 🤖 THE SUPREME ML MULTI-COLUMN BRAIN ENGINE
 # -----------------------------------------------------------------
-# 1. Defining the Target Direction (1 if next close is higher, 0 if lower)
+# Target Direction (1 if next close is higher, 0 if lower)
 df['Target_Next_Direction'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 1, 0)
 
-# 2. Comprehensive Multi-Column Feature Space (All columns included for ML Training)
+# Multi-Column Feature Space 
 supreme_feature_matrix = [
     'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
     'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel',
     'c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Sign_Change'
 ]
 
-# Standard Clean up to prevent NaN arrays passing to Random Forest
+# Robust cleaning to strictly drop NaNs before ML splits
 df.dropna(subset=supreme_feature_matrix, inplace=True)
 
 # Dynamic Split Engine (Strict 2-Year history divided 50:50)
@@ -150,19 +150,18 @@ y_train_supreme = df_train['Target_Next_Direction'].copy()
 df_predict = df.iloc[split_idx:].copy()
 X_predict_supreme = df_predict[supreme_feature_matrix].copy()
 
-if len(X_predict_supreme) < 10:
-    st.error("🚨 Processing matrix limits too tight for random forest inference.")
-else:
-    # Model 1: Supreme Master Model encompassing ALL column states
-    supreme_model = RandomForestClassifier(n_estimators=200, max_depth=5, min_samples_leaf=2, random_state=42)
+# 🛠️ FIXED: Dynamic validation layer to bypass structural choke errors
+if len(X_predict_supreme) > 0:
+    # Supreme Model encompassing ALL column states
+    supreme_model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=2, random_state=42)
     supreme_model.fit(X_train_supreme, y_train_supreme)
 
     # Predictions Generation 
     supreme_preds = supreme_model.predict(X_predict_supreme)
     df_predict['Supreme_ML_Hint'] = np.where(supreme_preds == 1, "🤖 ML: UP HINT", "🤖 ML: DOWN HINT")
 
-    # Retaining secondary calculations for tracking and visualization stability
-    model_flow = RandomForestClassifier(n_estimators=150, max_depth=3, min_samples_leaf=1, random_state=42)
+    # Flow model calculations for probability distributions
+    model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
     features_base = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     model_flow.fit(df_train[features_base], df_train['Target_Next_Direction'])
     
@@ -170,7 +169,7 @@ else:
     df_predict['Prob_Down_Raw'] = probabilities[:, 0]
     df_predict['Prob_Up_Raw'] = probabilities[:, 1]
 
-    # Crossover Log Extraction
+    # Crossover Logic Engine
     price_vals = df_predict['a_Close'].to_numpy()
     fast_vals = df_predict['b_Kalman_Price'].to_numpy()
     slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
@@ -192,7 +191,7 @@ else:
         else: signal_log.append("⏳ WAIT ZONE")
     df_predict['Signal'] = signal_log
 
-    # Feature Importance Parsing (W%) For Base Arrays
+    # Weight Distribution Space
     importances = model_flow.feature_importances_
     feat_weights = []
     X_predict_arr = df_predict[features_base].to_numpy()
@@ -216,7 +215,7 @@ else:
         for col in ['W_KalmanDiff(%)_Raw', 'W_OrderImb(%)_Raw', 'W_BodyImb(%)_Raw', 'W_NormGap(%)_Raw', 'W_Velocity(%)_Raw']:
             df_predict[col] = 20.0
 
-    # Accumulator Accumulations
+    # Live Accumulators Tracking Space
     prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
     prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
     scores_log, raw_weighted_momentum_log = [], []
@@ -231,14 +230,14 @@ else:
     df_predict['Accumulator_Score'] = scores_log  
     df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-    # UI Conversions
+    # UI Conversion Formatting
     df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
     df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
 
-    # Display Columns Alignment Matrix featuring the New 'Supreme_ML_Hint' column right next to Close Price
+    # Display Columns Alignment Matrix
     clean_display_cols = [
         'a_Close', 'Supreme_ML_Hint', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
         'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
@@ -253,9 +252,11 @@ else:
     for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
         display_df[c] = display_df[c].round(3)
         
-    # Inverting rows for latest candles on top
+    # Latest ticks dynamic inversion to top row
     display_df = display_df.iloc[::-1]
     display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-    st.subheader(f"📋 Live Nifty Spot Master Matrix [Supreme Multi-Column ML Enabled]")
+    st.subheader(f"📋 Live Nifty Spot Master Matrix [Supreme Multi-Column ML Output]")
     st.dataframe(display_df, use_container_width=True, height=750)
+else:
+    st.error("🚨 Processing matrix size error. Please check feature arrays structure.")
