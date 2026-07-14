@@ -9,7 +9,7 @@ import pytz
 # Page Configuration
 st.set_page_config(page_title="Nifty IST Supreme ML Engine", layout="wide")
 st.title("⚡ Nifty Live 2-Year 1-Hour Standalone Engine [Supreme ML Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 2-Year Data History | Robust Multi-Column Random Forest Solver")
+st.write("🎯 **Pure Real-Time Engine:** 2-Year Data History | Bulletproof Multi-Column Random Forest Solver")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -125,9 +125,6 @@ df['VIDYA_Accumulator_Score'] = vidya_accum_log
 # KALMAN GAP DEV CALCULATION
 df['Kalman_Gap_Dev'] = apply_kalman_filter_custom((df['a_Close'] - df['Fast_WMA_Tunnel']).values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# -----------------------------------------------------------------
-# 🤖 THE SUPREME ML MULTI-COLUMN BRAIN ENGINE
-# -----------------------------------------------------------------
 # Target Direction (1 if next close is higher, 0 if lower)
 df['Target_Next_Direction'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 1, 0)
 
@@ -138,125 +135,121 @@ supreme_feature_matrix = [
     'c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Sign_Change'
 ]
 
-# Robust cleaning to strictly drop NaNs before ML splits
-df.dropna(subset=supreme_feature_matrix, inplace=True)
+# 🛠️ Robust Forward-Fill to maintain continuous index boundaries across 3438 candles
+df[supreme_feature_matrix] = df[supreme_feature_matrix].ffill().bfill()
 
-# Dynamic Split Engine (Strict 2-Year history divided 50:50)
+# Dynamic Train/Predict Split (Strict 50:50 Window)
 split_idx = int(len(df) * 0.50)
-df_train = df.iloc[:split_idx]
+df_train = df.iloc[:split_idx].copy()
+df_predict = df.iloc[split_idx:].copy()
+
 X_train_supreme = df_train[supreme_feature_matrix].copy()
 y_train_supreme = df_train['Target_Next_Direction'].copy()
-
-df_predict = df.iloc[split_idx:].copy()
 X_predict_supreme = df_predict[supreme_feature_matrix].copy()
 
-# 🛠️ FIXED: Dynamic validation layer to bypass structural choke errors
-if len(X_predict_supreme) > 0:
-    # Supreme Model encompassing ALL column states
-    supreme_model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=2, random_state=42)
-    supreme_model.fit(X_train_supreme, y_train_supreme)
+# Supreme Model Execution Core Layer
+supreme_model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=2, random_state=42)
+supreme_model.fit(X_train_supreme, y_train_supreme)
 
-    # Predictions Generation 
-    supreme_preds = supreme_model.predict(X_predict_supreme)
-    df_predict['Supreme_ML_Hint'] = np.where(supreme_preds == 1, "🤖 ML: UP HINT", "🤖 ML: DOWN HINT")
+# Predictions Assignment
+supreme_preds = supreme_model.predict(X_predict_supreme)
+df_predict['Supreme_ML_Hint'] = np.where(supreme_preds == 1, "🤖 ML: UP HINT", "🤖 ML: DOWN HINT")
 
-    # Flow model calculations for probability distributions
-    model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
-    features_base = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-    model_flow.fit(df_train[features_base], df_train['Target_Next_Direction'])
+# Base Probability distribution model execution
+model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
+features_base = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+model_flow.fit(df_train[features_base], df_train['Target_Next_Direction'])
+
+probabilities = model_flow.predict_proba(df_predict[features_base])
+df_predict['Prob_Down_Raw'] = probabilities[:, 0]
+df_predict['Prob_Up_Raw'] = probabilities[:, 1]
+
+# Crossover Logic Engine
+price_vals = df_predict['a_Close'].to_numpy()
+fast_vals = df_predict['b_Kalman_Price'].to_numpy()
+slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
+fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
+slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
+
+signal_log = []
+for idx in range(len(fast_vals)):
+    if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
+        signal_log.append("⏳ LOADING")
+        continue
+    fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
+    slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
+    fast_bearish = (fast_vals[idx] < fast_wma[idx]) and (price_vals[idx] < fast_vals[idx])
+    slow_bearish = (slow_vals[idx] < slow_wma[idx]) and (price_vals[idx] < slow_vals[idx])
     
-    probabilities = model_flow.predict_proba(df_predict[features_base])
-    df_predict['Prob_Down_Raw'] = probabilities[:, 0]
-    df_predict['Prob_Up_Raw'] = probabilities[:, 1]
+    if fast_bullish and slow_bullish: signal_log.append("🟢 BUY")
+    elif fast_bearish and slow_bearish: signal_log.append("🔴 SELL")
+    else: signal_log.append("⏳ WAIT ZONE")
+df_predict['Signal'] = signal_log
 
-    # Crossover Logic Engine
-    price_vals = df_predict['a_Close'].to_numpy()
-    fast_vals = df_predict['b_Kalman_Price'].to_numpy()
-    slow_vals = df_predict['Slow_Kalman_Price'].to_numpy()
-    fast_wma = df_predict['Fast_WMA_Tunnel'].to_numpy()
-    slow_wma = df_predict['Slow_WMA_Tunnel'].to_numpy()
-    
-    signal_log = []
-    for idx in range(len(fast_vals)):
-        if np.isnan(fast_wma[idx]) or np.isnan(slow_wma[idx]):
-            signal_log.append("⏳ LOADING")
-            continue
-        fast_bullish = (fast_vals[idx] > fast_wma[idx]) and (price_vals[idx] > fast_vals[idx])
-        slow_bullish = (slow_vals[idx] > slow_wma[idx]) and (price_vals[idx] > slow_vals[idx])
-        fast_bearish = (fast_vals[idx] < fast_wma[idx]) and (price_vals[idx] < fast_vals[idx])
-        slow_bearish = (slow_vals[idx] < slow_wma[idx]) and (price_vals[idx] < slow_vals[idx])
-        
-        if fast_bullish and slow_bullish: signal_log.append("🟢 BUY")
-        elif fast_bearish and slow_bearish: signal_log.append("🔴 SELL")
-        else: signal_log.append("⏳ WAIT ZONE")
-    df_predict['Signal'] = signal_log
+# Weight Distribution Space
+importances = model_flow.feature_importances_
+feat_weights = []
+X_predict_arr = df_predict[features_base].to_numpy()
+X_train_mean = df_train[features_base].mean().to_numpy()
+X_train_std = df_train[features_base].std().to_numpy() + 1e-10
 
-    # Weight Distribution Space
-    importances = model_flow.feature_importances_
-    feat_weights = []
-    X_predict_arr = df_predict[features_base].to_numpy()
-    X_train_mean = df_train[features_base].mean().to_numpy()
-    X_train_std = df_train[features_base].std().to_numpy() + 1e-10
+for row in X_predict_arr:
+    deviation = np.abs(row - X_train_mean) / X_train_std
+    raw_contrib = deviation * importances
+    total_contrib = np.sum(raw_contrib) + 1e-10
+    feat_weights.append((raw_contrib / total_contrib) * 100)
 
-    for row in X_predict_arr:
-        deviation = np.abs(row - X_train_mean) / X_train_std
-        raw_contrib = deviation * importances
-        total_contrib = np.sum(raw_contrib) + 1e-10
-        feat_weights.append((raw_contrib / total_contrib) * 100)
-
-    feat_weights_arr = np.array(feat_weights)
-    if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 5:
-        df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
-        df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
-        df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
-        df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
-        df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
-    else:
-        for col in ['W_KalmanDiff(%)_Raw', 'W_OrderImb(%)_Raw', 'W_BodyImb(%)_Raw', 'W_NormGap(%)_Raw', 'W_Velocity(%)_Raw']:
-            df_predict[col] = 20.0
-
-    # Live Accumulators Tracking Space
-    prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
-    prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
-    scores_log, raw_weighted_momentum_log = [], []
-    accumulator = 0
-    for i in range(len(prob_up_vals)):
-        if prob_up_vals[i] >= 0.55: accumulator += 1
-        elif prob_down_vals[i] >= 0.55: accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-        scores_log.append(accumulator)
-        raw_weighted_momentum_log.append(price_vals[i] - fast_vals[i])
-
-    df_predict['Accumulator_Score'] = scores_log  
-    df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-    # UI Conversion Formatting
-    df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
-    df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
-    df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
-    df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
-    df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
-
-    # Display Columns Alignment Matrix
-    clean_display_cols = [
-        'a_Close', 'Supreme_ML_Hint', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
-        'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
-        'Prob_Up_Raw', 'Prob_Down_Raw',
-        'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
-        'Accumulator_Score', 'Weighted_Momentum'
-    ]
-    display_df = df_predict[clean_display_cols].copy()
-    
-    for c in ['a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
-        display_df[c] = display_df[c].round(2)
-    for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
-        display_df[c] = display_df[c].round(3)
-        
-    # Latest ticks dynamic inversion to top row
-    display_df = display_df.iloc[::-1]
-    display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
-
-    st.subheader(f"📋 Live Nifty Spot Master Matrix [Supreme Multi-Column ML Output]")
-    st.dataframe(display_df, use_container_width=True, height=750)
+feat_weights_arr = np.array(feat_weights)
+if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 5:
+    df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
+    df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
+    df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
+    df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
+    df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
 else:
-    st.error("🚨 Processing matrix size error. Please check feature arrays structure.")
+    for col in ['W_KalmanDiff(%)_Raw', 'W_OrderImb(%)_Raw', 'W_BodyImb(%)_Raw', 'W_NormGap(%)_Raw', 'W_Velocity(%)_Raw']:
+        df_predict[col] = 20.0
+
+# Live Accumulators Tracking Space
+prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
+prob_down_vals = df_predict['Prob_Down_Raw'].to_numpy()
+scores_log, raw_weighted_momentum_log = [], []
+accumulator = 0
+for i in range(len(prob_up_vals)):
+    if prob_up_vals[i] >= 0.55: accumulator += 1
+    elif prob_down_vals[i] >= 0.55: accumulator -= 1
+    accumulator = max(-5, min(5, accumulator))
+    scores_log.append(accumulator)
+    raw_weighted_momentum_log.append(price_vals[i] - fast_vals[i])
+
+df_predict['Accumulator_Score'] = scores_log  
+df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+# UI Conversion Formatting
+df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
+
+# Display Columns Alignment Matrix
+clean_display_cols = [
+    'a_Close', 'Supreme_ML_Hint', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+    'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
+    'Prob_Up_Raw', 'Prob_Down_Raw',
+    'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+    'Accumulator_Score', 'Weighted_Momentum'
+]
+display_df = df_predict[clean_display_cols].copy()
+
+for c in ['a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Weighted_Momentum']:
+    display_df[c] = display_df[c].round(2)
+for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
+    display_df[c] = display_df[c].round(3)
+    
+# Inverting rows for latest candles on top
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
+
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Supreme Multi-Column ML Output]")
+st.dataframe(display_df, use_container_width=True, height=750)
