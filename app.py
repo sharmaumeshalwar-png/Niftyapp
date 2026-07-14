@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="Nifty IST Supreme ML Engine", layout="wide")
-st.title("⚡ Nifty Live 2-Year 1-Hour Standalone Engine [Supreme ML Edition]")
-st.write("🎯 **Pure Real-Time Engine:** 2-Year Data History | Bulletproof Multi-Column Random Forest Solver")
+st.set_page_config(page_title="Nifty IST Fast WMA Prob Engine", layout="wide")
+st.title("⚡ Nifty Live 1-Year 1-Hour Standalone Engine [Fast WMA Prob Edition]")
+st.write("🎯 **Pure Real-Time Engine:** 1-Year Data Feed | Probabilities Strictly Based on Fast WMA Dynamics")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -55,14 +55,15 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ DIRECT REAL TIME DATA ONLY - 2 YEARS FETCH
+# 🛡️ DIRECT REAL TIME DATA ONLY (1-YEAR TRADING RANGE)
 # -----------------------------------------------------------------
 df = None
-selected_period = "2y"  
+selected_period = "1y"  # Restoring strictly 1-Year framework
 selected_interval = "1h" 
 
-with st.spinner("Fetching 2-Year Live Data directly from Exchange Server..."):
+with st.spinner("Fetching 1-Year Live Data directly from Exchange Server..."):
     try:
+        # Nifty Spot Ticker strictly mapped
         df = yf.download(tickers="^NSEI", period=selected_period, interval=selected_interval)
         
         if isinstance(df.columns, pd.MultiIndex):
@@ -83,7 +84,7 @@ with st.spinner("Fetching 2-Year Live Data directly from Exchange Server..."):
         st.error(f"🚨 API Connection Failed: {e}")
         st.stop()
 
-st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Nifty Spot Candles across 2 Years in IST!**")
+st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Nifty Spot Candles across 1 Year in IST!**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
@@ -128,39 +129,37 @@ df['Kalman_Gap_Dev'] = apply_kalman_filter_custom((df['a_Close'] - df['Fast_WMA_
 # Target Direction (1 if next close is higher, 0 if lower)
 df['Target_Next_Direction'] = np.where(df['a_Close'].shift(-1) > df['a_Close'], 1, 0)
 
-# Multi-Column Feature Space 
-supreme_feature_matrix = [
-    'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
-    'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel',
-    'c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'Sign_Change'
-]
+# Robust forward fill to secure database shapes
+df.ffill().bfill()
 
-# 🛠️ Robust Forward-Fill to maintain continuous index boundaries across 3438 candles
-df[supreme_feature_matrix] = df[supreme_feature_matrix].ffill().bfill()
-
-# Dynamic Train/Predict Split (Strict 50:50 Window)
+# Dynamic Split Engine (Strict 1-Year history divided 50:50)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-X_train_supreme = df_train[supreme_feature_matrix].copy()
-y_train_supreme = df_train['Target_Next_Direction'].copy()
-X_predict_supreme = df_predict[supreme_feature_matrix].copy()
+# -----------------------------------------------------------------
+# 🤖 FAST WMA BASED PROBABILITY SOLVER
+# -----------------------------------------------------------------
+# We define pure Fast WMA behavior features for ML training:
+# 1. Close to Fast WMA Tunnel Distance (Gap)
+# 2. Fast WMA Tunnel Momentum (Slope/Velocity)
+# 3. Position state of Close relative to Fast WMA (Above = 1, Below = 0)
+df_train['Fast_WMA_Gap'] = df_train['a_Close'] - df_train['Fast_WMA_Tunnel']
+df_train['Fast_WMA_Velocity'] = df_train['Fast_WMA_Tunnel'].diff(1).fillna(0)
+df_train['Fast_WMA_State'] = np.where(df_train['a_Close'] > df_train['Fast_WMA_Tunnel'], 1, 0)
 
-# Supreme Model Execution Core Layer
-supreme_model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=2, random_state=42)
-supreme_model.fit(X_train_supreme, y_train_supreme)
+df_predict['Fast_WMA_Gap'] = df_predict['a_Close'] - df_predict['Fast_WMA_Tunnel']
+df_predict['Fast_WMA_Velocity'] = df_predict['Fast_WMA_Tunnel'].diff(1).fillna(0)
+df_predict['Fast_WMA_State'] = np.where(df_predict['a_Close'] > df_predict['Fast_WMA_Tunnel'], 1, 0)
 
-# Predictions Assignment
-supreme_preds = supreme_model.predict(X_predict_supreme)
-df_predict['Supreme_ML_Hint'] = np.where(supreme_preds == 1, "🤖 ML: UP HINT", "🤖 ML: DOWN HINT")
+fast_wma_features = ['Fast_WMA_Gap', 'Fast_WMA_Velocity', 'Fast_WMA_State']
 
-# Base Probability distribution model execution
+# Dynamic Model trained on pure Fast WMA parameters
 model_flow = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=1, random_state=42)
-features_base = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
-model_flow.fit(df_train[features_base], df_train['Target_Next_Direction'])
+model_flow.fit(df_train[fast_wma_features], df_train['Target_Next_Direction'])
 
-probabilities = model_flow.predict_proba(df_predict[features_base])
+# Extracting pure Fast WMA basis probabilities
+probabilities = model_flow.predict_proba(df_predict[fast_wma_features])
 df_predict['Prob_Down_Raw'] = probabilities[:, 0]
 df_predict['Prob_Up_Raw'] = probabilities[:, 1]
 
@@ -186,12 +185,12 @@ for idx in range(len(fast_vals)):
     else: signal_log.append("⏳ WAIT ZONE")
 df_predict['Signal'] = signal_log
 
-# Weight Distribution Space
+# Feature Importance mapping based on pure Fast WMA components
 importances = model_flow.feature_importances_
 feat_weights = []
-X_predict_arr = df_predict[features_base].to_numpy()
-X_train_mean = df_train[features_base].mean().to_numpy()
-X_train_std = df_train[features_base].std().to_numpy() + 1e-10
+X_predict_arr = df_predict[fast_wma_features].to_numpy()
+X_train_mean = df_train[fast_wma_features].mean().to_numpy()
+X_train_std = df_train[fast_wma_features].std().to_numpy() + 1e-10
 
 for row in X_predict_arr:
     deviation = np.abs(row - X_train_mean) / X_train_std
@@ -200,15 +199,13 @@ for row in X_predict_arr:
     feat_weights.append((raw_contrib / total_contrib) * 100)
 
 feat_weights_arr = np.array(feat_weights)
-if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 5:
-    df_predict['W_KalmanDiff(%)_Raw'] = feat_weights_arr[:, 0]
-    df_predict['W_OrderImb(%)_Raw'] = feat_weights_arr[:, 1]
-    df_predict['W_BodyImb(%)_Raw'] = feat_weights_arr[:, 2]
-    df_predict['W_NormGap(%)_Raw'] = feat_weights_arr[:, 3]
-    df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 4]
+if len(feat_weights_arr) > 0 and feat_weights_arr.shape[1] == 3:
+    df_predict['W_Gap(%)_Raw'] = feat_weights_arr[:, 0]
+    df_predict['W_Velocity(%)_Raw'] = feat_weights_arr[:, 1]
+    df_predict['W_State(%)_Raw'] = feat_weights_arr[:, 2]
 else:
-    for col in ['W_KalmanDiff(%)_Raw', 'W_OrderImb(%)_Raw', 'W_BodyImb(%)_Raw', 'W_NormGap(%)_Raw', 'W_Velocity(%)_Raw']:
-        df_predict[col] = 20.0
+    for col in ['W_Gap(%)_Raw', 'W_Velocity(%)_Raw', 'W_State(%)_Raw']:
+        df_predict[col] = 33.3
 
 # Live Accumulators Tracking Space
 prob_up_vals = df_predict['Prob_Up_Raw'].to_numpy()
@@ -226,18 +223,16 @@ df_predict['Accumulator_Score'] = scores_log
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum_log, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # UI Conversion Formatting
-df_predict['W_KalmanDiff(%)'] = df_predict['W_KalmanDiff(%)_Raw'].round(1).astype(str) + "%"
-df_predict['W_OrderImb(%)'] = df_predict['W_OrderImb(%)_Raw'].round(1).astype(str) + "%"
-df_predict['W_BodyImb(%)'] = df_predict['W_BodyImb(%)_Raw'].round(1).astype(str) + "%"
-df_predict['W_NormGap(%)'] = df_predict['W_NormGap(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_Gap(%)'] = df_predict['W_Gap(%)_Raw'].round(1).astype(str) + "%"
 df_predict['W_Velocity(%)'] = df_predict['W_Velocity(%)_Raw'].round(1).astype(str) + "%"
+df_predict['W_State(%)'] = df_predict['W_State(%)_Raw'].round(1).astype(str) + "%"
 
 # Display Columns Alignment Matrix
 clean_display_cols = [
-    'a_Close', 'Supreme_ML_Hint', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
+    'a_Close', 'Kalman_Gap_Dev', 'Vidhya', 'Close_Minus_Vidhya', 'VIDYA_Weighted_Momentum', 'VIDYA_Accumulator_Score',
     'b_Kalman_Price', 'Fast_WMA_Tunnel', 'Slow_Kalman_Price', 'Slow_WMA_Tunnel', 'Signal', 
     'Prob_Up_Raw', 'Prob_Down_Raw',
-    'W_KalmanDiff(%)', 'W_OrderImb(%)', 'W_BodyImb(%)', 'W_NormGap(%)', 'W_Velocity(%)',
+    'W_Gap(%)', 'W_Velocity(%)', 'W_State(%)',
     'Accumulator_Score', 'Weighted_Momentum'
 ]
 display_df = df_predict[clean_display_cols].copy()
@@ -251,5 +246,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Nifty Spot Master Matrix [Supreme Multi-Column ML Output]")
+st.subheader(f"📋 Live Nifty Spot Master Matrix [Pure Fast WMA Probability Engine]")
 st.dataframe(display_df, use_container_width=True, height=750)
