@@ -7,9 +7,9 @@ from datetime import datetime
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="BTC Fast WMA Gravity Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Live 1-Year Fast WMA Gravity Engine")
-st.write("🎯 **Pure Real-Time Engine:** 24/7 Crypto Stream | High-Contrast Probabilities (0.99 to 0.01) based on BTC Price & Fast WMA Alignment")
+st.set_page_config(page_title="BTC 2Y Hourly Gravity Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Live 2-Year 1-Hour Gravity Engine")
+st.write("🎯 **Pure Real-Time Engine:** 2-Years Hourly Crypto Stream | Strict 50:50 Split | High-Contrast Probabilities (0.99 to 0.01)")
 
 # =====================================================================
 # MATHEMATICAL ENGINE (Flexible Kalman Filter & VIDYA Functions)
@@ -55,13 +55,13 @@ def apply_vidya_custom(data_array, period=14):
     return vidya_values
 
 # -----------------------------------------------------------------
-# 🛡️ DIRECT REAL TIME DATA ONLY (1-YEAR CRYPTO STREAM)
+# 🛡️ DIRECT REAL TIME DATA ONLY (2-YEAR HIGH DENSITY CRYPTO STREAM)
 # -----------------------------------------------------------------
 df = None
-selected_period = "1y"  
-selected_interval = "4h" # 4-Hour interval works best for Bitcoin structural swings
+selected_period = "2y"   # Locked strictly to 2 Years
+selected_interval = "1h" # Locked strictly to 1 Hour Candle
 
-with st.spinner("Fetching 1-Year Live BTC Data directly from Exchange Server..."):
+with st.spinner("Fetching 2-Year Hourly Live BTC Data directly from Exchange Server..."):
     try:
         df = yf.download(tickers="BTC-USD", period=selected_period, interval=selected_interval)
         
@@ -71,20 +71,20 @@ with st.spinner("Fetching 1-Year Live BTC Data directly from Exchange Server..."
         if len(df) > 100: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # Crypto is 24/7, keeping it in local machine timezone / UTC or converting to standard trading display
+            # Localized to IST for clear unified monitoring
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient crypto data from exchange server.")
+            st.error("🚨 Error: Insufficient historical database lines from exchange server.")
             st.stop()
             
     except Exception as e:
         st.error(f"🚨 API Connection Failed: {e}")
         st.stop()
 
-st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Bitcoin Candles across 1 Year!**")
+st.success(f"🟢 **Successfully Synced {len(df)} Real-Time Bitcoin 1-Hour Candles across 2 Years in IST!**")
 
 # Base Matrix Definition
 df['a_Close'] = df['Close']
@@ -128,13 +128,15 @@ df.ffill().bfill()
 raw_weighted_momentum = df['a_Close'] - df['b_Kalman_Price']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Dynamic Split Engine (Strict 1-Year history divided 50:50)
+# Dynamic Split Engine (Strict 2-Year history divided 50:50)
 split_idx = int(len(df) * 0.50)
 df_train = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
+# st.info(f"📊 Dataset Partition Status: Training Row count: {len(df_train)} | Predictive Row count: {len(df_predict)}")
+
 # -----------------------------------------------------------------
-# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER (BTC EDITION)
+# 🤖 FAST WMA TUNNEL GRAVITY PROBABILITY SOLVER (2-YEAR 1-HOUR MODE)
 # -----------------------------------------------------------------
 df_train['Fast_WMA_Slope'] = df_train['Fast_WMA_Tunnel'].diff(1).fillna(0)
 df_train['Price_To_Fast_WMA_Gap'] = df_train['a_Close'] - df_train['Fast_WMA_Tunnel']
@@ -153,7 +155,7 @@ probabilities = model_flow.predict_proba(df_predict[gravity_features])
 prob_down_raw = probabilities[:, 0]
 prob_up_raw = probabilities[:, 1]
 
-# 🚀 UPGRADE: SIGMOID MAPPING FOR HIGH-CONTRAST 0.99 / 0.01 EXTREMES
+# 🚀 UPGRADE: SIGMOID MAPPING FOR HIGH-CONTRAST 0.99 / 0.01 EXTREMES ON 1H INTERVAL
 extreme_prob_up = []
 extreme_prob_down = []
 
@@ -262,5 +264,5 @@ for c in ['Prob_Up_Raw', 'Prob_Down_Raw']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live BTC-USD Master Matrix [Fast WMA Tunnel Gravity Prob Engine]")
+st.subheader(f"📋 Live BTC-USD 2-Year 1-Hour Master Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
