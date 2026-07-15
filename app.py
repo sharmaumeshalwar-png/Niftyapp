@@ -77,6 +77,9 @@ low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill().bfill()
 
+# 🆕 NAYA COLUMN: ATR par 0.50 initial_p ke sath Kalman Filter apply kiya
+df['ATR_Kalman'] = apply_kalman_filter_custom(df['ATR'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
 # Hurst Memory Calculation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
@@ -130,12 +133,12 @@ for idx in range(len(df_predict)):
 df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
-# Format Layout Columns Matrix (Including ATR and Weighted Momentum)
-clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'Weighted_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
+# Format Layout Columns Matrix (Including ATR, ATR_Kalman and Weighted Momentum)
+clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'ATR_Kalman', 'Weighted_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Roundings for clean dashboard display
-for c in ['Close_Raw', 'Kalman_Baseline', 'ATR', 'Weighted_Momentum']:
+for c in ['Close_Raw', 'Kalman_Baseline', 'ATR', 'ATR_Kalman', 'Weighted_Momentum']:
     display_df[c] = display_df[c].round(2)
 for c in ['Hurst', 'Prob_Up', 'Prob_Down']:
     display_df[c] = display_df[c].round(3)
