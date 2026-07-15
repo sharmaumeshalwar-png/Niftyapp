@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 
 # Page Configuration
-st.set_page_config(page_title="Nifty 50 Pure Signal Engine", layout="wide")
-st.title("⚡ Nifty 50 Live Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Kalman Baseline Deviations + High-Contrast Confidence Matrix for Indian Equity Index")
+st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
+st.write("🎯 **Pure Direct Signals:** Kalman Baseline Deviations + High-Contrast Confidence Matrix with ATR Tracking")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Kalman, Hurst, ATR, and Momentum Matrix)
@@ -40,13 +40,12 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (2-YEAR NIFTY 50 DENSITY STREAM)
+# 🛡️ SYSTEM DATA INGESTION (2-YEAR HIGH DENSITY STREAM)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching 2-Year Hourly Live Nifty 50 Data from Server..."):
+with st.spinner("Fetching 2-Year Hourly Live BTC Data..."):
     try:
-        # Ticker updated strictly to ^NSEI for Nifty 50
-        df = yf.download(tickers="^NSEI", period="2y", interval="1h")
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -63,7 +62,7 @@ with st.spinner("Fetching 2-Year Hourly Live Nifty 50 Data from Server..."):
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-st.success(f"🟢 **Synced {len(df)} Real-Time Nifty 50 1-Hour Candles (IST)!**")
+st.success(f"🟢 **Synced {len(df)} Real-Time Bitcoin 1-Hour Candles (IST)!**")
 
 # Setup Primary Math
 df['Close_Raw'] = df['Close']
@@ -145,5 +144,5 @@ for c in ['Hurst', 'Prob_Up', 'Prob_Down']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Live Actionable Nifty 50 Master Matrix")
+st.subheader(f"📋 Live Actionable Bitcoin Master Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
