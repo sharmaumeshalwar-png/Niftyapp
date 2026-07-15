@@ -50,61 +50,76 @@ with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Live Running Candle Protection (100% Leak-Proof Guard)
-            df = df.iloc[:-1]
+            df = df.iloc[:-1] # Live Running Candle Protection
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
+            st.error("🚨 Error: Insufficient data lines.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
+# 🔥 50:50 isolation split FIRST to prevent leakage
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
 st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (No Leakage)!**")
 
 # =====================================================================
-# ⚡ THE SUPREME MODIFICATION: NON-LINEAR HURST KINEMATICS CORE
+# ⚡ NON-LINEAR HURST KINEMATICS CORE
 # =====================================================================
 df_predict['Close_Raw'] = df_predict['Close']
 close_arr = df_predict['Close_Raw'].values
 
-# 1. Base Kalman System & Innovation Error Extraction
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
-
-# 2. Pure Hurst Base Calculation
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. MODIFICATION 1: HURST VELOCITY ENGINE
 df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
 df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
 
-# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
 df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
 df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
 
-# 5. Raw Price-based Weighted Momentum
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 6. ✨ THE MAGICAL CONVERGENCE LAYER
 df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
 
-# 7. 🔥 PAJI'S NEW COMBINED DRIFT COLUMN (100% Leak-Proof Formula)
-# Formula: (Hurst_Acceleration - Shock_Index) * Hurst_Amp_Momentum
-df_predict['Kinematic_Drift'] = (df_predict['Hurst_Acceleration'] - df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
+# Raw Drift calculation
+raw_drift = (df_predict['Hurst_Acceleration'] - df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
+
+# 🔥 THE SMOOTHING ENGINE: Applying secondary Kalman filter on the drift to kill noise
+df_predict['Kinematic_Drift'] = apply_kalman_filter_custom(raw_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
 
 # Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['Hurst'], inplace=True)
+
+# =====================================================================
+# 📊 VISUAL VIEW GENERATION ENGINE (Dynamic Clean Dashboard Display)
+# =====================================================================
+drift_vals = df_predict['Kinematic_Drift'].values
+drift_std = df_predict['Kinematic_Drift'].rolling(window=30, min_periods=1).std().fillna(1.0).values
+
+view_log = []
+for i in range(len(df_predict)):
+    d_val = drift_vals[i]
+    d_s = drift_std[i]
+    
+    # Mathematical Bounding Rules for Market View State
+    if d_val > (0.5 * d_s):
+        view_log.append("🚀 ACCELERATED INFLOW")
+    elif d_val < (-0.5 * d_s):
+        view_log.append("📉 VOLATILITY DRAIN")
+    else:
+        view_log.append("⚠️ SHOCK CONGESTION")
+
+df_predict['Kinematic_View'] = view_log
 
 # =====================================================================
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
@@ -143,11 +158,11 @@ for i in range(len(mom_vals)):
         else:
             accumulator[i] = prev_acc
 
-df_predict['Raw_Channel'] = channels
 df_predict['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION
+# 🤖 SIGNAL & PROBABILITY GENERATION
 signal_log = []
+prob_up = []
 current_sig = "🔴 SELL"  
 
 for i in range(len(df_predict)):
@@ -157,56 +172,34 @@ for i in range(len(df_predict)):
     elif acc_chan <= 2:
         current_sig = "🔴 SELL"
     signal_log.append(current_sig)
+    
+    if acc_chan == 5: p = 0.95
+    elif acc_chan == 4: p = 0.75
+    elif acc_chan == 3: p = 0.55 if current_sig == "🟢 BUY" else 0.45
+    elif acc_chan == 2: p = 0.25
+    else: p = 0.05
+    prob_up.append(round(p, 2))
 
 df_predict['Signal'] = signal_log
-
-# 🚀 PROBABILITY MATRIX
-prob_up = []
-prob_down = []
-
-for i in range(len(df_predict)):
-    acc_chan = accumulator[i]
-    sig = signal_log[i]
-    
-    if acc_chan == 5:
-        p_up = 0.95
-    elif acc_chan == 4:
-        p_up = 0.75
-    elif acc_chan == 3:
-        p_up = 0.55 if sig == "🟢 BUY" else 0.45
-    elif acc_chan == 2:
-        p_up = 0.25
-    else: 
-        p_up = 0.05
-        
-    prob_up.append(round(p_up, 2))
-    prob_down.append(round(1.0 - p_up, 2))
-
 df_predict['Prob_Up'] = prob_up
-df_predict['Prob_Down'] = prob_down
 
 # =====================================================================
-# 📋 MATRIX FORMATTING WITH PAJI'S DRIFT COLUMN
+# 📋 MATRIX FORMATTING WITH VISUAL VIEW
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
-    'Hurst', 
-    'Hurst_Acceleration', 
-    'Shock_Index', 
     'Hurst_Amp_Momentum', 
-    'Kinematic_Drift',  # Naya Column Yahan Add Kar Diya
+    'Kinematic_Drift', 
+    'Kinematic_View',      # Naya State View Column
     'Accumulator_Channel', 
     'Signal', 
-    'Prob_Up', 
-    'Prob_Down'
+    'Prob_Up'
 ]
 display_df = df_predict[clean_cols].copy()
 
-# Rounding off details
-for c in ['Close_Raw', 'Hurst', 'Hurst_Acceleration', 'Shock_Index', 'Hurst_Amp_Momentum', 'Kinematic_Drift']:
-    display_df[c] = display_df[c].round(4 if c != 'Close_Raw' else 2)
+for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift']:
+    display_df[c] = display_df[c].round(2)
 
-# Reverse index for latest on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
