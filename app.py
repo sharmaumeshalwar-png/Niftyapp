@@ -44,7 +44,6 @@ def calculate_rolling_hurst(price_series, window=100):
 df = None
 with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
     try:
-        # Nifty Index ticker '^NSEI' strictly 2 saal ka data aur 1 ghante ka interval
         df = yf.download(tickers="^NSEI", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -83,12 +82,11 @@ df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_B
 # 2. Pure Hurst Base Calculation
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. MODIFICATION 1: HURST VELOCITY ENGINE (Rate of Change of Persistence)
+# 3. MODIFICATION 1: HURST VELOCITY ENGINE (Allag Column ke liye)
 df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
-# Acceleration Layer: Exponential scaling for fast momentum pickup
 df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
 
-# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
+# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING (Shock Index Column)
 df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
 df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
 
@@ -96,7 +94,7 @@ df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predic
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 6. ✨ THE MAGICAL CONVERGENCE LAYER (Kinematic Mathematical Synthesis)
+# 6. ✨ THE MAGICAL CONVERGENCE LAYER
 df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
@@ -120,7 +118,6 @@ for i in range(len(mom_vals)):
     m = mom_mean[i]
     s = mom_std[i]
     
-    # 1. Assign Raw Channel Band
     if val > (m + 1.5 * s):
         channels[i] = 5
     elif val > (m + 0.5 * s):
@@ -132,7 +129,6 @@ for i in range(len(mom_vals)):
     else:
         channels[i] = 3
         
-    # 2. Accumulator Logic (Smooths transitions and filters false touches)
     if i == 0:
         accumulator[i] = channels[i]
     else:
@@ -146,7 +142,7 @@ for i in range(len(mom_vals)):
 df_predict['Raw_Channel'] = channels
 df_predict['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION (Memory-based transition to prevent Channel 3 whipsaws)
+# 🤖 SIGNAL GENERATION
 signal_log = []
 current_sig = "🔴 SELL"  
 
@@ -160,7 +156,7 @@ for i in range(len(df_predict)):
 
 df_predict['Signal'] = signal_log
 
-# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
+# 🚀 PROBABILITY MATRIX
 prob_up = []
 prob_down = []
 
@@ -185,17 +181,20 @@ for i in range(len(df_predict)):
 df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
-# Format Layout Columns Matrix
-clean_cols = ['Close_Raw', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
+# =====================================================================
+# 📋 MATRIX FORMATTING (Naye Columns Add Kar Diye Hain)
+# =====================================================================
+clean_cols = [
+    'Close_Raw', 
+    'Hurst', 
+    'Hurst_Acceleration', 
+    'Shock_Index', 
+    'Hurst_Amp_Momentum', 
+    'Accumulator_Channel', 
+    'Signal', 
+    'Prob_Up', 
+    'Prob_Down'
+]
 display_df = df_predict[clean_cols].copy()
 
-for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
-    display_df[c] = display_df[c].round(2)
-
-# Chronological sorting for dashboard display panel (latest on top)
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
-
-# Clean Header & Rendering
-st.subheader("📋 5-Channel Kinematic Nifty 50 Action Matrix")
-st.dataframe(display_df, use_container_width=True, height=750)
+# Rounding off
