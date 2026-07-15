@@ -197,4 +197,13 @@ clean_cols = [
 ]
 display_df = df_predict[clean_cols].copy()
 
-# Rounding off
+# Rounding off for neat display
+for c in ['Close_Raw', 'Hurst', 'Hurst_Acceleration', 'Shock_Index', 'Hurst_Amp_Momentum']:
+    display_df[c] = display_df[c].round(4 if c != 'Close_Raw' else 2)
+
+# Reverse index for latest on top
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
+
+st.subheader("📋 5-Channel Kinematic Nifty 50 Action Matrix")
+st.dataframe(display_df, use_container_width=True, height=750)
