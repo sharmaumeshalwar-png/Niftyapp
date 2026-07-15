@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Trailing Accumulator (100% Leak-Proof Magical Mode)")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -50,6 +50,8 @@ with st.spinner("Fetching Live BTC Data..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+            # Live Incomplete hourly candle protection
+            df = df.iloc[:-1]
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -89,106 +91,109 @@ raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
-# Multiplying Hurst by 2 to normalize around 1.0 when market is balanced at 0.50
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
-# Drop initial setup NaNs safely (strictly no bfill cheat allowed)
+# Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
-# ⚙️ EXPONENTIAL ACCUMULATOR & DYNAMIC PIVOT ENGINE ON AMP MOMENTUM
+# 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
 # =====================================================================
-amp_mom_arr = df_predict['Hurst_Amp_Momentum'].to_numpy()
-alpha = 0.15  # Accumulation factor
+# Calculate rolling statistical bands of Hurst_Amp_Momentum for dynamic channel sizing
+mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
+rolling_window = 50
+mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
+mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
 
-accumulator = np.zeros(len(amp_mom_arr))
-pivot_state = np.zeros(len(amp_mom_arr))  # 1 for bullish momentum rise, -1 for bearish fall
+channels = np.zeros(len(mom_vals), dtype=int)
+accumulator = np.zeros(len(mom_vals), dtype=int) # Filtered tracking channel state (1 to 5)
 
-# Initial setting
-accumulator[0] = amp_mom_arr[0]
-pivot_state[0] = 1 if amp_mom_arr[0] >= 0 else -1
-
-peak_val = accumulator[0]
-valley_val = accumulator[0]
-
-for idx in range(1, len(amp_mom_arr)):
-    # 1. Exponential Accumulation of the Magical Hurst-Amplified Momentum
-    accumulator[idx] = (alpha * amp_mom_arr[idx]) + ((1.0 - alpha) * accumulator[idx-1])
+for i in range(len(mom_vals)):
+    val = mom_vals[i]
+    m = mom_mean[i]
+    s = mom_std[i]
     
-    # Track localized peak and valley points for trailing pivots
-    if pivot_state[idx-1] == 1:
-        if accumulator[idx] > peak_val:
-            peak_val = accumulator[idx]
-        # 2. Dynamic Pivot Check (Paltate hi ghumna chahiye)
-        pivot_threshold = 0.20 * abs(peak_val) if abs(peak_val) > 1.0 else 0.5
-        if accumulator[idx] < (peak_val - pivot_threshold):
-            pivot_state[idx] = -1  # Turn Bearish
-            valley_val = accumulator[idx]
-        else:
-            pivot_state[idx] = 1   # Continue Riding Up
+    # 1. Assign Raw Channel Band
+    if val > (m + 1.5 * s):
+        channels[i] = 5
+    elif val > (m + 0.5 * s):
+        channels[i] = 4
+    elif val < (m - 1.5 * s):
+        channels[i] = 1
+    elif val < (m - 0.5 * s):
+        channels[i] = 2
     else:
-        if accumulator[idx] < valley_val:
-            valley_val = accumulator[idx]
-        # Pivot check for upside turn
-        pivot_threshold = 0.20 * abs(valley_val) if abs(valley_val) > 1.0 else 0.5
-        if accumulator[idx] > (valley_val + pivot_threshold):
-            pivot_state[idx] = 1   # Turn Bullish
-            peak_val = accumulator[idx]
+        channels[i] = 3
+        
+    # 2. Accumulator Logic (Smooths transitions and filters false touches)
+    if i == 0:
+        accumulator[i] = channels[i]
+    else:
+        prev_acc = accumulator[i-1]
+        curr_chan = channels[i]
+        # Only transition the accumulator if there's a confirmed zone shift
+        if abs(curr_chan - prev_acc) >= 1:
+            accumulator[i] = curr_chan
         else:
-            pivot_state[idx] = -1  # Continue Riding Down
+            accumulator[i] = prev_acc
 
-df_predict['Accumulator'] = accumulator
-df_predict['Pivot_State'] = pivot_state
+df_predict['Raw_Channel'] = channels
+df_predict['Accumulator_Channel'] = accumulator
 
-# 🤖 PURE SIGNAL ENGINE LOGIC (Triggered directly by the magical engine state)
+# 🤖 SIGNAL GENERATION (Memory-based transition to prevent Channel 3 whipsaws)
 signal_log = []
-for idx in range(len(df_predict)):
-    if pivot_state[idx] == 1:
-        signal_log.append("🟢 BUY")
-    else:
-        signal_log.append("🔴 SELL")
+current_sig = "🔴 SELL"  # Default start state
+
+for i in range(len(df_predict)):
+    acc_chan = accumulator[i]
+    if acc_chan >= 4:
+        current_sig = "🟢 BUY"
+    elif acc_chan <= 2:
+        current_sig = "🔴 SELL"
+    # If in Channel 3 (Neutral), we hold the previous confirmed state (current_sig unchanged)
+    signal_log.append(current_sig)
 
 df_predict['Signal'] = signal_log
 
-# 🚀 HIGH CONTRAST PROBABILITIES GENERATION
+# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
 prob_up = []
 prob_down = []
-for idx in range(len(df_predict)):
-    sig = signal_log[idx]
-    acc_val = abs(accumulator[idx])
+
+for i in range(len(df_predict)):
+    acc_chan = accumulator[i]
+    sig = signal_log[i]
     
-    # Probabilities scale organically based on Hurst-Amplified Accumulator expansion
-    prob_mod = min(0.42, acc_val * 0.03)
-    base_probability = 0.55
-    
-    if sig == "🟢 BUY":
-        p_up = round(base_probability + prob_mod, 2)
-        p_up = min(0.99, p_up)
-        prob_up.append(p_up)
-        prob_down.append(round(1.0 - p_up, 2))
-    else:
-        p_down = round(base_probability + prob_mod, 2)
-        p_down = min(0.99, p_down)
-        prob_down.append(p_down)
-        prob_up.append(round(1.0 - p_down, 2))
+    # Probabilities mapped directly to structural 1 to 5 channel strength
+    if acc_chan == 5:
+        p_up = 0.95
+    elif acc_chan == 4:
+        p_up = 0.75
+    elif acc_chan == 3:
+        # Balanced zone, slight lean towards current signal direction
+        p_up = 0.55 if sig == "🟢 BUY" else 0.45
+    elif acc_chan == 2:
+        p_up = 0.25
+    else: # Channel 1
+        p_up = 0.05
+        
+    prob_up.append(round(p_up, 2))
+    prob_down.append(round(1.0 - p_up, 2))
 
 df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
 # Format Layout Columns Matrix
-clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'Weighted_Momentum', 'Hurst_Amp_Momentum', 'Accumulator', 'Signal', 'Prob_Up', 'Prob_Down']
+clean_cols = ['Close_Raw', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Precision Matrix Formatting
-for c in ['Close_Raw', 'Kalman_Baseline', 'ATR', 'Weighted_Momentum', 'Hurst_Amp_Momentum', 'Accumulator']:
+for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
-for c in ['Hurst', 'Prob_Up', 'Prob_Down']:
-    display_df[c] = display_df[c].round(3)
 
 # Chronological sorting for dashboard display panel (latest on top)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader("📋 Live Actionable Bitcoin Master Matrix (Hurst-Amplified Magical Engine)")
+st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
