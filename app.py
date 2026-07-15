@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="Nifty Master Kinematics Engine", layout="wide")
 st.title("⚡ Nifty 50 Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Non-Linear Hurst Kinematics & 5-Channel Accumulator (100% Leak-Proof)")
+st.write("🎯 **Pure Direct Signals:** Non-Linear Hurst Kinematics & 5-Channel Bounded Oscillator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -91,35 +91,18 @@ df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
 
-# Raw Drift calculation
+# Raw Drift Calculation
 raw_drift = (df_predict['Hurst_Acceleration'] - df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
 
-# 🔥 THE SMOOTHING ENGINE: Applying secondary Kalman filter on the drift to kill noise
-df_predict['Kinematic_Drift'] = apply_kalman_filter_custom(raw_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
+# Apply secondary smoothing Kalman filter to clear noise
+smoothed_drift = apply_kalman_filter_custom(raw_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
+
+# 🔥 THE FIXED RANGE ENGINE (-100 to +100 Scaling using Hyperbolic Tangent)
+# Scale factor 0.1 specifies standard volatility normalization
+df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.1) * 100.0
 
 # Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['Hurst'], inplace=True)
-
-# =====================================================================
-# 📊 VISUAL VIEW GENERATION ENGINE (Dynamic Clean Dashboard Display)
-# =====================================================================
-drift_vals = df_predict['Kinematic_Drift'].values
-drift_std = df_predict['Kinematic_Drift'].rolling(window=30, min_periods=1).std().fillna(1.0).values
-
-view_log = []
-for i in range(len(df_predict)):
-    d_val = drift_vals[i]
-    d_s = drift_std[i]
-    
-    # Mathematical Bounding Rules for Market View State
-    if d_val > (0.5 * d_s):
-        view_log.append("🚀 ACCELERATED INFLOW")
-    elif d_val < (-0.5 * d_s):
-        view_log.append("📉 VOLATILITY DRAIN")
-    else:
-        view_log.append("⚠️ SHOCK CONGESTION")
-
-df_predict['Kinematic_View'] = view_log
 
 # =====================================================================
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
@@ -184,24 +167,23 @@ df_predict['Signal'] = signal_log
 df_predict['Prob_Up'] = prob_up
 
 # =====================================================================
-# 📋 MATRIX FORMATTING WITH VISUAL VIEW
+# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
     'Hurst_Amp_Momentum', 
-    'Kinematic_Drift', 
-    'Kinematic_View',      # Naya State View Column
+    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
     'Accumulator_Channel', 
     'Signal', 
     'Prob_Up'
 ]
 display_df = df_predict[clean_cols].copy()
 
-for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift']:
+for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift_Score']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 5-Channel Kinematic Nifty 50 Action Matrix")
+st.subheader("📋 5-Channel Kinematic Bounded Nifty Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
