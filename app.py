@@ -4,8 +4,8 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
+st.set_page_config(page_title="Nifty Master Signal Engine", layout="wide")
+st.title("⚡ Nifty 50 Pure Action Master Engine")
 st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
 
 # =====================================================================
@@ -39,18 +39,19 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION
+# 🛡️ SYSTEM DATA INGESTION (Nifty Index Setup)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live BTC Data..."):
+with st.spinner("Fetching Live Nifty 50 Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        # Nifty Ke Liye Ticker '^NSEI' aur interval 15m best results ke liye
+        df = yf.download(tickers="^NSEI", period="60d", interval="15m")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Live Incomplete hourly candle protection
+            # Live Incomplete running candle protection (100% Leak proof guard)
             df = df.iloc[:-1]
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -67,7 +68,7 @@ with st.spinner("Fetching Live BTC Data..."):
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (No Leakage)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (No Leakage)!**")
 
 # Setup Isolated Price Arrays
 df_predict['Close_Raw'] = df_predict['Close']
@@ -99,14 +100,13 @@ df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # =====================================================================
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
 # =====================================================================
-# Calculate rolling statistical bands of Hurst_Amp_Momentum for dynamic channel sizing
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 rolling_window = 50
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
 mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
 
 channels = np.zeros(len(mom_vals), dtype=int)
-accumulator = np.zeros(len(mom_vals), dtype=int) # Filtered tracking channel state (1 to 5)
+accumulator = np.zeros(len(mom_vals), dtype=int) 
 
 for i in range(len(mom_vals)):
     val = mom_vals[i]
@@ -131,7 +131,6 @@ for i in range(len(mom_vals)):
     else:
         prev_acc = accumulator[i-1]
         curr_chan = channels[i]
-        # Only transition the accumulator if there's a confirmed zone shift
         if abs(curr_chan - prev_acc) >= 1:
             accumulator[i] = curr_chan
         else:
@@ -142,7 +141,7 @@ df_predict['Accumulator_Channel'] = accumulator
 
 # 🤖 SIGNAL GENERATION (Memory-based transition to prevent Channel 3 whipsaws)
 signal_log = []
-current_sig = "🔴 SELL"  # Default start state
+current_sig = "🔴 SELL"  
 
 for i in range(len(df_predict)):
     acc_chan = accumulator[i]
@@ -150,7 +149,6 @@ for i in range(len(df_predict)):
         current_sig = "🟢 BUY"
     elif acc_chan <= 2:
         current_sig = "🔴 SELL"
-    # If in Channel 3 (Neutral), we hold the previous confirmed state (current_sig unchanged)
     signal_log.append(current_sig)
 
 df_predict['Signal'] = signal_log
@@ -163,17 +161,15 @@ for i in range(len(df_predict)):
     acc_chan = accumulator[i]
     sig = signal_log[i]
     
-    # Probabilities mapped directly to structural 1 to 5 channel strength
     if acc_chan == 5:
         p_up = 0.95
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        # Balanced zone, slight lean towards current signal direction
         p_up = 0.55 if sig == "🟢 BUY" else 0.45
     elif acc_chan == 2:
         p_up = 0.25
-    else: # Channel 1
+    else: 
         p_up = 0.05
         
     prob_up.append(round(p_up, 2))
@@ -186,7 +182,6 @@ df_predict['Prob_Down'] = prob_down
 clean_cols = ['Close_Raw', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
-# Precision Matrix Formatting
 for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
@@ -195,5 +190,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
+st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
