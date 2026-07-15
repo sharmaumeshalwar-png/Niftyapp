@@ -82,11 +82,11 @@ df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_B
 # 2. Pure Hurst Base Calculation
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. MODIFICATION 1: HURST VELOCITY ENGINE (Allag Column ke liye)
+# 3. MODIFICATION 1: HURST VELOCITY ENGINE
 df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
 df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
 
-# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING (Shock Index Column)
+# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
 df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
 df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
 
@@ -98,6 +98,10 @@ df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_moment
 df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
+
+# 7. 🔥 PAJI'S NEW COMBINED DRIFT COLUMN (100% Leak-Proof Formula)
+# Formula: (Hurst_Acceleration - Shock_Index) * Hurst_Amp_Momentum
+df_predict['Kinematic_Drift'] = (df_predict['Hurst_Acceleration'] - df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
 
 # Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['Hurst'], inplace=True)
@@ -182,7 +186,7 @@ df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
 # =====================================================================
-# 📋 MATRIX FORMATTING (Naye Columns Add Kar Diye Hain)
+# 📋 MATRIX FORMATTING WITH PAJI'S DRIFT COLUMN
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
@@ -190,6 +194,7 @@ clean_cols = [
     'Hurst_Acceleration', 
     'Shock_Index', 
     'Hurst_Amp_Momentum', 
+    'Kinematic_Drift',  # Naya Column Yahan Add Kar Diya
     'Accumulator_Channel', 
     'Signal', 
     'Prob_Up', 
@@ -197,8 +202,8 @@ clean_cols = [
 ]
 display_df = df_predict[clean_cols].copy()
 
-# Rounding off for neat display
-for c in ['Close_Raw', 'Hurst', 'Hurst_Acceleration', 'Shock_Index', 'Hurst_Amp_Momentum']:
+# Rounding off details
+for c in ['Close_Raw', 'Hurst', 'Hurst_Acceleration', 'Shock_Index', 'Hurst_Amp_Momentum', 'Kinematic_Drift']:
     display_df[c] = display_df[c].round(4 if c != 'Close_Raw' else 2)
 
 # Reverse index for latest on top
