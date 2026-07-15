@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 # =========================================================================
-# 1. CORE MATHEMATICAL ENGINES (ORIGINAL MATRIX INTEGRITY)
+# 1. CORE MATHEMATICAL ENGINES (ORIGINAL ENGINE SETUP)
 # =========================================================================
 def calculate_kalman_filter(data_array, R=0.2, Q=0.0005, P_init=50.0):
     x = data_array[0] if len(data_array) > 0 else 0.0
@@ -62,14 +62,14 @@ def calculate_atr_momentum(df, period=14):
 
 
 # =========================================================================
-# 2. THE MAIN TRADING ENGINE (INJECTING THE TWO REQUESTED COLUMNS)
+# 2. MAIN TRADING ENGINE WITH THE TWO NEW METRIC COLUMNS
 # =========================================================================
 def execute_complete_trading_system(df):
     df["Kalman_Line"] = calculate_kalman_filter(df["Close"].values)
     df["Hurst"] = calculate_hurst_exponent(df["Close"].values)
     df["ATR_Momentum"] = calculate_atr_momentum(df)
 
-    # TWO NEW ANALYSIS COLUMNS AS PER REQUEST
+    # TWO NEW ANALYSIS COLUMNS REQUIRED BY USER
     df["Trade_Points_PNL"] = 0.0
     df["ML_Brain_Insight"] = "No Active Signal"
     df["Active_Position"] = "NONE"
@@ -103,7 +103,7 @@ def execute_complete_trading_system(df):
                 position_type == "PE_SELL" and current_momentum < 0
             ):
 
-                # 1. NEW COLUMN: Point distribution calculations
+                # Column 1 Math Execution
                 if position_type == "CE_SELL":
                     pnl_points = entry_price - current_close
                 else:
@@ -112,7 +112,7 @@ def execute_complete_trading_system(df):
                 df.loc[i, "Trade_Points_PNL"] = round(pnl_points, 2)
                 df.loc[i, "Active_Position"] = f"EXIT_{position_type}"
 
-                # 2. NEW COLUMN: ML Brain Strategy Learning Overlays
+                # Column 2 Math Execution (ML Output)
                 if pnl_points < 0:
                     if hurst_val < 0.45:
                         df.loc[i, "ML_Brain_Insight"] = (
@@ -142,62 +142,70 @@ def execute_complete_trading_system(df):
 
 
 # =========================================================================
-# 3. STREAMLIT SAFE CLOUD RUNNER (ZERO CONFIGURATION REQUIRED)
+# 3. STREAMLIT CLOUD RUNNER ENGINE (DATE-TIME INTELLIGENT)
 # =========================================================================
 st.set_page_config(page_title="Quant ML Engine", layout="wide")
 st.title("📊 2-Year Historical Matrix Reversal Engine")
-st.subheader("Target: Complete 750 Rows Analysis Visualizer")
+st.subheader("Target: Complete 750 Rows Analysis Visualizer with Date-Time")
 
 file_name = "historical_2year_data.csv"
 
-# Safe loading sequence to avoid blank screen freezes
+# Load or generate dataset
 if os.path.exists(file_name):
     st.success(f"🟢 Found Local File Data Array: '{file_name}'")
     df_input = pd.read_csv(file_name)
 else:
     st.warning(
-        f"⚠️ File '{file_name}' not found. Auto-Generating full 750 rows for structural deployment..."
+        f"⚠️ File '{file_name}' not found. Auto-Generating full 750 rows with real-time timestamps..."
     )
     np.random.seed(42)
     base_price = 64000
     price_movement = np.random.normal(12, 340, 750)
     simulated_closes = np.cumsum(price_movement) + base_price
+    
+    # 2-Year hourly timestamp sequence simulation generator setup
+    date_range = pd.date_range(end="2026-07-15 17:00:00", periods=750, freq="h")
+    
     df_input = pd.DataFrame(
         {
+            "Date_Time": date_range.strftime("%Y-%m-%d %H:%M:%S"),
             "High": simulated_closes + np.random.uniform(50, 200, 750),
             "Low": simulated_closes - np.random.uniform(50, 200, 750),
             "Close": simulated_closes,
         }
     )
 
-# Execution Grid Block
+# Execution block
 if st.button("▶️ Process Full 750 Rows Dataset"):
     with st.spinner("Calculating advanced matrix layers..."):
         processed_matrix = execute_complete_trading_system(df_input)
 
-        final_sheet = processed_matrix[
-            [
-                "Close",
-                "ATR_Momentum",
-                "Hurst",
-                "Active_Position",
-                "Trade_Points_PNL",
-                "ML_Brain_Insight",
-            ]
-        ]
+        # Dynamic check: Kya input data me pehle se koi date-time column name hai?
+        datetime_col = None
+        for col in ["Date", "Time", "Date_Time", "datetime", "Date & Time"]:
+            if col in processed_matrix.columns:
+                datetime_col = col
+                break
 
-        # Dynamic Grid Display (Full 750 database visualization)
-        st.write("### 📈 Complete 2-Year Backtesting Grid View (All 750 Rows)")
+        # Slicing structural array safely
+        output_cols = ["Close", "ATR_Momentum", "Hurst", "Active_Position", "Trade_Points_PNL", "ML_Brain_Insight"]
         
-        # Streamlit direct native display which handles large rows seamlessly
+        # Agar date column mil gaya, toh use list me sabse pehle inject karo paji
+        if datetime_col:
+            output_cols = [datetime_col] + output_cols
+
+        final_sheet = processed_matrix[output_cols]
+
+        # Web App Frame display execution
+        st.write("### 📈 Complete 2-Year Backtesting Grid View (All 750 Rows)")
         st.dataframe(final_sheet, height=600, use_container_width=True)
 
-        # Built-in Standard CSV safe download method (No openpyxl needed!)
-        csv_data = final_sheet.to_csv(index=True).encode("utf-8")
+        # Standard clean CSV stream compilation method
+        csv_data = final_sheet.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Download Full 750 Row CSV Report",
+            label="📥 Download Full 750 Row Report (CSV Format)",
             data=csv_data,
             file_name="Trading_Report_750.csv",
             mime="text/csv",
         )
-        st.success("🎉 Complete 750 Rows processed flawlessly paji!")
+        st.success("🎉 Complete 750 Rows with Time-Stamps processed flawlessly paji!")
