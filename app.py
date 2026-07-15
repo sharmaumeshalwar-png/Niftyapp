@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Exponential Momentum Accumulator & Dynamic Pivot Engine (100% Leak-Proof)")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Trailing Accumulator (100% Leak-Proof Magical Mode)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -61,7 +61,7 @@ with st.spinner("Fetching Live BTC Data..."):
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 CRITICAL FIX 1: Split data FIRST to prevent Lookahead/Information Leakage globally
+# 🔥 CRITICAL DATA SCIENCE RULE: Split data FIRST to prevent lookahead leakage globally
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -84,93 +84,82 @@ df_predict['ATR'] = true_range.rolling(14).mean().ffill()
 # Hurst Vector Generation on isolated window
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Reverted to your exact original Price-based Weighted Momentum Calculation
+# Exact original Price-based Weighted Momentum Calculation
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+# Multiplying Hurst by 2 to normalize around 1.0 when market is balanced at 0.50
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
 # Drop initial setup NaNs safely (strictly no bfill cheat allowed)
 df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
-# 🔥 THE EXPONENTIAL ACCUMULATOR & DYNAMIC PIVOT ENGINE (No Leakage)
+# ⚙️ EXPONENTIAL ACCUMULATOR & DYNAMIC PIVOT ENGINE ON AMP MOMENTUM
 # =====================================================================
-mom_arr = df_predict['Weighted_Momentum'].to_numpy()
-alpha = 0.15  # Accumulation factor (Higher = faster turn, Lower = rides longer)
+amp_mom_arr = df_predict['Hurst_Amp_Momentum'].to_numpy()
+alpha = 0.15  # Accumulation factor
 
-accumulator = np.zeros(len(mom_arr))
-pivot_state = np.zeros(len(mom_arr))  # 1 for bullish momentum rise, -1 for bearish fall
+accumulator = np.zeros(len(amp_mom_arr))
+pivot_state = np.zeros(len(amp_mom_arr))  # 1 for bullish momentum rise, -1 for bearish fall
 
 # Initial setting
-accumulator[0] = mom_arr[0]
-pivot_state[0] = 1 if mom_arr[0] >= 0 else -1
+accumulator[0] = amp_mom_arr[0]
+pivot_state[0] = 1 if amp_mom_arr[0] >= 0 else -1
 
 peak_val = accumulator[0]
 valley_val = accumulator[0]
 
-for idx in range(1, len(mom_arr)):
-    # 1. Exponential Accumulation (Jitna ja sake jaane do)
-    accumulator[idx] = (alpha * mom_arr[idx]) + ((1.0 - alpha) * accumulator[idx-1])
+for idx in range(1, len(amp_mom_arr)):
+    # 1. Exponential Accumulation of the Magical Hurst-Amplified Momentum
+    accumulator[idx] = (alpha * amp_mom_arr[idx]) + ((1.0 - alpha) * accumulator[idx-1])
     
-    # Track localized peak and valley points
+    # Track localized peak and valley points for trailing pivots
     if pivot_state[idx-1] == 1:
         if accumulator[idx] > peak_val:
             peak_val = accumulator[idx]
-        # 2. Dynamic Pivot Check (Jab u-turn le toh ghumna chahiye)
-        # Agar current accumulator peak se substantial piche mud jaye, toh pivot ghumao!
+        # 2. Dynamic Pivot Check (Paltate hi ghumna chahiye)
         pivot_threshold = 0.20 * abs(peak_val) if abs(peak_val) > 1.0 else 0.5
         if accumulator[idx] < (peak_val - pivot_threshold):
             pivot_state[idx] = -1  # Turn Bearish
-            valley_val = accumulator[idx]  # Reset valley tracker
+            valley_val = accumulator[idx]
         else:
-            pivot_state[idx] = 1   # Continue Bullish ride
+            pivot_state[idx] = 1   # Continue Riding Up
     else:
         if accumulator[idx] < valley_val:
             valley_val = accumulator[idx]
-        # Same check for upside pivot from valley floor
+        # Pivot check for upside turn
         pivot_threshold = 0.20 * abs(valley_val) if abs(valley_val) > 1.0 else 0.5
         if accumulator[idx] > (valley_val + pivot_threshold):
             pivot_state[idx] = 1   # Turn Bullish
-            peak_val = accumulator[idx]   # Reset peak tracker
+            peak_val = accumulator[idx]
         else:
-            pivot_state[idx] = -1  # Continue Bearish ride
+            pivot_state[idx] = -1  # Continue Riding Down
 
 df_predict['Accumulator'] = accumulator
 df_predict['Pivot_State'] = pivot_state
 
-# 🤖 PURE SIGNAL ENGINE LOGIC (Using Pivot State and Trend Rules)
-hurst_arr = df_predict['Hurst'].to_numpy()
-raw_close = df_predict['Close_Raw'].to_numpy()
-kalman_line = df_predict['Kalman_Baseline'].to_numpy()
-
+# 🤖 PURE SIGNAL ENGINE LOGIC (Triggered directly by the magical engine state)
 signal_log = []
 for idx in range(len(df_predict)):
-    # If the trend regime is high, prioritize dynamic Pivot State reversals
-    if hurst_arr[idx] > 0.52:
-        if pivot_state[idx] == 1:
-            signal_log.append("🟢 BUY")
-        else:
-            signal_log.append("🔴 SELL")
+    if pivot_state[idx] == 1:
+        signal_log.append("🟢 BUY")
     else:
-        # Sideways regime mean reversion filter
-        deviation = raw_close[idx] - kalman_line[idx]
-        if deviation >= 0:
-            signal_log.append("🟢 BUY")
-        else:
-            signal_log.append("🔴 SELL")
+        signal_log.append("🔴 SELL")
 
 df_predict['Signal'] = signal_log
 
-# 🚀 HIGH CONTRAST PROBABILITIES GENERATION BASED ON ACCUMULATOR INTENSITY
+# 🚀 HIGH CONTRAST PROBABILITIES GENERATION
 prob_up = []
 prob_down = []
 for idx in range(len(df_predict)):
     sig = signal_log[idx]
-    h_factor = hurst_arr[idx]
     acc_val = abs(accumulator[idx])
     
-    # Volatility and accumulator size adjusts the confidence probability
-    prob_mod = min(0.40, acc_val * 0.02)
-    base_probability = 0.58 if h_factor > 0.55 else 0.52
+    # Probabilities scale organically based on Hurst-Amplified Accumulator expansion
+    prob_mod = min(0.42, acc_val * 0.03)
+    base_probability = 0.55
     
     if sig == "🟢 BUY":
         p_up = round(base_probability + prob_mod, 2)
@@ -187,19 +176,19 @@ df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
 # Format Layout Columns Matrix
-clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'Weighted_Momentum', 'Accumulator', 'Signal', 'Prob_Up', 'Prob_Down']
+clean_cols = ['Close_Raw', 'Kalman_Baseline', 'Hurst', 'ATR', 'Weighted_Momentum', 'Hurst_Amp_Momentum', 'Accumulator', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Precision Matrix Formatting
-for c in ['Close_Raw', 'Kalman_Baseline', 'ATR', 'Weighted_Momentum', 'Accumulator']:
+for c in ['Close_Raw', 'Kalman_Baseline', 'ATR', 'Weighted_Momentum', 'Hurst_Amp_Momentum', 'Accumulator']:
     display_df[c] = display_df[c].round(2)
 for c in ['Hurst', 'Prob_Up', 'Prob_Down']:
     display_df[c] = display_df[c].round(3)
 
-# Chronological sorting for display panel (latest on top)
+# Chronological sorting for dashboard display panel (latest on top)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader("📋 Live Actionable Bitcoin Master Matrix (Exponential Accumulator Mode)")
+st.subheader("📋 Live Actionable Bitcoin Master Matrix (Hurst-Amplified Magical Engine)")
 st.dataframe(display_df, use_container_width=True, height=750)
