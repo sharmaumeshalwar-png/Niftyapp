@@ -5,7 +5,7 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Master Signal Engine", layout="wide")
-st.title("⚡ Nifty 50 Pure Action Master Engine")
+st.title("⚡ Nifty 50 Pure Action Master Engine (2y Hourly)")
 st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
 
 # =====================================================================
@@ -39,32 +39,32 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Nifty Index Setup)
+# 🛡️ SYSTEM DATA INGESTION (Nifty Index Setup - 2y, 1h)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live Nifty 50 Data..."):
+with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
     try:
-        # Nifty Ke Liye Ticker '^NSEI' aur interval 15m best results ke liye
-        df = yf.download(tickers="^NSEI", period="60d", interval="15m")
+        # Nifty Index ticker '^NSEI' par strictly 2 saal ka data aur 1 ghante ka interval
+        df = yf.download(tickers="^NSEI", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Live Incomplete running candle protection (100% Leak proof guard)
+            # Live Incomplete running hourly candle protection (100% Leak proof guard)
             df = df.iloc[:-1]
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data lines.")
+            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 CRITICAL DATA SCIENCE RULE: Split data FIRST to prevent lookahead leakage globally
+# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -190,5 +190,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix")
+st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix (1h)")
 st.dataframe(display_df, use_container_width=True, height=750)
