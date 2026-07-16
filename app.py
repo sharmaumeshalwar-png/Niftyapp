@@ -125,3 +125,70 @@ for i in range(len(mom_vals)):
         if abs(curr_chan - prev_acc) >= 1:
             accumulator[i] = curr_chan
         else:
+            accumulator[i] = prev_acc
+
+df['Raw_Channel'] = channels
+df['Accumulator_Channel'] = accumulator
+
+# 🤖 SIGNAL GENERATION
+signal_log = []
+current_sig = "🔴 SELL"
+
+for i in range(len(df)):
+    acc_chan = accumulator[i]
+    if acc_chan >= 4:
+        current_sig = "🟢 BUY"
+    elif acc_chan <= 2:
+        current_sig = "🔴 SELL"
+    signal_log.append(current_sig)
+
+df['Signal'] = signal_log
+
+# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
+prob_up = []
+for i in range(len(df)):
+    acc_chan = accumulator[i]
+    sig = signal_log[i]
+    
+    if acc_chan == 5:
+        p_up = 0.95
+    elif acc_chan == 4:
+        p_up = 0.75
+    elif acc_chan == 3:
+        p_up = 0.55 if sig == "🟢 BUY" else 0.45
+    elif acc_chan == 2:
+        p_up = 0.25
+    else:
+        p_up = 0.05
+        
+    prob_up.append(round(p_up, 2))
+
+df['Prob_Up'] = prob_up
+df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
+
+# =====================================================================
+# 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
+# =====================================================================
+# Paji, ab bina slice kiye poora 2 saal ka data ek sath screen pr dikhega
+df_predict = df.copy()
+
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Full History & Value Locked)!**")
+
+# Format Layout Columns Matrix
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
+display_df = df_predict[clean_cols].copy()
+
+# Rename to match original UI spec
+display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
+
+# Precision Matrix Formatting
+for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
+    display_df[c] = display_df[c].round(2)
+
+# Chronological sorting for dashboard display panel (latest on top)
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
+
+# Clean Header & Rendering
+st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
+st.dataframe(display_df, use_container_width=True, height=750)
