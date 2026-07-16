@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="ETH Master Signal Engine", layout="wide")
 st.title("⚡ Ethereum (ETH-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Previous Candle Break Validation (100% Locked Core)")
+st.write("🎯 **Pure Direct Signals:** Strictly (Close - Kalman) Momentum & Previous Candle Break Validation (100% Locked Core)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -84,12 +84,15 @@ df['ATR'] = true_range.rolling(14).mean().ffill()
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
 # 🎯 NEW CHRONOLOGY FOR MOMENTUM: Strictly (Close - Kalman_Baseline)
-raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
+# Paji hum is column ko signal calculation ka base bana rahe hain
+df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
 
-# Pass the exact raw momentum through untouched custom filter
-df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+raw_weighted_momentum = df['Close_Minus_Kalman'].values
 
-# 🔥 THE MAGICAL MULTIPLICATION (Unaltered Core Scaling)
+# Pass the exact raw momentum through untouched custom filter for other calculations
+df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+# 🔥 THE MAGICAL MULTIPLICATION (Unaltered original core value)
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
 # Clean NaNs strictly before creating rolling statistical channels
@@ -134,14 +137,15 @@ df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
 # =====================================================================
-# 🧠 CANDLE HIGH/LOW BREAK VALIDATION LOGIC
+# 🧠 CANDLE HIGH/LOW BREAK VALIDATION LOGIC (Strictly Close - Kalman)
 # =====================================================================
 validation_signals = []
 validation_signals.append("HOLD / NO DATA")
 
 for i in range(1, len(df)):
-    current_mom = df['Hurst_Amp_Momentum'].iloc[i]
-    prev_mom = df['Hurst_Amp_Momentum'].iloc[i-1]
+    # Paji yahan humne variables ko strictly 'Close_Minus_Kalman' par map kar diya hai
+    current_mom = df['Close_Minus_Kalman'].iloc[i]
+    prev_mom = df['Close_Minus_Kalman'].iloc[i-1]
     
     current_low = df['Low'].iloc[i]
     prev_low = df['Low'].iloc[i-1]
@@ -149,13 +153,13 @@ for i in range(1, len(df)):
     current_high = df['High'].iloc[i]
     prev_high = df['High'].iloc[i-1]
     
-    # 🔴 Down Momentum + Price Action Confirmation
+    # 🔴 Down Momentum (Close - Kalman going down) + Low Break
     if current_mom < prev_mom and current_low < prev_low:
         status = "🔴 RED SIGNAL"
-    # 🟢 Up Momentum + Price Action Confirmation
+    # 🟢 Up Momentum (Close - Kalman going up) + High Break
     elif current_mom > prev_mom and current_high > prev_high:
         status = "🟢 GREEN SIGNAL"
-    # ⏳ Whipsaw Trap Caught (No Break)
+    # ⏳ Whipsaw Protection Active (No physical candle high/low break)
     else:
         status = "⏳ HOLD"
         
@@ -168,15 +172,17 @@ df['Action_Validation'] = validation_signals
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Ethereum Candles (100% Untouched Core)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Ethereum Candles (Signals set to Close-Kalman)!**")
 
-clean_cols = ['Close', 'High', 'Low', 'Hurst_Amp_Momentum', 'Action_Validation', 'Accumulator_Channel']
+# Display grid matching original spec
+clean_cols = ['Close', 'High', 'Low', 'Close_Minus_Kalman', 'Hurst_Amp_Momentum', 'Action_Validation', 'Accumulator_Channel']
 display_df = df_predict[clean_cols].copy()
 
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
 # Exact formatting specifications
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
+display_df['Close_Minus_Kalman'] = display_df['Close_Minus_Kalman'].round(4)
 for c in ['Close_Raw', 'High', 'Low']:
     display_df[c] = display_df[c].round(2)
 
