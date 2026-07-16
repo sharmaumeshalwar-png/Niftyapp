@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Strict Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman & WMA on ATR x Hurst | 100% Leakage Free")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman & WMA on ATR x Hurst | 100% Strictly Leakage Free")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -52,7 +52,7 @@ def calculate_rolling_hurst(price_series, window=100):
 
 # Custom 2-Period Weighted Moving Average function
 def calculate_wma_2(series):
-    # WMA(2) = (Value[t-1]*1 + Value[t]*2) / 3
+    # WMA(2) = (Value[t-1]*1 + Value[t]*2) / 3 (Strictly causal, no lookahead)
     return series.rolling(2).apply(lambda x: (x.iloc[0] * 1.0 + x.iloc[1] * 2.0) / 3.0, raw=False)
 
 # -----------------------------------------------------------------
@@ -68,7 +68,7 @@ with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CRITICAL 100% LEAKAGE PROTECTION BLOCK
+            # ⛔ CRITICAL 100% LEAKAGE PROTECTION BLOCK (Drops dynamic live candle)
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -95,7 +95,7 @@ high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-df['ATR'] = true_range.rolling(14).mean().ffill() 
+df['ATR'] = true_range.rolling(14).mean().ffill().fillna(0)
 
 # Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
@@ -117,20 +117,21 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # 1. Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
-# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50)
-atr_hurst_vals = df['ATR_x_Hurst'].bfill().values
+# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50 with forward fill)
+atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
 df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 3. 2-Period WMA on ATR * Hurst (with bfill to prevent NaNs on index 0)
-df['WMA_ATR_Hurst'] = calculate_wma_2(df['ATR_x_Hurst']).bfill()
+# 3. 2-Period WMA on ATR * Hurst (ffill and fillna blocks lookahead leaks)
+df['WMA_ATR_Hurst'] = calculate_wma_2(df['ATR_x_Hurst']).ffill().fillna(0)
 
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
-col_a_vals = df['Column_A'].bfill().values
-col_b_vals = df['Column_B'].bfill().values
-atr_vals = df['ATR'].bfill().values
+# Pure forward filling for array extraction to completely block historical lookahead
+col_a_vals = df['Column_A'].ffill().fillna(0).values
+col_b_vals = df['Column_B'].ffill().fillna(0).values
+atr_vals = df['ATR'].ffill().fillna(0).values
 
 # Adaptive Kalmans on Column A and Column B
 df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
