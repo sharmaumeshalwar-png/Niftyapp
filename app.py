@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Strict Multiplier Engine", layout="wide")
+st.set_page_config(page_title="BTC Strict Volatility Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Custom Multiplier WMA (0.850) | 100% Zero-Leakage Locked")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | ATR - Kalman Baseline Engine | 100% Zero-Leakage Locked")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
@@ -50,20 +50,6 @@ def calculate_rolling_hurst(price_series, window=100):
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
 
-# Custom Multiplier WMA (Strictly Forward Loop - No Lookahead)
-def calculate_wma_multiplier(series, multiplier=0.850):
-    vals = series.values
-    output = np.zeros(len(vals))
-    if len(vals) == 0: return output
-    
-    output[0] = vals[0]
-    remainder = 1.0 - multiplier 
-    
-    for i in range(1, len(vals)):
-        output[i] = (vals[i] * multiplier) + (output[i-1] * remainder)
-        
-    return pd.Series(output, index=series.index)
-
 # -----------------------------------------------------------------
 # 🛡️ SYSTEM DATA INGESTION & RUNNING CANDLE PURGE
 # -----------------------------------------------------------------
@@ -77,7 +63,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Drop the active, unclosed 1-hour candle.
+            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -99,14 +85,17 @@ close_arr = df['Close'].values
 # Price Kalman Baseline
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation (Using historical shift only)
+# ATR calculation (Strictly historical)
 high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill().fillna(0)
 
-# Hurst Vector Generation (Strictly historical window)
+# 🎯 NEW REQ: Target Diff Column (ATR - Kalman Baseline)
+df['ATR_Kalman_Diff'] = df['ATR'] - df['Kalman_Baseline']
+
+# Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
 # Price-based Weighted Momentum
@@ -117,30 +106,24 @@ df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, init
 # Hurst Amplification
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean dynamic NaNs before sequential math operations
+# Clean dynamic NaNs
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
-# 🧮 CUSTOM MATH COLUMNS, KALMANS & WMA OPERATIONS
+# 🧮 CUSTOM MATH COLUMNS & ADAPTIVE KALMAN OPERATIONS
 # =====================================================================
-# 1. Base ATR * Hurst Column
+# Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
-# 2. Kalman Filter on ATR * Hurst (Reset to initial_p=0.50 baseline)
+# Kalman Filter on ATR * Hurst (initial_p=0.50)
 atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
 df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# 3. Custom Multiplier WMA (Strictly 0.850 Factor)
-df['WMA_ATR_Hurst'] = calculate_wma_multiplier(df['ATR_x_Hurst'], multiplier=0.850).ffill().fillna(0)
-
-# 🎯 NEW REQ: Target Difference Column (Kalman ATR - WMA ATR)
-df['Kalman_WMA_Diff'] = df['Kalman_ATR_Hurst'] - df['WMA_ATR_Hurst']
 
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
-# Safe conversion with Forward Fill (ffill) and fillna(0) to block any lookahead gaps
+# Safe forward fill mapping to block leaks
 col_a_vals = df['Column_A'].ffill().fillna(0).values
 col_b_vals = df['Column_B'].ffill().fillna(0).values
 atr_vals = df['ATR'].ffill().fillna(0).values
@@ -187,27 +170,26 @@ for i in range(1, len(df)):
 df['BTC_Status'] = btc_status_list
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL (Strict Placement Layer)
+# 🎛️ DASHBOARD DISPLAY PANEL (Strict Precision Layer)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Column Alignment Applied:** New Kalman-WMA Diff metric explicitly nested right beside Close_Raw.")
+st.success("🟢 **WMA Purged & Re-aligned:** ATR_Kalman_Diff successfully computed and nested directly next to Close_Raw.")
 
-# Target structural order layout (Close -> Kalman_WMA_Diff -> High/Low...)
+# Target Order: Close_Raw -> ATR_Kalman_Diff -> High -> Low...
 clean_cols = [
-    'Close', 'Kalman_WMA_Diff', 'High', 'Low', 'ATR', 'Hurst', 
-    'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'WMA_ATR_Hurst', 'Hurst_Amp_Momentum', 
+    'Close', 'ATR_Kalman_Diff', 'High', 'Low', 'ATR', 'Hurst', 
+    'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
 # Precision Rounding
-display_df['Kalman_WMA_Diff'] = display_df['Kalman_WMA_Diff'].round(4)
+display_df['ATR_Kalman_Diff'] = display_df['ATR_Kalman_Diff'].round(2) # Asset pricing base precision
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['ATR_x_Hurst'] = display_df['ATR_x_Hurst'].round(4)
 display_df['Kalman_ATR_Hurst'] = display_df['Kalman_ATR_Hurst'].round(4)
-display_df['WMA_ATR_Hurst'] = display_df['WMA_ATR_Hurst'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 display_df['Column_A'] = display_df['Column_A'].round(4)
 display_df['Kalman_Column_A'] = display_df['Kalman_Column_A'].round(4)
