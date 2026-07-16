@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Master Kinematics Engine", layout="wide")
-st.title("⚡ Nifty 50 Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
+st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
+st.write("🎯 **Pure Direct Crypto Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,24 +39,27 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Nifty 50 Index Setup - 2y, 1h)
+# 🛡️ SYSTEM DATA INGESTION (BTC-USD Setup - 2y, 1h)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
+with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
     try:
-        df = yf.download(tickers="^NSEI", period="2y", interval="1h")
+        # Crypto ticker 'BTC-USD' strictly 2 saal ka data aur 1 hourly intervals
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Live Running Candle Protection
+            df = df.iloc[:-1] # Live Running Candle Protection (Strictly No Leakage)
+            
+            # Crypto standard UTC timezone locking
             if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+                df.index = df.index.tz_localize('UTC')
             else:
-                df.index = df.index.tz_convert('Asia/Kolkata')
+                df.index = df.index.tz_convert('UTC')
         else:
-            st.error("🚨 Error: Insufficient data lines.")
+            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
@@ -66,7 +69,7 @@ with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (No Leakage)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Bitcoin Candles (No Leakage)!**")
 
 # =====================================================================
 # ⚡ NON-LINEAR HURST KINEMATICS CORE
@@ -97,12 +100,10 @@ df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
 
-# 6. 🔥 THE MAGICAL QUANTUM DRIFT COUPLING
-# Base formula matrix: (Hurst_Acceleration * Shock_Index) * Hurst_Amp_Momentum
+# 6. 🔥 PAJI'S MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
 raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
 
-# ✨ MAGIC STEP: Adaptive Energy Scaling (Sideways market me peaks ko suppress karega, trending me support karega)
-# Agar Hurst < 0.48 hai (Mean-Reversion zone), toh hum drift values ko demand contraction factor se process karenge
+# ✨ Adaptive Energy Scaling for Crypto Volatility
 df_predict['Dynamic_Energy_Factor'] = np.where(df_predict['Hurst'] < 0.48, raw_multiplied_drift * 0.3, raw_multiplied_drift * 1.5)
 
 smoothed_drift = apply_kalman_filter_custom(df_predict['Dynamic_Energy_Factor'].values, initial_p=1.0, q_val=0.005, r_val=0.5)
@@ -176,12 +177,12 @@ df_predict['Signal'] = signal_log
 df_predict['Prob_Up'] = prob_up
 
 # =====================================================================
-# 📋 MATRIX FORMATTING
+# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
     'Hurst_Amp_Momentum', 
-    'Kinematic_Drift_Score',  # Magical Layer Locked!
+    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
     'Accumulator_Channel', 
     'Signal', 
     'Prob_Up'
@@ -191,8 +192,9 @@ display_df = df_predict[clean_cols].copy()
 for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift_Score']:
     display_df[c] = display_df[c].round(2)
 
+# Latest on top display in UTC
 display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 5-Channel Kinematic Bounded Nifty Action Matrix")
+st.subheader("📋 5-Channel Kinematic Bounded Bitcoin Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
