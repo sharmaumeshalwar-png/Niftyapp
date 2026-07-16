@@ -6,20 +6,20 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Scaled SMO + Kalman Hybrid", layout="wide")
 st.title("🚀 Bitcoin (BTC-USD) Scaled SMO-Kalman Hybrid Engine")
-st.write("🎯 **Dual-Engine Scaled Analytics:** High-Accuracy Standardized Numeric Engine with Anti-Whipsaw Hurst Gate | 100% Zero-Leakage")
+st.write("🎯 **Dual-Engine Scaled Analytics:** Smoothed and scaled rocket momentum for highly readable signals | 100% Zero-Leakage")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - SMO & New Kalman Filter)
 # =====================================================================
 def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, drag=0.88):
     if len(price_array) == 0: return [], []
-    x1 = float(price_array[0])
+    x1 = price_array[0]
     x2 = 0.0
     est_price = []
     est_velocity = []
     
     for z in price_array:
-        error = float(z) - x1
+        error = z - x1
         switching_control = k_gain * np.sign(error) if error != 0 else 0.0
         dx1 = x2 + (l_gain * error) + switching_control
         x1 = x1 + dx1
@@ -34,24 +34,20 @@ def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, dr
 
 def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.005):
     if len(data_array) == 0: return []
-    x, p = float(data_array[0]), initial_p  
+    x, p = data_array[0], initial_p  
     filtered_values = []
     for z in data_array:
         p = p + q_val
         k = p / (p + r_val)
-        x = x + k * (float(z) - x)
+        x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
 def calculate_rolling_hurst(price_series, window=100):
     hurst_values = np.full(len(price_series), 0.5) 
-    
-    # 🛡️ ZERO-LEAKAGE SHIFT (Memory writable duplicate created using .copy())
-    shifted_prices = pd.Series(price_series).shift(1).to_numpy().copy()
-    shifted_prices[0] = price_series[0]  
-    log_returns = np.log(price_series / shifted_prices)
-    log_returns[0] = 0.0
+    log_returns = np.log(price_series / np.roll(price_series, 1))
+    log_returns[0] = 0
     
     for i in range(window, len(price_series)):
         window_data = log_returns[i-window+1:i+1]
@@ -70,78 +66,63 @@ df = None
 with st.spinner("Fetching Live 1-Year BTC Data..."):
     try:
         df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
-        
-        if df is not None and not df.empty:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
             
-            df = df.loc[:, ~df.columns.duplicated()]
+        if len(df) > 120: 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            if len(df) > 120: 
-                df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-                df = df.iloc[:-1] # Cut active candle to prevent leak
-                
-                if df.index.tz is None:
-                    df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-                else:
-                    df.index = df.index.tz_convert('Asia/Kolkata')
+            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
+            df = df.iloc[:-1]
+            
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
-                st.error("🚨 Error: Insufficient data lines.")
-                st.stop()
+                df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Empty DataFrame returned.")
+            st.error("🚨 Error: Insufficient data lines.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION PIPELINE (Forward Flow Only - Vectorized)
+# 🔥 GLOBAL CALCULATION PIPELINE (Forward Flow Only)
 # =====================================================================
-close_arr = df['Close'].to_numpy().flatten()
+close_arr = df['Close'].values
 
 # 1. Apply SMO Trajectory 
 est_p, est_v = apply_sliding_mode_observer_damped(close_arr, k_gain=0.25, l_gain=0.10, drag=0.88)
 df['SMO_Price_Baseline'] = est_p
 df['SMO_Velocity'] = est_v
 
-# 2. Hurst Vector Generation (Leakage-free)
+# 2. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. 🎯 ANTI-WHIPSAW FILTER: Non-linear Hurst Threshold Gate
-# Vectorized mapping to eliminate potential index offsets
-hurst_arr = df['Hurst'].to_numpy()
-gated_multiplier = np.where(hurst_arr >= 0.53, hurst_arr * 10000.0, hurst_arr * 1000.0)
-df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * gated_multiplier
+# 3. 🎯 SCALED UP: Hurst Amplified Momentum (Multiplied by 10000.0 instead of 100.0)
+df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 10000.0)
 
 # Clean dynamic NaNs safely before mapping secondary Kalman
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 4. Apply Highly-Smoothed Kalman Filter onto scaled Hurst_Amp_Momentum
-# ⚙️ Highly-Damped Configuration: q_val=0.0002, r_val=0.08
-ham_raw_vals = df['Hurst_Amp_Momentum'].to_numpy().flatten()
-df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.0002, r_val=0.08)
+# 4. Apply 0.50 Kalman Filter directly onto scaled Hurst_Amp_Momentum
+ham_raw_vals = df['Hurst_Amp_Momentum'].values
+df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.005, r_val=0.005)
 
-# 5. 🎯 ACCURACY UPGRADE: 20-Period Rolling Z-Score Normalization
-# Standardizes the Kalman output into pure standard deviations (-3.0 to +3.0)
-rolling_mean = df['HAM_Kalman'].rolling(window=20, min_periods=1).mean()
-rolling_std = df['HAM_Kalman'].rolling(window=20, min_periods=1).std().fillna(1e-9)
-df['HAM_Z_Score'] = (df['HAM_Kalman'] - rolling_mean) / (rolling_std + 1e-9)
-
-# 6. Volume Rolling Mean for Causal Strength Analysis (ffill only)
+# 5. Volume Rolling Mean for Causal Strength Analysis
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
-# 7. SMO + Kalman Volume-Momentum Decision Engine
-# Upgraded to process standard deviations (Buy above +1.5 SD / Sell below -1.5 SD)
+# 6. SMO + Kalman Volume-Momentum Decision Engine
+# 🎯 Proportional thresholds scaled up from 0.10 to 10.0 to match new values scale!
 vol_mom_decisions = []
 for i in range(len(df)):
-    curr_z = df['HAM_Z_Score'].iloc[i]
+    curr_kalman_amp = df['HAM_Kalman'].iloc[i]
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    if curr_z > 1.5 and curr_vol > avg_vol:
+    if curr_kalman_amp > 10.0 and curr_vol > avg_vol:
         status = "🟢 HYBRID BULL"
-    elif curr_z < -1.5 and curr_vol > avg_vol:
+    elif curr_kalman_amp < -10.0 and curr_vol > avg_vol:
         status = "🔴 HYBRID BEAR"
     else:
         status = "⚪ NEUTRAL FLAT"
@@ -154,12 +135,12 @@ df['Vol_Mom_Decision'] = vol_mom_decisions
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🎯 **Trade Value Standardized:** 'HAM_Z_Score' is now optimized for automated setups (-3.0 to +3.0 range)!")
+st.success("🟢 **Values Scaled Up (100x):** HAM_Kalman and Hurst_Amp_Momentum are now highly readable!")
 
 # Target Display Order
 clean_cols = [
     'Close', 'SMO_Price_Baseline', 'SMO_Velocity', 'Volume', 
-    'Hurst', 'HAM_Kalman', 'HAM_Z_Score', 'Vol_Mom_Decision'
+    'Hurst', 'Hurst_Amp_Momentum', 'HAM_Kalman', 'Vol_Mom_Decision'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
@@ -170,12 +151,11 @@ display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
 display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(4)
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)
-display_df['HAM_Z_Score'] = display_df['HAM_Z_Score'].round(4)
+display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2) # Rounded to 2 decimal for cleaner look
+display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)                 # Rounded to 2 decimal for cleaner look
 
-# Reverse data presentation chronologically for UI display
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 1-Hour Hybrid SMO-Kalman Board (High-Precision Numerical Grid)")
+st.subheader("📋 Bitcoin 1-Hour Hybrid SMO-Kalman Board")
 st.dataframe(display_df, use_container_width=True, height=750)
