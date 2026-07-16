@@ -42,12 +42,11 @@ def calculate_rolling_hurst(price_series, window=100):
 # 🛡️ SYSTEM DATA INGESTION (Targeting Global WTI Crude Oil Futures)
 # -----------------------------------------------------------------
 df = None
-# Paji, NYMEX WTI Crude Oil ka direct continuous ticker lock kiya hai
 target_ticker = "CL=F" 
 
 with st.spinner(f"Fetching Live 24-Hour {target_ticker} Global Matrix..."):
     try:
-        # Fetching 2 years data at 1-hour intervals
+        # Fixed Configuration: 2 Year Window, 1 Hour Intervals
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -75,7 +74,7 @@ with st.spinner(f"Fetching Live 24-Hour {target_ticker} Global Matrix..."):
 # Setup Isolated WTI Close Price Arrays from Full Stream
 close_arr = df['Close'].values
 
-# Strict Price Kalman Baseline Calculation
+# Strict Price Kalman Baseline Calculation (Fixed to User Specification 50:50)
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
 # ATR calculation without lookahead bias
@@ -92,7 +91,7 @@ df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+# THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
 # Clean NaNs strictly before creating rolling statistical channels
@@ -150,7 +149,7 @@ for i in range(len(df)):
 
 df['Signal'] = signal_log
 
-# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
+# 🚀 PROBABILITY MATRIX BASED ON CHANNELS (50:50 Dynamic Locking Verification)
 prob_up = []
 for i in range(len(df)):
     acc_chan = accumulator[i]
@@ -177,7 +176,7 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure WTI Crude Live 24-Hour Candles (IST Tracking Enabled)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure WTI Crude Live 24-Hour Candles (2-Year Frame Locked)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
@@ -195,5 +194,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (24-Hour IST)")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (1-Hour IST)")
 st.dataframe(display_df, use_container_width=True, height=750)
