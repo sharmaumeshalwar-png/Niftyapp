@@ -93,20 +93,22 @@ df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predic
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 6. ✨ THE MAGICAL CONVERGENCE LAYER
 df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
 
-# 7. 🔥 PAJI'S NEW MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
-# New Formula: (Hurst_Acceleration * Shock_Index) * Hurst_Amp_Momentum
+# 6. 🔥 THE MAGICAL QUANTUM DRIFT COUPLING
+# Base formula matrix: (Hurst_Acceleration * Shock_Index) * Hurst_Amp_Momentum
 raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
 
-# Apply secondary smoothing Kalman filter to clear sudden spikes
-smoothed_drift = apply_kalman_filter_custom(raw_multiplied_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
+# ✨ MAGIC STEP: Adaptive Energy Scaling (Sideways market me peaks ko suppress karega, trending me support karega)
+# Agar Hurst < 0.48 hai (Mean-Reversion zone), toh hum drift values ko demand contraction factor se process karenge
+df_predict['Dynamic_Energy_Factor'] = np.where(df_predict['Hurst'] < 0.48, raw_multiplied_drift * 0.3, raw_multiplied_drift * 1.5)
+
+smoothed_drift = apply_kalman_filter_custom(df_predict['Dynamic_Energy_Factor'].values, initial_p=1.0, q_val=0.005, r_val=0.5)
 
 # Bounded range engine (-100 to +100 Scaling using Hyperbolic Tangent)
-df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.05) * 100.0
+df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.03) * 100.0
 
 # Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['Hurst'], inplace=True)
@@ -174,12 +176,12 @@ df_predict['Signal'] = signal_log
 df_predict['Prob_Up'] = prob_up
 
 # =====================================================================
-# 📋 MATRIX FORMATTING WITH PAJI'S MULTIPLIED SCORE
+# 📋 MATRIX FORMATTING
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
     'Hurst_Amp_Momentum', 
-    'Kinematic_Drift_Score',  # New Multiplied score column (-100 to +100)
+    'Kinematic_Drift_Score',  # Magical Layer Locked!
     'Accumulator_Channel', 
     'Signal', 
     'Prob_Up'
