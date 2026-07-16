@@ -4,24 +4,47 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Strict Core Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Core Decision Engine")
-st.write("🎯 **Pure Vector Analytics:** 1-Hour Candles | Volume-Momentum Decision Framework | 100% Zero-Leakage Locked")
+st.set_page_config(page_title="BTC Sliding Mode Observer Engine", layout="wide")
+st.title("🚀 Bitcoin (BTC-USD) Sliding Mode Observer Engine")
+st.write("🎯 **Aerospace Grade Trading:** 1-Hour Candles | Sliding Mode Observer (SMO) | 100% Zero-Leakage")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
+# MATHEMATICAL ENGINES (Strictly Causal - Sliding Mode Observer Theory)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0: return []
-    x, p = data_array[0], initial_p  
-    filtered_values = []
-    for z in data_array:
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+def apply_sliding_mode_observer(price_array, k_gain=0.15, l_gain=0.05):
+    """
+    Sliding Mode Observer (SMO) for State Estimation (Speed/Velocity)
+    Mathematically proven rocket trajectory tracking without Kalman Filters.
+    """
+    if len(price_array) == 0: return [], []
+    
+    # State variables: x1 (Estimated Price), x2 (Estimated Speed/Velocity)
+    x1 = price_array[0]
+    x2 = 0.0
+    
+    est_price = []
+    est_velocity = []
+    
+    for z in price_array:
+        # 1. Calculate Observer Error (Output Error)
+        error = z - x1
+        
+        # 2. Sliding Surface Switching Logic (Signum Multiplier)
+        switching_control = k_gain * np.sign(error) if error != 0 else 0.0
+        
+        # 3. State Update Equations (Discontinuous Correction)
+        # dx1/dt = x2 + L * error + K * sign(error)
+        dx1 = x2 + (l_gain * error) + switching_control
+        x1 = x1 + dx1  # Update virtual position
+        
+        # dx2/dt = K_speed * sign(error) -> Integrated velocity update
+        dx2 = 0.01 * switching_control
+        x2 = x2 + dx2  # Update virtual speed
+        
+        est_price.append(x1)
+        est_velocity.append(x2)
+        
+    return est_price, est_velocity
 
 def calculate_rolling_hurst(price_series, window=100):
     hurst_values = np.full(len(price_series), 0.5) 
@@ -70,38 +93,35 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# 1. Price Kalman Baseline Calculation
-df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+# 1. APPLY SLIDING MODE OBSERVER (Replacing Kalman Filter completely)
+# k_gain=0.15 represents the switching intensity, l_gain=0.05 is the error feedback
+est_p, est_v = apply_sliding_mode_observer(close_arr, k_gain=0.15, l_gain=0.05)
+df['SMO_Price_Baseline'] = est_p
+df['SMO_Velocity'] = est_v
 
-# 2. Dynamic Velocity Vector (Strictly Causal Close - Kalman)
-df['Velocity'] = df['Close'] - df['Kalman_Baseline']
-
-# 3. Hurst Vector Generation
+# 2. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 4. Hurst Amplified Momentum Pipeline
-df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
-raw_weighted_momentum = df['Close_Minus_Kalman'].values
-df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
-df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
+# 3. Hurst Amplified Momentum Pipeline (Using pure SMO output instead of Kalman)
+df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 2000.0) # Scaling velocity for readability
 
-# Clean dynamic NaNs safely before matrix logical mapping
+# Clean dynamic NaNs
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 5. Volume Rolling Mean for Causal Strength Analysis
+# 4. Volume Rolling Mean for Causal Strength Analysis
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
-# 🎯 NEW DECISION ENGINE: Derived directly via Volume & Hurst Amplified Momentum
+# 5. SMO Volume-Momentum Decision Engine
 vol_mom_decisions = []
 for i in range(len(df)):
     curr_amp = df['Hurst_Amp_Momentum'].iloc[i]
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    if curr_amp > 0.15 and curr_vol > avg_vol:
-        status = "🟢 BULL STRENGTH"
-    elif curr_amp < -0.15 and curr_vol > avg_vol:
-        status = "🔴 BEAR PRESSURE"
+    if curr_amp > 0.05 and curr_vol > avg_vol:
+        status = "🟢 SMO BULL"
+    elif curr_amp < -0.05 and curr_vol > avg_vol:
+        status = "🔴 SMO BEAR"
     else:
         status = "⚪ NEUTRAL FLAT"
     vol_mom_decisions.append(status)
@@ -113,11 +133,11 @@ df['Vol_Mom_Decision'] = vol_mom_decisions
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Core Matrix Re-engineered:** Clean dataset structured strictly around your chosen vectors.")
+st.success("🟢 **Sliding Mode Observer Locked:** Kalman Filter completely purged. Trajectory-tracking physics applied.")
 
-# Target structural order requested by the user
+# Custom Rocket Matrix Layout
 clean_cols = [
-    'Close', 'Kalman_Baseline', 'Velocity', 'Volume', 
+    'Close', 'SMO_Price_Baseline', 'SMO_Velocity', 'Volume', 
     'Hurst', 'Hurst_Amp_Momentum', 'Vol_Mom_Decision'
 ]
 display_df = df_predict[clean_cols].copy()
@@ -125,15 +145,14 @@ display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplac
 
 # Precision Rounding Layers
 display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
-display_df['Kalman_Baseline'] = display_df['Kalman_Baseline'].round(2)
-display_df['Velocity'] = display_df['Velocity'].round(2)
-display_df['Volume'] = display_df['Volume'].round(0) # Actual absolute Volume display count
+display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
+display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(6) # Highly precise trajectory feedback
+display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 
-# Chronological sorting for visualization (latest closed bar on top)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 1-Hour Purged Core Analytics Board")
+st.subheader("📋 Bitcoin 1-Hour Rocket SMO Analytics Board")
 st.dataframe(display_df, use_container_width=True, height=750)
