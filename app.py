@@ -5,9 +5,9 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Amplified Value Engine", layout="wide")
-st.title("⚡ Amplified Numeric Value Master Engine")
-st.write("🎯 **Pure Value Focus:** Hurst-Amplified Momentum with Multiplier Scaling for High-Visibility Trading (100% Leakage-Free)")
+st.set_page_config(page_title="Z-Score Precision Engine", layout="wide")
+st.title("⚡ Z-Score Normalized Value Master Engine")
+st.write("🎯 **Pure Value Focus:** Hurst-Amplified Momentum with Rolling Z-Score Standardization (100% Leakage-Free & Uniform Scaling)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Zero Lag Core Math)
@@ -54,7 +54,7 @@ with st.spinner(f"Processing Data Streams for {target_ticker}..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Strict Leakage Protection Drop (Patthar ki Lakeer)
+            df = df.iloc[:-1] # Strict Leakage Protection Drop
             
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -76,25 +76,23 @@ close_arr = df['Close'].values
 df['Kalman_Baseline'] = apply_kalman_filter_precise(close_arr, initial_p=50.0, q_val=0.01, r_val=0.02)
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# True Range calculation without future bias
-high_low = df['High'] - df['Low']
-high_close = np.abs(df['High'] - df['Close'].shift(1))
-low_close = np.abs(df['Low'] - df['Close'].shift(1))
-true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-df['ATR'] = true_range.rolling(14).mean().ffill()
-
 # Momentum derivation
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_precise(raw_weighted_momentum.values, initial_p=0.50, q_val=0.005, r_val=0.05)
 
-# THE EXPONENTIAL MULTIPLICATION
+# THE EXPONENTIAL MULTIPLICATION (Raw Indicator Value)
 df['Hurst_Amp_Momentum_Raw'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# 🎯 THE HIGH-VISIBILITY AMPLIFIED LAYER
-# Paji yahan pehle normalise kiya ATR se, phir 100.0 se multiply kiya taaki sankhya badi dikhe!
-df['Amplified_Momentum_Value'] = (df['Hurst_Amp_Momentum_Raw'] / (df['ATR'] + 1e-8)) * 100.0
+# 🎯 THE MATHEMAGIC: ROLLING Z-SCORE NORMALIZATION (Pure Scaling Layer)
+# Yeh bina kisi lookahead bias ke pichle 50 bars ki memory ke basis par scale reset karta hai
+rolling_window = 50
+rolling_mean = df['Hurst_Amp_Momentum_Raw'].rolling(window=rolling_window, min_periods=1).mean()
+rolling_std = df['Hurst_Amp_Momentum_Raw'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0)
 
-df.dropna(subset=['ATR', 'Hurst'], inplace=True)
+# Formula: (Current_Value - Mean) / Standard_Deviation
+df['Z_Score_Normalized_Value'] = (df['Hurst_Amp_Momentum_Raw'] - rolling_mean) / (rolling_std + 1e-8)
+
+df.dropna(subset=['Hurst'], inplace=True)
 
 # =====================================================================
 # 🎛️ STRICT LEARNING FILTER (1-Year Slicing Layer)
@@ -102,20 +100,20 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 cutoff_date = df.index.max() - timedelta(days=365)
 df_predict = df[df.index >= cutoff_date].copy()
 
-st.success(f"🟢 **Visibility Engine Active:** Numbers successfully amplified by 100x factor!")
+st.success(f"🟢 **Z-Score Normalization Engine Fully Armed:** Ineffective ATR filters removed completely.")
 
 # Clean matrix containing only the numeric parameters you care about
-clean_cols = ['Close', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Amplified_Momentum_Value']
+clean_cols = ['Close', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Z_Score_Normalized_Value']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Raw_Price'}, inplace=True)
 
-# Precision rounding
-for c in ['Raw_Price', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Amplified_Momentum_Value']:
+# Precision rounding for crystal clear visibility
+for c in ['Raw_Price', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Z_Score_Normalized_Value']:
     display_df[c] = display_df[c].round(4)
 
 # Chronological sorting for table reading
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Amplified Value Matrix (Check 'Amplified_Momentum_Value' for clear trend shifts)")
+st.subheader(f"📋 Amplified Z-Score Matrix (Track 'Z_Score_Normalized_Value' for clean standard swings)")
 st.dataframe(display_df, use_container_width=True, height=750)
