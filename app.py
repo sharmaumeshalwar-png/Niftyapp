@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="Nifty Master Kinematics Engine", layout="wide")
 st.title("⚡ Nifty 50 Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Non-Linear Hurst Kinematics & 5-Channel Bounded Oscillator (100% Leak-Proof)")
+st.write("🎯 **Pure Direct Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -62,7 +62,7 @@ with st.spinner("Fetching 2-Year Hourly Nifty 50 Data..."):
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 50:50 isolation split FIRST to prevent leakage
+# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -74,32 +74,39 @@ st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (
 df_predict['Close_Raw'] = df_predict['Close']
 close_arr = df_predict['Close_Raw'].values
 
+# 1. Base Kalman System & Innovation Error Extraction
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
+
+# 2. Pure Hurst Base Calculation
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
+# 3. MODIFICATION 1: HURST VELOCITY ENGINE
 df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
 df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
 
+# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
 df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
 df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
 
+# 5. Raw Price-based Weighted Momentum
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
+# 6. ✨ THE MAGICAL CONVERGENCE LAYER
 df_predict['Hurst_Amp_Momentum'] = (
     df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
 )
 
-# Raw Drift Calculation
-raw_drift = (df_predict['Hurst_Acceleration'] - df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
+# 7. 🔥 PAJI'S NEW MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
+# New Formula: (Hurst_Acceleration * Shock_Index) * Hurst_Amp_Momentum
+raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
 
-# Apply secondary smoothing Kalman filter to clear noise
-smoothed_drift = apply_kalman_filter_custom(raw_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
+# Apply secondary smoothing Kalman filter to clear sudden spikes
+smoothed_drift = apply_kalman_filter_custom(raw_multiplied_drift.values, initial_p=1.0, q_val=0.005, r_val=0.5)
 
-# 🔥 THE FIXED RANGE ENGINE (-100 to +100 Scaling using Hyperbolic Tangent)
-# Scale factor 0.1 specifies standard volatility normalization
-df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.1) * 100.0
+# Bounded range engine (-100 to +100 Scaling using Hyperbolic Tangent)
+df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.05) * 100.0
 
 # Clean NaNs strictly before creating rolling statistical channels
 df_predict.dropna(subset=['Hurst'], inplace=True)
@@ -167,12 +174,12 @@ df_predict['Signal'] = signal_log
 df_predict['Prob_Up'] = prob_up
 
 # =====================================================================
-# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
+# 📋 MATRIX FORMATTING WITH PAJI'S MULTIPLIED SCORE
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
     'Hurst_Amp_Momentum', 
-    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
+    'Kinematic_Drift_Score',  # New Multiplied score column (-100 to +100)
     'Accumulator_Channel', 
     'Signal', 
     'Prob_Up'
