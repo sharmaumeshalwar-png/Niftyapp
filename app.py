@@ -2,18 +2,16 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Kalman Gap Engine", layout="wide")
-st.title("⚡ Kalman Convergence/Divergence Gap Engine")
-st.write("🎯 **Pure Value Edge:** Dual-Speed Kalman Tracking Array applied on Hurst-Momentum Matrix (100% Leakage-Free)")
+st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof & Repaint-Free)")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Zero Lag Core Math Architecture)
+# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
 # =====================================================================
-def apply_kalman_filter_dynamic(data_array, initial_p=50.0, q_val=0.005, r_val=0.05):
-    """Rigid state tracking loop with customizable parameters"""
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -41,85 +39,89 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Target Selection Block)
+# 🛡️ SYSTEM DATA INGESTION
 # -----------------------------------------------------------------
-target_ticker = st.selectbox("Select Target Matrix Asset:", ["BTC-USD", "ETH-USD", "SI=F", "RELIANCE.NS"])
-
 df = None
-
-with st.spinner(f"Processing Data Streams for {target_ticker}..."):
+with st.spinner("Fetching Live BTC Data..."):
     try:
-        df = yf.download(tickers=target_ticker, period="2y", interval="1h")
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Strict Leakage Protection Lock (Patthar ki Lakeer)
-            
+            # Live Incomplete hourly candle protection
+            df = df.iloc[:-1]
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient historical data lines.")
+            st.error("🚨 Error: Insufficient data lines.")
             st.stop()
     except Exception as e:
-        st.error(f"🚨 Ingestion Rail Failure: {e}")
+        st.error(f"🚨 API Failure: {e}")
         st.stop()
 
 # =====================================================================
-# 🔥 DUAL-KALMAN CONVERGENCE PIPELINE
+# 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
+# Setup Isolated Price Arrays from Full DataFrame
 close_arr = df['Close'].values
 
-# Base Step 1: Ingest Price Baseline
-df['Price_Baseline'] = apply_kalman_filter_dynamic(close_arr, initial_p=50.0, q_val=0.01, r_val=0.02)
+# Strict Isolated Price Kalman Baseline Calculation
+df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+
+# ATR calculation without lookahead/bfill bias
+high_low = df['High'] - df['Low']
+high_close = np.abs(df['High'] - df['Close'].shift(1))
+low_close = np.abs(df['Low'] - df['Close'].shift(1))
+true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+df['ATR'] = true_range.rolling(14).mean().ffill() 
+
+# Hurst Vector Generation on full window
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Base Step 2: Derive Raw Weighted Momentum
-raw_weighted_momentum = df['Close'] - df['Price_Baseline']
-df['Weighted_Momentum'] = apply_kalman_filter_dynamic(raw_weighted_momentum.values, initial_p=0.50, q_val=0.005, r_val=0.05)
+# Exact original Price-based Weighted Momentum Calculation
+raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
+df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🎯 THE SUPREME RAW VALUE MATRIX
-df['Hurst_Amp_Momentum_Raw'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
-raw_ham_values = df['Hurst_Amp_Momentum_Raw'].values
+# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# --- 🧠 PAJI'S MAGICAL DUAL-KALMAN GAUNTLET IMPLEMENTATION ---
+# Clean NaNs strictly before creating rolling statistical channels
+df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
-# ⚡ Layer A: Fast Kalman Tracking (High agility to capture immediate shifts)
-# q_val bada aur r_val chota rakhne se yeh bina delay ke momentum ko chipak kar chalta hai
-df['Fast_Kalman_HAM'] = apply_kalman_filter_dynamic(raw_ham_values, initial_p=1.0, q_val=0.02, r_val=0.01)
+# 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
+mom_vals = df['Hurst_Amp_Momentum'].to_numpy()
+rolling_window = 50
+mom_mean = df['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
+mom_std = df['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
 
-# 🐢 Layer B: Slow Kalman Tracking (High damping factor to form the solid trend line)
-# q_val chota aur r_val bada rakhne se yeh market ki noise ko filter out karke chalta hai
-df['Slow_Kalman_HAM'] = apply_kalman_filter_dynamic(raw_ham_values, initial_p=1.0, q_val=0.002, r_val=0.15)
+channels = np.zeros(len(mom_vals), dtype=int)
+accumulator = np.zeros(len(mom_vals), dtype=int)
 
-# 🏁 Layer C: THE DUAL GAP CONVERGENCE (Fast - Slow)
-df['KALMAN_GAP_VALUE'] = df['Fast_Kalman_HAM'] - df['Slow_Kalman_HAM']
-
-df.dropna(subset=['Hurst'], inplace=True)
-
-# =====================================================================
-# 🎛️ STRICT LEARNING FILTER (1-Year Slicing Array)
-# =====================================================================
-cutoff_date = df.index.max() - timedelta(days=365)
-df_predict = df[df.index >= cutoff_date].copy()
-
-st.success(f"🟢 **Dual-Kalman Convergence Grid Loaded:** Numerical gap extraction operational for {target_ticker}!")
-
-# Purely numeric parameters focused matrix
-clean_cols = ['Close', 'Hurst_Amp_Momentum_Raw', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'KALMAN_GAP_VALUE']
-display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'Raw_Price'}, inplace=True)
-
-# Formatting for precise numerical visibility
-for c in ['Raw_Price', 'Hurst_Amp_Momentum_Raw', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'KALMAN_GAP_VALUE']:
-    display_df[c] = display_df[c].round(4)
-
-# Reverse chronological sorting for intuitive grid tracking
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
-
-st.subheader(f"📋 Pure Dual-Kalman Execution Grid (Monitor the contraction/expansion of 'KALMAN_GAP_VALUE')")
-st.dataframe(display_df, use_container_width=True, height=750)
+for i in range(len(mom_vals)):
+    val = mom_vals[i]
+    m = mom_mean[i]
+    s = mom_std[i]
+    
+    if val > (m + 1.5 * s):
+        channels[i] = 5
+    elif val > (m + 0.5 * s):
+        channels[i] = 4
+    elif val < (m - 1.5 * s):
+        channels[i] = 1
+    elif val < (m - 0.5 * s):
+        channels[i] = 2
+    else:
+        channels[i] = 3
+        
+    if i == 0:
+        accumulator[i] = channels[i]
+    else:
+        prev_acc = accumulator[i-1]
+        curr_chan = channels[i]
+        if abs(curr_chan - prev_acc) >= 1:
+            accumulator[i] = curr_chan
+        else:
