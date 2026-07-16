@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Strict Zero-Leakage Engine", layout="wide")
+st.set_page_config(page_title="BTC Strict Multiplier Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman (0.850) & 1-Candle WMA (Raw) | 100% Zero-Leakage Locked")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Custom Multiplier WMA (0.850) | 100% Zero-Leakage Locked")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
@@ -50,8 +50,24 @@ def calculate_rolling_hurst(price_series, window=100):
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
 
+# Custom Multiplier WMA (Strictly Forward Loop - No Lookahead)
+def calculate_wma_multiplier(series, multiplier=0.850):
+    vals = series.values
+    output = np.zeros(len(vals))
+    if len(vals) == 0: return output
+    
+    # Initialize first index safely
+    output[0] = vals[0]
+    remainder = 1.0 - multiplier # 0.150
+    
+    for i in range(1, len(vals)):
+        # Current * 0.850 + Previous_Output * 0.150
+        output[i] = (vals[i] * multiplier) + (output[i-1] * remainder)
+        
+    return pd.Series(output, index=series.index)
+
 # -----------------------------------------------------------------
-# 🛡️ STRICT DATA INGESTION & RUNNING CANDLE PURGE
+# 🛡️ SYSTEM DATA INGESTION & RUNNING CANDLE PURGE
 # -----------------------------------------------------------------
 df = None
 with st.spinner("Fetching Live 1-Year BTC Data..."):
@@ -112,12 +128,12 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # 1. Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
-# 2. Kalman Filter on ATR * Hurst (Strictly initial_p = 0.850 as requested)
+# 2. Kalman Filter on ATR * Hurst (Reset to initial_p=0.50 baseline)
 atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
-df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.850, q_val=0.001, r_val=0.1)
+df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 3. 1-Candle WMA on ATR * Hurst (1-candle window is mathematically equal to the raw value itself)
-df['WMA_ATR_Hurst'] = df['ATR_x_Hurst'].ffill().fillna(0)
+# 3. Custom Multiplier WMA (Strictly 0.850 Factor)
+df['WMA_ATR_Hurst'] = calculate_wma_multiplier(df['ATR_x_Hurst'], multiplier=0.850).ffill().fillna(0)
 
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
@@ -174,7 +190,7 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Pipeline Locked:** Kalman Filter calibrated to initial_p=0.850. WMA limited to 1-Candle raw resolution.")
+st.success("🟢 **Multiplier Setup Locked:** WMA engine successfully configured with a strict 0.850 smoothing weight coefficient.")
 
 # Display grid
 clean_cols = [
