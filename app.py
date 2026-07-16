@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Strict Volatility Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | ATR - Kalman Baseline Engine | 100% Zero-Leakage Locked")
+st.set_page_config(page_title="BTC Strict Core Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Core Decision Engine")
+st.write("🎯 **Pure Vector Analytics:** 1-Hour Candles | Volume-Momentum Decision Framework | 100% Zero-Leakage Locked")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
@@ -17,18 +17,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     filtered_values = []
     for z in data_array:
         p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
-
-def apply_kalman_adaptive_p(data_array, p_array, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0: return []
-    x = data_array[0]
-    filtered_values = []
-    for z, p_init in zip(data_array, p_array):
-        p = p_init + q_val
         k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
@@ -63,7 +51,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
+            # ⛔ CUTOFF ENGINE: Drop the active unclosed dynamic 1-hour candle.
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -82,124 +70,70 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# Price Kalman Baseline
+# 1. Price Kalman Baseline Calculation
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation (Strictly historical)
-high_low = df['High'] - df['Low']
-high_close = np.abs(df['High'] - df['Close'].shift(1))
-low_close = np.abs(df['Low'] - df['Close'].shift(1))
-true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-df['ATR'] = true_range.rolling(14).mean().ffill().fillna(0)
+# 2. Dynamic Velocity Vector (Strictly Causal Close - Kalman)
+df['Velocity'] = df['Close'] - df['Kalman_Baseline']
 
-# 🎯 NEW REQ: Target Diff Column (ATR - Kalman Baseline)
-df['ATR_Kalman_Diff'] = df['ATR'] - df['Kalman_Baseline']
-
-# Hurst Vector Generation
+# 3. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Price-based Weighted Momentum
+# 4. Hurst Amplified Momentum Pipeline
 df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
 raw_weighted_momentum = df['Close_Minus_Kalman'].values
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# Hurst Amplification
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean dynamic NaNs
-df.dropna(subset=['ATR', 'Hurst'], inplace=True)
+# Clean dynamic NaNs safely before matrix logical mapping
+df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# =====================================================================
-# 🧮 CUSTOM MATH COLUMNS & ADAPTIVE KALMAN OPERATIONS
-# =====================================================================
-# Base ATR * Hurst Column
-df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
+# 5. Volume Rolling Mean for Causal Strength Analysis
+df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
-# Kalman Filter on ATR * Hurst (initial_p=0.50)
-atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
-df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# Original Custom Columns
-df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
-df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
-
-# Safe forward fill mapping to block leaks
-col_a_vals = df['Column_A'].ffill().fillna(0).values
-col_b_vals = df['Column_B'].ffill().fillna(0).values
-atr_vals = df['ATR'].ffill().fillna(0).values
-
-# Adaptive Kalmans on Column A and Column B
-df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
-df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
-
-# =====================================================================
-# 🛡️ STRICT 2-STATE DIVERGENCE DETECTION (BTX vs TRAP)
-# =====================================================================
-df['Std_KA'] = df['Kalman_Column_A'].rolling(20, min_periods=1).std().fillna(1.0)
-df['Std_KB'] = df['Kalman_Column_B'].rolling(20, min_periods=1).std().fillna(1.0)
-
-btc_status_list = ["Initializing"]
-
-for i in range(1, len(df)):
-    curr_ka = df['Kalman_Column_A'].iloc[i]
-    prev_ka = df['Kalman_Column_A'].iloc[i-1]
-    curr_kb = df['Kalman_Column_B'].iloc[i]
-    prev_kb = df['Kalman_Column_B'].iloc[i-1]
+# 🎯 NEW DECISION ENGINE: Derived directly via Volume & Hurst Amplified Momentum
+vol_mom_decisions = []
+for i in range(len(df)):
+    curr_amp = df['Hurst_Amp_Momentum'].iloc[i]
+    curr_vol = df['Volume'].iloc[i]
+    avg_vol = df['Vol_MA_20'].iloc[i]
     
-    thresh_a = 0.15 * df['Std_KA'].iloc[i]
-    thresh_b = 0.15 * df['Std_KB'].iloc[i]
-    
-    diff_a = curr_ka - prev_ka
-    diff_b = curr_kb - prev_kb
-    
-    dir_a = 0
-    if abs(diff_a) > thresh_a:
-        dir_a = 1 if diff_a > 0 else -1
-        
-    dir_b = 0
-    if abs(diff_b) > thresh_b:
-        dir_b = 1 if diff_b > 0 else -1
-        
-    if dir_a != 0 and dir_b != 0 and dir_a != dir_b:
-        status = "🟩 BTX"
+    if curr_amp > 0.15 and curr_vol > avg_vol:
+        status = "🟢 BULL STRENGTH"
+    elif curr_amp < -0.15 and curr_vol > avg_vol:
+        status = "🔴 BEAR PRESSURE"
     else:
-        status = "⚠️ TRAP"
-        
-    btc_status_list.append(status)
+        status = "⚪ NEUTRAL FLAT"
+    vol_mom_decisions.append(status)
 
-df['BTC_Status'] = btc_status_list
+df['Vol_Mom_Decision'] = vol_mom_decisions
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL (Strict Precision Layer)
+# 🎛️ DASHBOARD DISPLAY PANEL (Strict Columns Formatting Layer)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **WMA Purged & Re-aligned:** ATR_Kalman_Diff successfully computed and nested directly next to Close_Raw.")
+st.success("🟢 **Core Matrix Re-engineered:** Clean dataset structured strictly around your chosen vectors.")
 
-# Target Order: Close_Raw -> ATR_Kalman_Diff -> High -> Low...
+# Target structural order requested by the user
 clean_cols = [
-    'Close', 'ATR_Kalman_Diff', 'High', 'Low', 'ATR', 'Hurst', 
-    'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'Hurst_Amp_Momentum', 
-    'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
+    'Close', 'Kalman_Baseline', 'Velocity', 'Volume', 
+    'Hurst', 'Hurst_Amp_Momentum', 'Vol_Mom_Decision'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
-# Precision Rounding
-display_df['ATR_Kalman_Diff'] = display_df['ATR_Kalman_Diff'].round(2) # Asset pricing base precision
+# Precision Rounding Layers
+display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
+display_df['Kalman_Baseline'] = display_df['Kalman_Baseline'].round(2)
+display_df['Velocity'] = display_df['Velocity'].round(2)
+display_df['Volume'] = display_df['Volume'].round(0) # Actual absolute Volume display count
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['ATR_x_Hurst'] = display_df['ATR_x_Hurst'].round(4)
-display_df['Kalman_ATR_Hurst'] = display_df['Kalman_ATR_Hurst'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
-display_df['Column_A'] = display_df['Column_A'].round(4)
-display_df['Kalman_Column_A'] = display_df['Kalman_Column_A'].round(4)
-display_df['Column_B'] = display_df['Column_B'].round(4)
-display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
-for c in ['Close_Raw', 'High', 'Low', 'ATR']:
-    display_df[c] = display_df[c].round(2)
 
+# Chronological sorting for visualization (latest closed bar on top)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 1-Year Strict Real-Time Trading Matrix")
+st.subheader("📋 Bitcoin 1-Hour Purged Core Analytics Board")
 st.dataframe(display_df, use_container_width=True, height=750)
