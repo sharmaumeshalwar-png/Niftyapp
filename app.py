@@ -56,12 +56,10 @@ def calculate_wma_multiplier(series, multiplier=0.850):
     output = np.zeros(len(vals))
     if len(vals) == 0: return output
     
-    # Initialize first index safely
     output[0] = vals[0]
-    remainder = 1.0 - multiplier # 0.150
+    remainder = 1.0 - multiplier 
     
     for i in range(1, len(vals)):
-        # Current * 0.850 + Previous_Output * 0.150
         output[i] = (vals[i] * multiplier) + (output[i-1] * remainder)
         
     return pd.Series(output, index=series.index)
@@ -79,7 +77,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Immediately drop the active, unclosed 1-hour candle.
+            # ⛔ CUTOFF ENGINE: Drop the active, unclosed 1-hour candle.
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -135,6 +133,9 @@ df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.
 # 3. Custom Multiplier WMA (Strictly 0.850 Factor)
 df['WMA_ATR_Hurst'] = calculate_wma_multiplier(df['ATR_x_Hurst'], multiplier=0.850).ffill().fillna(0)
 
+# 🎯 NEW REQ: Target Difference Column (Kalman ATR - WMA ATR)
+df['Kalman_WMA_Diff'] = df['Kalman_ATR_Hurst'] - df['WMA_ATR_Hurst']
+
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
@@ -186,15 +187,15 @@ for i in range(1, len(df)):
 df['BTC_Status'] = btc_status_list
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL (Zero Repaint Frozen Layout)
+# 🎛️ DASHBOARD DISPLAY PANEL (Strict Placement Layer)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Multiplier Setup Locked:** WMA engine successfully configured with a strict 0.850 smoothing weight coefficient.")
+st.success("🟢 **Column Alignment Applied:** New Kalman-WMA Diff metric explicitly nested right beside Close_Raw.")
 
-# Display grid
+# Target structural order layout (Close -> Kalman_WMA_Diff -> High/Low...)
 clean_cols = [
-    'Close', 'High', 'Low', 'ATR', 'Hurst', 
+    'Close', 'Kalman_WMA_Diff', 'High', 'Low', 'ATR', 'Hurst', 
     'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'WMA_ATR_Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
@@ -202,6 +203,7 @@ display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
 # Precision Rounding
+display_df['Kalman_WMA_Diff'] = display_df['Kalman_WMA_Diff'].round(4)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['ATR_x_Hurst'] = display_df['ATR_x_Hurst'].round(4)
 display_df['Kalman_ATR_Hurst'] = display_df['Kalman_ATR_Hurst'].round(4)
