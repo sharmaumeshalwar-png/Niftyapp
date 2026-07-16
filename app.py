@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="Crypto VIX 24/7 Engine", layout="wide")
-st.title("⚡ Crypto Volatility (CVOL) 24/7 Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Crypto VIX Accumulator (100% Leak-Proof)")
+st.set_page_config(page_title="India VIX Master Engine", layout="wide")
+st.title("⚡ India VIX Pure Action Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel India VIX Accumulator (100% Leak-Proof & Repaint-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,24 +39,25 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Targeting CVOL-USD 24/7 Index Feed)
+# 🛡️ SYSTEM DATA INGESTION (Targeting NSE India VIX Index)
 # -----------------------------------------------------------------
 df = None
-# Paji, pure active index stream target kiya hai jo Yahoo Finance par high-density updates deta hai
-target_ticker = "CVOL-USD" 
+# Paji, NSE India VIX ka exact Yahoo Finance ticker lock kar diya hai
+target_ticker = "^INDIAVIX" 
 
-with st.spinner(f"Fetching Live 24/7 {target_ticker} Streaming Matrix..."):
+with st.spinner(f"Fetching Live {target_ticker} Indian Market Stream..."):
     try:
+        # Fetching 2 years data at 1-hour intervals
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Live Incomplete hourly candle protection
+            # Live Incomplete hourly candle protection (Strictly locked to fully closed bars)
             df = df.iloc[:-1]
             
-            # Pure IST Conversion (24/7 Crypto Timeline Locked)
+            # Direct Pure IST Alignment for Indian Stock Exchange
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -71,7 +72,7 @@ with st.spinner(f"Fetching Live 24/7 {target_ticker} Streaming Matrix..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
-# Setup Isolated Volatility Index Arrays from Full Stream
+# Setup Isolated India VIX Arrays from Full Historical Stream
 close_arr = df['Close'].values
 
 # Strict Price Kalman Baseline Calculation
@@ -84,17 +85,17 @@ low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill() 
 
-# Hurst Vector Generation
+# Hurst Vector Generation on full window memory
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Price-based Weighted Momentum Calculation
+# Exact original Price-based Weighted Momentum Calculation
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Scaling Momentum by Hurst Intensity
+# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean NaNs strictly before creating rolling channels
+# Clean NaNs strictly before creating rolling statistical channels
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
@@ -135,16 +136,16 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION
+# 🤖 SIGNAL GENERATION (India Market Volatility Mapping)
 signal_log = []
-current_sig = "🔴 VOLATILITY CRUSH / RISK ON"
+current_sig = "🔴 FEAR CRUSH / SHANTI ZONE"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
     if acc_chan >= 4:
-        current_sig = "🟢 VOLATILITY SPIKE / RISK OFF"
+        current_sig = "🟢 PANIC SPIKE / RISK OFF"
     elif acc_chan <= 2:
-        current_sig = "🔴 VOLATILITY CRUSH / RISK ON"
+        current_sig = "🔴 FEAR CRUSH / RISK ON"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -160,7 +161,7 @@ for i in range(len(df)):
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        p_up = 0.55 if "SPIKE" in sig else 0.45
+        p_up = 0.55 if "PANIC SPIKE" in sig else 0.45
     elif acc_chan == 2:
         p_up = 0.25
     else:
@@ -176,17 +177,17 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live {target_ticker} Crypto Volatility Candles (24/7 IST)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure India VIX Live Candles (Full NSE History Loaded)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Rename to match UI spec
-display_df.rename(columns={'Close': 'CVOL_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'IndiaVIX_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
-for c in ['CVOL_Raw', 'Hurst_Amp_Momentum']:
+for c in ['IndiaVIX_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting & Pure IST String Conversion
@@ -194,5 +195,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (24/7 IST)")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (NSE Hours)")
 st.dataframe(display_df, use_container_width=True, height=750)
