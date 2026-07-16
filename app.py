@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="India VIX Master Engine", layout="wide")
-st.title("⚡ India VIX Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel India VIX Accumulator (100% Leak-Proof & Repaint-Free)")
+st.set_page_config(page_title="WTI Crude Master Engine", layout="wide")
+st.title("⚡ WTI Crude Oil 24-Hour Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Volatility Accumulator (100% Leak-Proof & Repaint-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,13 +39,13 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Targeting NSE India VIX Index)
+# 🛡️ SYSTEM DATA INGESTION (Targeting Global WTI Crude Oil Futures)
 # -----------------------------------------------------------------
 df = None
-# Paji, NSE India VIX ka exact Yahoo Finance ticker lock kar diya hai
-target_ticker = "^INDIAVIX" 
+# Paji, NYMEX WTI Crude Oil ka direct continuous ticker lock kiya hai
+target_ticker = "CL=F" 
 
-with st.spinner(f"Fetching Live {target_ticker} Indian Market Stream..."):
+with st.spinner(f"Fetching Live 24-Hour {target_ticker} Global Matrix..."):
     try:
         # Fetching 2 years data at 1-hour intervals
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
@@ -57,13 +57,13 @@ with st.spinner(f"Fetching Live {target_ticker} Indian Market Stream..."):
             # Live Incomplete hourly candle protection (Strictly locked to fully closed bars)
             df = df.iloc[:-1]
             
-            # Direct Pure IST Alignment for Indian Stock Exchange
+            # Direct Pure IST Alignment for 24-Hour Timeline Tracking
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error(f"🚨 Error: Insufficient historical candles for {target_ticker} on this frame.")
+            st.error(f"🚨 Error: Insufficient historical data lines for {target_ticker}.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
@@ -72,7 +72,7 @@ with st.spinner(f"Fetching Live {target_ticker} Indian Market Stream..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
-# Setup Isolated India VIX Arrays from Full Historical Stream
+# Setup Isolated WTI Close Price Arrays from Full Stream
 close_arr = df['Close'].values
 
 # Strict Price Kalman Baseline Calculation
@@ -136,16 +136,16 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION (India Market Volatility Mapping)
+# 🤖 SIGNAL GENERATION (WTI Crude Specific Momentum Mapping)
 signal_log = []
-current_sig = "🔴 FEAR CRUSH / SHANTI ZONE"
+current_sig = "🔴 BEARISH MOMENTUM / SHANTI ZONE"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
     if acc_chan >= 4:
-        current_sig = "🟢 PANIC SPIKE / RISK OFF"
+        current_sig = "🟢 BULLISH MOMENTUM / RISK OFF SHIFT"
     elif acc_chan <= 2:
-        current_sig = "🔴 FEAR CRUSH / RISK ON"
+        current_sig = "🔴 BEARISH MOMENTUM / RISK ON ACCUMULATION"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -161,7 +161,7 @@ for i in range(len(df)):
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        p_up = 0.55 if "PANIC SPIKE" in sig else 0.45
+        p_up = 0.55 if "BULLISH" in sig else 0.45
     elif acc_chan == 2:
         p_up = 0.25
     else:
@@ -177,17 +177,17 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure India VIX Live Candles (Full NSE History Loaded)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure WTI Crude Live 24-Hour Candles (IST Tracking Enabled)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Rename to match UI spec
-display_df.rename(columns={'Close': 'IndiaVIX_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'WTI_Crude_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
-for c in ['IndiaVIX_Raw', 'Hurst_Amp_Momentum']:
+for c in ['WTI_Crude_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting & Pure IST String Conversion
@@ -195,5 +195,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (NSE Hours)")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (24-Hour IST)")
 st.dataframe(display_df, use_container_width=True, height=750)
