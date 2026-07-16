@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC 1-Year Pure Value Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) 1-Year Pure Numeric Value Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candle Resolution | Strictly 1-Year Data Window | Leakage Free")
+st.set_page_config(page_title="BTC Strict Value Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Strict 2-State Divergence (BTX or TRAP) | 100% Leakage Free")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -56,7 +56,6 @@ def calculate_rolling_hurst(price_series, window=100):
 df = None
 with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
     try:
-        # Paji, strictly changed period to "1y" to lock limits within last 12 months
         df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -83,7 +82,7 @@ with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# Price Kalman Baseline Calculation
+# Price Kalman Baseline
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
 # ATR calculation
@@ -96,7 +95,7 @@ df['ATR'] = true_range.rolling(14).mean().ffill()
 # Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Price-based Weighted Momentum Calculation
+# Price-based Weighted Momentum
 df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
 raw_weighted_momentum = df['Close_Minus_Kalman'].values
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
@@ -104,7 +103,7 @@ df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, init
 # Hurst Amplification
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean NaNs before sequential math operations
+# Clean NaNs
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
@@ -117,29 +116,47 @@ col_a_vals = df['Column_A'].bfill().values
 col_b_vals = df['Column_B'].bfill().values
 atr_vals = df['ATR'].bfill().values
 
-# Dynamic ATR Adjustment Layer
 df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
 df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
 
 # =====================================================================
-# ⚡ DIVERGENCE ANALYSIS LOOP (BTX / TRAP DETECTOR)
+# 🛡️ STRICT 2-STATE DIVERGENCE DETECTION (BTX vs TRAP)
 # =====================================================================
+# Noise dynamic thresholds
+df['Std_KA'] = df['Kalman_Column_A'].rolling(20, min_periods=1).std().fillna(1.0)
+df['Std_KB'] = df['Kalman_Column_B'].rolling(20, min_periods=1).std().fillna(1.0)
+
 btc_status_list = ["Initializing"]
 
 for i in range(1, len(df)):
     curr_ka = df['Kalman_Column_A'].iloc[i]
     prev_ka = df['Kalman_Column_A'].iloc[i-1]
-    
     curr_kb = df['Kalman_Column_B'].iloc[i]
     prev_kb = df['Kalman_Column_B'].iloc[i-1]
     
-    ka_increased = curr_ka > prev_ka
-    kb_increased = curr_kb > prev_kb
+    # 15% Standard Deviation filter for cutting flat line jitter
+    thresh_a = 0.15 * df['Std_KA'].iloc[i]
+    thresh_b = 0.15 * df['Std_KB'].iloc[i]
     
-    if ka_increased == kb_increased:
-        status = "⚠️ TRAP"
-    else:
+    diff_a = curr_ka - prev_ka
+    diff_b = curr_kb - prev_kb
+    
+    # Get direct strict states (-1, 0, 1)
+    dir_a = 0
+    if abs(diff_a) > thresh_a:
+        dir_a = 1 if diff_a > 0 else -1
+        
+    dir_b = 0
+    if abs(diff_b) > thresh_b:
+        dir_b = 1 if diff_b > 0 else -1
+        
+    # Paji strict rule mapping:
+    # Only if direction A and B are totally opposite AND both are not flat (0)
+    if dir_a != 0 and dir_b != 0 and dir_a != dir_b:
         status = "🟩 BTX"
+    else:
+        # Baki saare scenarios me direct TRAP
+        status = "⚠️ TRAP"
         
     btc_status_list.append(status)
 
@@ -150,8 +167,9 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **1-Year Window Synced:** Data range localized to past 12 months. Pure leakage protection active.")
+st.success("🟢 **Strict Loop Synchronized:** System locked on 2-State (BTX/TRAP) Output.")
 
+# Display grid
 clean_cols = [
     'Close', 'High', 'Low', 'ATR', 'Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
@@ -169,9 +187,9 @@ display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
 for c in ['Close_Raw', 'High', 'Low', 'ATR']:
     display_df[c] = display_df[c].round(2)
 
-# Reverse for latest data on top
+# Reverse for latest data on top (Chronological Lock)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 1-Year Pure Raw Values Trading Matrix")
+st.subheader("📋 Bitcoin 1-Year Strict Real-Time Trading Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
