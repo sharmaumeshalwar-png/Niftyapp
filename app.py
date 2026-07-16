@@ -4,57 +4,52 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
+st.set_page_config(page_title="BTC Anti-Leakage Kinematics", layout="wide")
 st.title("🚀 Bitcoin (BTC-USD) Newtonian Kinematics Engine")
-st.write("🎯 **Physics-Based Analytics:** 1-Hour Candles | Quadratic Polynomial Velocity | 100% Zero-Leakage Locked")
+st.write("🎯 **Physics-Based Analytics:** 1-Hour Candles | 100% Guaranteed Anti-Leakage & No Wrap-Around")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal - Newtonian Mechanics)
+# MATHEMATICAL ENGINES (Strictly Causal - No Lookahead)
 # =====================================================================
 def calculate_kinematic_states(price_series, window=14):
     """
     Fits a local quadratic polynomial (y = A*t^2 + B*t + C) at each point 
-    to calculate instantaneous velocity (dy/dt) and acceleration (d^2y/dt^2).
-    Mathematically proven physics-based tracking without SMO or Kalman.
+    to calculate instantaneous velocity (dy/dt). Purely causal.
     """
     n = len(price_series)
     velocity = np.zeros(n)
     acceleration = np.zeros(n)
     
-    # Pre-calculate time indices for local regression
     t = np.arange(window)
-    # Design matrix for quadratic fit: X = [t^2, t, 1]
     X = np.vstack([t**2, t, np.ones(window)]).T
-    # Pseudo-inverse of X for fast least-squares computation
     X_pseudo = np.linalg.pinv(X)
     
     for i in range(window - 1, n):
-        # Extract window slice (Causal window)
+        # Slice only up to current index i (causal window)
         y = price_series[i - window + 1 : i + 1]
-        
-        # Fit polynomial: coefficients beta = [A, B, C]^T
         beta = X_pseudo.dot(y)
-        
-        # Instantaneous derivative at current time t = window - 1
         curr_t = window - 1
         
-        # Velocity v = dy/dt = 2A*t + B
-        v = (2.0 * beta[0] * curr_t) + beta[1]
-        
-        # Acceleration a = d^2y/dt^2 = 2A
-        a = 2.0 * beta[0]
-        
-        velocity[i] = v
-        acceleration[i] = a
+        # Velocity v = 2A*t + B
+        velocity[i] = (2.0 * beta[0] * curr_t) + beta[1]
+        # Acceleration a = 2A
+        acceleration[i] = 2.0 * beta[0]
         
     return velocity, acceleration
 
-def calculate_rolling_hurst(price_series, window=100):
-    hurst_values = np.full(len(price_series), 0.5) 
-    log_returns = np.log(price_series / np.roll(price_series, 1))
-    log_returns[0] = 0
+def calculate_rolling_hurst_safe(price_series, window=100):
+    """
+    Safe Hurst calculation without np.roll wrap-around leakage.
+    """
+    hurst_values = np.full(len(price_series), 0.5)
+    
+    # 🛡️ STRICT ANTI-LEAK SHIFT (Zero wrap-around)
+    # log_returns[t] = log(p[t] / p[t-1])
+    log_returns = np.zeros(len(price_series))
+    log_returns[1:] = np.log(price_series[1:] / price_series[:-1])
     
     for i in range(window, len(price_series)):
+        # Strictly slice past windows, index 0 is safe/zeroed
         window_data = log_returns[i-window+1:i+1]
         cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
@@ -77,7 +72,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Drop the active unclosed dynamic 1-hour candle.
+            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -92,31 +87,28 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION PIPELINE (Forward Flow Only)
+# 🔥 GLOBAL CALCULATION PIPELINE (Strict Forward Flow)
 # =====================================================================
 close_arr = df['Close'].values
 
-# 1. APPLY KINEMATICS PHYSICS ENGINE
-# fits quadratic curve in a rolling 14-hour causal window
+# 1. Kinematics Physics Engine (No SMO/Kalman noise)
 velocity, acceleration = calculate_kinematic_states(close_arr, window=14)
 df['Kinematic_Velocity'] = velocity
 df['Kinematic_Acceleration'] = acceleration
 
-# 2. Hurst Vector Generation
-df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
+# 2. 🛡️ Safe Hurst Vector Generation (Leakage completely killed)
+df['Hurst'] = calculate_rolling_hurst_safe(close_arr, window=100)
 
-# 3. Hurst Amplified Momentum (Velocity Scaled by Hurst Trend Index)
-# Since Kinematic velocity is already in price units/hour, it has natural absolute scales
+# 3. Hurst Amplified Momentum
 df['Hurst_Amp_Momentum'] = df['Kinematic_Velocity'] * (df['Hurst'] * 2.0)
 
-# Clean dynamic NaNs
+# Clean NaNs
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 4. Volume Rolling Mean for Causal Strength Analysis
+# 4. Volume Rolling Mean
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
 # 5. Newtonian Volume-Momentum Decision Engine
-# Stable and clean signals based on true physical acceleration and speed
 vol_mom_decisions = []
 for i in range(len(df)):
     curr_vel = df['Kinematic_Velocity'].iloc[i]
@@ -124,10 +116,8 @@ for i in range(len(df)):
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    # BULL: Velocity positive, accelerating upwards, and strong volume
     if curr_vel > 15.0 and curr_acc > 0.0 and curr_vol > avg_vol:
         status = "🟢 NEWTON BULL"
-    # BEAR: Velocity negative, decelerating/dropping downwards, and strong volume
     elif curr_vel < -15.0 and curr_acc < 0.0 and curr_vol > avg_vol:
         status = "🔴 NEWTON BEAR"
     else:
@@ -137,11 +127,11 @@ for i in range(len(df)):
 df['Vol_Mom_Decision'] = vol_mom_decisions
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL (Strict Columns Formatting Layer)
+# 🎛️ DASHBOARD DISPLAY PANEL
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Newtonian Kinematics Active:** Tracking price as a physical object with smooth velocity & acceleration.")
+st.success("🔒 **Leakage Patched!** `np.roll` has been completely deleted. System is now mathematically 100% causal.")
 
 # Clean Layout Display
 clean_cols = [
@@ -151,10 +141,10 @@ clean_cols = [
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
-# Precision Rounding Layers
+# Precision Rounding
 display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
-display_df['Kinematic_Velocity'] = display_df['Kinematic_Velocity'].round(2)      # Absolute Dollars/Hour change
-display_df['Kinematic_Acceleration'] = display_df['Kinematic_Acceleration'].round(4)  # Rate of speed change
+display_df['Kinematic_Velocity'] = display_df['Kinematic_Velocity'].round(2)
+display_df['Kinematic_Acceleration'] = display_df['Kinematic_Acceleration'].round(4)
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2)
