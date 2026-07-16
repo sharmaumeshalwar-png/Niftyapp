@@ -47,9 +47,9 @@ def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.
 def calculate_rolling_hurst(price_series, window=100):
     hurst_values = np.full(len(price_series), 0.5) 
     
-    # 🛡️ ZERO-LEAKAGE SHIFT (Anti np.roll leakage)
-    shifted_prices = pd.Series(price_series).shift(1).to_numpy()
-    shifted_prices[0] = price_series[0]  # Division by zero safety
+    # 🛡️ ZERO-LEAKAGE SHIFT (Added .copy() to force a writable memory allocation)
+    shifted_prices = pd.Series(price_series).shift(1).to_numpy().copy()
+    shifted_prices[0] = price_series[0]  # Safe from read-only ValueError!
     log_returns = np.log(price_series / shifted_prices)
     log_returns[0] = 0.0
     
