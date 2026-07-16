@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="VIX Master Signal Engine", layout="wide")
-st.title("⚡ Volatility (VIX) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Volatility Accumulator (100% Leak-Proof)")
+st.set_page_config(page_title="Crypto VIX 24/7 Engine", layout="wide")
+st.title("⚡ Crypto Volatility (BitVol) 24/7 Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Crypto Volatility Accumulator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,12 +39,13 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Targeting Macro VIX Index)
+# 🛡️ SYSTEM DATA INGESTION (Targeting 24/7 Crypto BitVol Index)
 # -----------------------------------------------------------------
 df = None
-target_ticker = "^VIX" 
+# Paji, Yahoo Finance ka authentic 24/7 Crypto VIX ticker set kar diya hai
+target_ticker = "BITVOL-USD" 
 
-with st.spinner(f"Fetching Live {target_ticker} Data..."):
+with st.spinner(f"Fetching Live 24/7 {target_ticker} Data..."):
     try:
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
@@ -55,7 +56,7 @@ with st.spinner(f"Fetching Live {target_ticker} Data..."):
             # Live Incomplete hourly candle protection
             df = df.iloc[:-1]
             
-            # Strict Timezone Calibration to Indian Standard Time (IST)
+            # Pure IST Conversion (24/7 Trading Alignment)
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -72,27 +73,27 @@ with st.spinner(f"Fetching Live {target_ticker} Data..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# Strict Isolated Price Kalman Baseline Calculation
+# Strict Price Kalman Baseline Calculation
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation without lookahead/bfill bias
+# ATR calculation without lookahead bias
 high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill() 
 
-# Hurst Vector Generation on full window
+# Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Exact original Price-based Weighted Momentum Calculation
+# Price-based Weighted Momentum Calculation
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+# Scaling Momentum by Hurst Intensity
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean NaNs strictly before creating rolling statistical channels
+# Clean NaNs strictly before creating rolling channels
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
@@ -135,14 +136,14 @@ df['Accumulator_Channel'] = accumulator
 
 # 🤖 SIGNAL GENERATION
 signal_log = []
-current_sig = "🔴 CRASH RISK / HIGH VOL"
+current_sig = "🔴 CRYPTO CRASH RISK / HIGH VOL"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
     if acc_chan >= 4:
-        current_sig = "🟢 VOL SPIKE / LONG HEDGE"
+        current_sig = "🟢 CRYPTO VOL SPIKE / RISK OFF"
     elif acc_chan <= 2:
-        current_sig = "🔴 VOL CRUSH / RISK ON"
+        current_sig = "🔴 CRYPTO VOL CRUSH / RISK ON"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -174,17 +175,17 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Volatility Candles (IST Time Zone Active)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Crypto VIX Candles (24/7 Streaming via IST)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
-# Rename to match original UI spec
-display_df.rename(columns={'Close': 'VIX_Raw'}, inplace=True)
+# Rename to match UI spec
+display_df.rename(columns={'Close': 'BitVol_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
-for c in ['VIX_Raw', 'Hurst_Amp_Momentum']:
+for c in ['BitVol_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting & Pure IST String Conversion
@@ -192,5 +193,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (IST)")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (24/7 IST)")
 st.dataframe(display_df, use_container_width=True, height=750)
