@@ -42,7 +42,6 @@ def calculate_rolling_hurst(price_series, window=100):
 # 🛡️ SYSTEM DATA INGESTION (Targeting Macro VIX Index)
 # -----------------------------------------------------------------
 df = None
-# Paji, standard macro stream ke liye '^VIX' ticker set kiya hai jo BTC market direction dictate karta hai
 target_ticker = "^VIX" 
 
 with st.spinner(f"Fetching Live {target_ticker} Data..."):
@@ -55,6 +54,8 @@ with st.spinner(f"Fetching Live {target_ticker} Data..."):
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             # Live Incomplete hourly candle protection
             df = df.iloc[:-1]
+            
+            # Strict Timezone Calibration to Indian Standard Time (IST)
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -69,7 +70,6 @@ with st.spinner(f"Fetching Live {target_ticker} Data..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
-# Setup Isolated Volatility Price Arrays from Full DataFrame
 close_arr = df['Close'].values
 
 # Strict Isolated Price Kalman Baseline Calculation
@@ -133,16 +133,14 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION (Volatility Expansion/Contraction Logic Locked)
+# 🤖 SIGNAL GENERATION
 signal_log = []
 current_sig = "🔴 CRASH RISK / HIGH VOL"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
-    # Volatility Spike (Channel >= 4) means market panic / BTC drawdown pressure high
     if acc_chan >= 4:
         current_sig = "🟢 VOL SPIKE / LONG HEDGE"
-    # Volatility Crush (Channel <= 2) means stable calm market / BTC growth zone
     elif acc_chan <= 2:
         current_sig = "🔴 VOL CRUSH / RISK ON"
     signal_log.append(current_sig)
@@ -172,11 +170,11 @@ df['Prob_Up'] = prob_up
 df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
+# 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked & IST Synced)
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Volatility Candles (Full History & Value Locked)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Volatility Candles (IST Time Zone Active)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
@@ -189,10 +187,10 @@ display_df.rename(columns={'Close': 'VIX_Raw'}, inplace=True)
 for c in ['VIX_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
-# Chronological sorting for dashboard display panel (latest on top)
+# Chronological sorting & Pure IST String Conversion
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix (IST)")
 st.dataframe(display_df, use_container_width=True, height=750)
