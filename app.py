@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Pure Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Numeric Value Engine")
-st.write("🎯 **Pure Value Trading:** 100% Locked Engine with ATR-Adaptive Kalman Layers (Zero Signals, Zero ML)")
+st.write("🎯 **Pure Value Trading:** Pure Volatility Divergence Matrix (Zero Signals, Zero ML, Cleanup Done)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -23,7 +23,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-# Dynamic Kalman Engine that accepts an array of changing P (ATR) values
 def apply_kalman_adaptive_p(data_array, p_array, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
     x = data_array[0]
@@ -99,7 +98,6 @@ df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 # Exact original Price-based Weighted Momentum Calculation
 df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
 raw_weighted_momentum = df['Close_Minus_Kalman'].values
-
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # 🔥 THE MAGICAL MULTIPLICATION (Unaltered original core value)
@@ -107,44 +105,6 @@ df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
 # Clean NaNs strictly before creating rolling statistical channels
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
-
-# 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
-mom_vals = df['Hurst_Amp_Momentum'].to_numpy()
-rolling_window = 50
-mom_mean = df['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
-mom_std = df['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
-
-channels = np.zeros(len(mom_vals), dtype=int)
-accumulator = np.zeros(len(mom_vals), dtype=int)
-
-for i in range(len(mom_vals)):
-    val = mom_vals[i]
-    m = mom_mean[i]
-    s = mom_std[i]
-    
-    if val > (m + 1.5 * s): channels[i] = 5
-    elif val > (m + 0.5 * s): channels[i] = 4
-    elif val < (m - 1.5 * s): channels[i] = 1
-    elif val < (m - 0.5 * s): channels[i] = 2
-    else: channels[i] = 3
-        
-    if i == 0:
-        accumulator[i] = channels[i]
-    else:
-        prev_acc = accumulator[i-1]
-        curr_chan = channels[i]
-        if abs(curr_chan - prev_acc) >= 1: accumulator[i] = curr_chan
-        else: accumulator[i] = prev_acc
-
-df['Accumulator_Channel'] = accumulator
-
-# =====================================================================
-# ⚡ PURE NUMERIC VELOCITY DERIVATION & VELOCITY KALMAN
-# =====================================================================
-df['Momentum_Velocity'] = df['Hurst_Amp_Momentum'] - df['Hurst_Amp_Momentum'].shift(1)
-
-velocity_vals = df['Momentum_Velocity'].bfill().values
-df['Velocity_Kalman'] = apply_kalman_filter_custom(velocity_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # =====================================================================
 # 🧮 CUSTOM MATH COLUMNS & ATR-ADAPTIVE KALMAN FILTERS
@@ -157,22 +117,49 @@ col_a_vals = df['Column_A'].bfill().values
 col_b_vals = df['Column_B'].bfill().values
 atr_vals = df['ATR'].bfill().values
 
-# Paji yahan strict ATR adjustment engine map kar diya hai
+# Paji strict ATR adjustment engine mapping
 df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
 df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
+
+# =====================================================================
+# ⚡ DIVERGENCE ANALYSIS LOOP (BTX / TRAP DETECTOR)
+# =====================================================================
+btc_status_list = ["Initializing"]
+
+for i in range(1, len(df)):
+    curr_ka = df['Kalman_Column_A'].iloc[i]
+    prev_ka = df['Kalman_Column_A'].iloc[i-1]
+    
+    curr_kb = df['Kalman_Column_B'].iloc[i]
+    prev_kb = df['Kalman_Column_B'].iloc[i-1]
+    
+    # Directions naapna
+    ka_increased = curr_ka > prev_ka
+    kb_increased = curr_kb > prev_kb
+    
+    # Paji condition mapping rules
+    if ka_increased == kb_increased:
+        # Dono same side par chale (dono inc ya dono dec) -> TRAP
+        status = "⚠️ TRAP"
+    else:
+        # Dono opposite directions me hain -> GREEN BOX BTX
+        status = "🟩 BTX"
+        
+    btc_status_list.append(status)
+
+df['BTC_Status'] = btc_status_list
 
 # =====================================================================
 # 🎛️ DASHBOARD DISPLAY PANEL (Zero Repaint Frozen Layout)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Bitcoin Grid Synchronized:** Kalman Column A & B are now dynamically adjusted via ATR vector.")
+st.success("🟢 **Bitcoin Matrix Updated:** Old components deleted. Divergence tracking activated.")
 
-# Display grid
+# Display grid strictly requested columns
 clean_cols = [
     'Close', 'High', 'Low', 'ATR', 'Hurst', 'Hurst_Amp_Momentum', 
-    'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B',
-    'Momentum_Velocity', 'Velocity_Kalman', 'Accumulator_Channel'
+    'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
 display_df = df_predict[clean_cols].copy()
 
@@ -185,8 +172,6 @@ display_df['Column_A'] = display_df['Column_A'].round(4)
 display_df['Kalman_Column_A'] = display_df['Kalman_Column_A'].round(4)
 display_df['Column_B'] = display_df['Column_B'].round(4)
 display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
-display_df['Momentum_Velocity'] = display_df['Momentum_Velocity'].round(4)
-display_df['Velocity_Kalman'] = display_df['Velocity_Kalman'].round(4)
 for c in ['Close_Raw', 'High', 'Low', 'ATR']:
     display_df[c] = display_df[c].round(2)
 
