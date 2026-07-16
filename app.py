@@ -4,8 +4,8 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="ETH Pure Value Engine", layout="wide")
-st.title("⚡ Ethereum (ETH-USD) Pure Numeric Value Engine")
+st.set_page_config(page_title="BTC Pure Value Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Numeric Value Engine")
 st.write("🎯 **Pure Value Trading:** 100% Untouched Hurst-Amplified Momentum Raw Numerical Grid (Zero Signals, Zero ML)")
 
 # =====================================================================
@@ -39,12 +39,12 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to ETH-USD)
+# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to BTC-USD)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live 2-Year ETH Data..."):
+with st.spinner("Fetching Live 2-Year BTC Data..."):
     try:
-        df = yf.download(tickers="ETH-USD", period="2y", interval="1h")
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -126,9 +126,8 @@ for i in range(len(mom_vals)):
 df['Accumulator_Channel'] = accumulator
 
 # =====================================================================
-# ⚡ PURE NUMERIC VELOCITY DERIVATION (No Alteration to Base Column)
+# ⚡ PURE NUMERIC VELOCITY DERIVATION
 # =====================================================================
-# Yeh batayega ki value pichle ghante ke mukable kitne raw points upar ya niche hili hai
 df['Momentum_Velocity'] = df['Hurst_Amp_Momentum'] - df['Hurst_Amp_Momentum'].shift(1)
 
 # =====================================================================
@@ -136,7 +135,7 @@ df['Momentum_Velocity'] = df['Hurst_Amp_Momentum'] - df['Hurst_Amp_Momentum'].sh
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Ethereum Grid Synchronized:** Pure Raw Values fully locked and leak-proof.")
+st.success("🟢 **Bitcoin Grid Synchronized:** Core pipeline fully locked, values verified secure.")
 
 # Display grid showing only raw data matrix
 clean_cols = ['Close', 'High', 'Low', 'Hurst_Amp_Momentum', 'Momentum_Velocity', 'Accumulator_Channel']
@@ -144,7 +143,7 @@ display_df = df_predict[clean_cols].copy()
 
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
-# Precision Rounding to see micro variations clearly
+# Precision Rounding
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 display_df['Momentum_Velocity'] = display_df['Momentum_Velocity'].round(4)
 for c in ['Close_Raw', 'High', 'Low']:
@@ -154,5 +153,5 @@ for c in ['Close_Raw', 'High', 'Low']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Ethereum Pure Raw Values Trading Matrix")
+st.subheader("📋 Bitcoin Pure Raw Values Trading Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
