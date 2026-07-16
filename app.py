@@ -4,45 +4,50 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Scaled SMO + Kalman Hybrid", layout="wide")
-st.title("🚀 Bitcoin (BTC-USD) Scaled SMO-Kalman Hybrid Engine")
-st.write("🎯 **Dual-Engine Scaled Analytics:** Smoothed and scaled rocket momentum for highly readable signals | 100% Zero-Leakage")
+st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
+st.title("🚀 Bitcoin (BTC-USD) Newtonian Kinematics Engine")
+st.write("🎯 **Physics-Based Analytics:** 1-Hour Candles | Quadratic Polynomial Velocity | 100% Zero-Leakage Locked")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal - SMO & New Kalman Filter)
+# MATHEMATICAL ENGINES (Strictly Causal - Newtonian Mechanics)
 # =====================================================================
-def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, drag=0.88):
-    if len(price_array) == 0: return [], []
-    x1 = price_array[0]
-    x2 = 0.0
-    est_price = []
-    est_velocity = []
+def calculate_kinematic_states(price_series, window=14):
+    """
+    Fits a local quadratic polynomial (y = A*t^2 + B*t + C) at each point 
+    to calculate instantaneous velocity (dy/dt) and acceleration (d^2y/dt^2).
+    Mathematically proven physics-based tracking without SMO or Kalman.
+    """
+    n = len(price_series)
+    velocity = np.zeros(n)
+    acceleration = np.zeros(n)
     
-    for z in price_array:
-        error = z - x1
-        switching_control = k_gain * np.sign(error) if error != 0 else 0.0
-        dx1 = x2 + (l_gain * error) + switching_control
-        x1 = x1 + dx1
+    # Pre-calculate time indices for local regression
+    t = np.arange(window)
+    # Design matrix for quadratic fit: X = [t^2, t, 1]
+    X = np.vstack([t**2, t, np.ones(window)]).T
+    # Pseudo-inverse of X for fast least-squares computation
+    X_pseudo = np.linalg.pinv(X)
+    
+    for i in range(window - 1, n):
+        # Extract window slice (Causal window)
+        y = price_series[i - window + 1 : i + 1]
         
-        dx2 = 0.05 * switching_control
-        x2 = (x2 * drag) + dx2  
+        # Fit polynomial: coefficients beta = [A, B, C]^T
+        beta = X_pseudo.dot(y)
         
-        est_price.append(x1)
-        est_velocity.append(x2)
+        # Instantaneous derivative at current time t = window - 1
+        curr_t = window - 1
         
-    return est_price, est_velocity
-
-def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.005):
-    if len(data_array) == 0: return []
-    x, p = data_array[0], initial_p  
-    filtered_values = []
-    for z in data_array:
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+        # Velocity v = dy/dt = 2A*t + B
+        v = (2.0 * beta[0] * curr_t) + beta[1]
+        
+        # Acceleration a = d^2y/dt^2 = 2A
+        a = 2.0 * beta[0]
+        
+        velocity[i] = v
+        acceleration[i] = a
+        
+    return velocity, acceleration
 
 def calculate_rolling_hurst(price_series, window=100):
     hurst_values = np.full(len(price_series), 0.5) 
@@ -72,7 +77,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
+            # ⛔ CUTOFF ENGINE: Drop the active unclosed dynamic 1-hour candle.
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -91,39 +96,40 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# 1. Apply SMO Trajectory 
-est_p, est_v = apply_sliding_mode_observer_damped(close_arr, k_gain=0.25, l_gain=0.10, drag=0.88)
-df['SMO_Price_Baseline'] = est_p
-df['SMO_Velocity'] = est_v
+# 1. APPLY KINEMATICS PHYSICS ENGINE
+# fits quadratic curve in a rolling 14-hour causal window
+velocity, acceleration = calculate_kinematic_states(close_arr, window=14)
+df['Kinematic_Velocity'] = velocity
+df['Kinematic_Acceleration'] = acceleration
 
 # 2. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. 🎯 SCALED UP: Hurst Amplified Momentum (Multiplied by 10000.0 instead of 100.0)
-df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 10000.0)
+# 3. Hurst Amplified Momentum (Velocity Scaled by Hurst Trend Index)
+# Since Kinematic velocity is already in price units/hour, it has natural absolute scales
+df['Hurst_Amp_Momentum'] = df['Kinematic_Velocity'] * (df['Hurst'] * 2.0)
 
-# Clean dynamic NaNs safely before mapping secondary Kalman
+# Clean dynamic NaNs
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 4. Apply 0.50 Kalman Filter directly onto scaled Hurst_Amp_Momentum
-ham_raw_vals = df['Hurst_Amp_Momentum'].values
-df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.005, r_val=0.005)
-
-# 5. Volume Rolling Mean for Causal Strength Analysis
+# 4. Volume Rolling Mean for Causal Strength Analysis
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
-# 6. SMO + Kalman Volume-Momentum Decision Engine
-# 🎯 Proportional thresholds scaled up from 0.10 to 10.0 to match new values scale!
+# 5. Newtonian Volume-Momentum Decision Engine
+# Stable and clean signals based on true physical acceleration and speed
 vol_mom_decisions = []
 for i in range(len(df)):
-    curr_kalman_amp = df['HAM_Kalman'].iloc[i]
+    curr_vel = df['Kinematic_Velocity'].iloc[i]
+    curr_acc = df['Kinematic_Acceleration'].iloc[i]
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    if curr_kalman_amp > 10.0 and curr_vol > avg_vol:
-        status = "🟢 HYBRID BULL"
-    elif curr_kalman_amp < -10.0 and curr_vol > avg_vol:
-        status = "🔴 HYBRID BEAR"
+    # BULL: Velocity positive, accelerating upwards, and strong volume
+    if curr_vel > 15.0 and curr_acc > 0.0 and curr_vol > avg_vol:
+        status = "🟢 NEWTON BULL"
+    # BEAR: Velocity negative, decelerating/dropping downwards, and strong volume
+    elif curr_vel < -15.0 and curr_acc < 0.0 and curr_vol > avg_vol:
+        status = "🔴 NEWTON BEAR"
     else:
         status = "⚪ NEUTRAL FLAT"
     vol_mom_decisions.append(status)
@@ -131,31 +137,30 @@ for i in range(len(df)):
 df['Vol_Mom_Decision'] = vol_mom_decisions
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL (Strict Grid Alignment)
+# 🎛️ DASHBOARD DISPLAY PANEL (Strict Columns Formatting Layer)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Values Scaled Up (100x):** HAM_Kalman and Hurst_Amp_Momentum are now highly readable!")
+st.success("🟢 **Newtonian Kinematics Active:** Tracking price as a physical object with smooth velocity & acceleration.")
 
-# Target Display Order
+# Clean Layout Display
 clean_cols = [
-    'Close', 'SMO_Price_Baseline', 'SMO_Velocity', 'Volume', 
-    'Hurst', 'Hurst_Amp_Momentum', 'HAM_Kalman', 'Vol_Mom_Decision'
+    'Close', 'Kinematic_Velocity', 'Kinematic_Acceleration', 'Volume', 
+    'Hurst', 'Hurst_Amp_Momentum', 'Vol_Mom_Decision'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
-# Precision Rounding
+# Precision Rounding Layers
 display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
-display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
-display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(4)
+display_df['Kinematic_Velocity'] = display_df['Kinematic_Velocity'].round(2)      # Absolute Dollars/Hour change
+display_df['Kinematic_Acceleration'] = display_df['Kinematic_Acceleration'].round(4)  # Rate of speed change
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2) # Rounded to 2 decimal for cleaner look
-display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)                 # Rounded to 2 decimal for cleaner look
+display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 1-Hour Hybrid SMO-Kalman Board")
+st.subheader("📋 Bitcoin 1-Hour Newtonian Kinematics Analytics Board")
 st.dataframe(display_df, use_container_width=True, height=750)
