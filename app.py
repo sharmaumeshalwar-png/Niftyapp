@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Pure Value Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Numeric Value Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candle Resolution | 100% Leakage Protection Guaranteed")
+st.set_page_config(page_title="BTC 1-Year Pure Value Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) 1-Year Pure Numeric Value Engine")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candle Resolution | Strictly 1-Year Data Window | Leakage Free")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -54,10 +54,10 @@ def calculate_rolling_hurst(price_series, window=100):
 # 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to BTC-USD)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live 2-Year BTC Data (1-Hour Intervals)..."):
+with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
     try:
-        # Strictly fetching 2 years of 1h historical data
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        # Paji, strictly changed period to "1y" to lock limits within last 12 months
+        df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -65,7 +65,6 @@ with st.spinner("Fetching Live 2-Year BTC Data (1-Hour Intervals)..."):
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
             # ⛔ CRITICAL 100% LEAKAGE PROTECTION BLOCK
-            # Drops the current, incomplete running hour candle to avoid real-time repainting bias
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -84,28 +83,28 @@ with st.spinner("Fetching Live 2-Year BTC Data (1-Hour Intervals)..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# Strict Isolated Price Kalman Baseline Calculation
+# Price Kalman Baseline Calculation
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation without lookahead/bfill bias
+# ATR calculation
 high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill() 
 
-# Hurst Vector Generation on full window
+# Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Exact original Price-based Weighted Momentum Calculation
+# Price-based Weighted Momentum Calculation
 df['Close_Minus_Kalman'] = df['Close'] - df['Kalman_Baseline']
 raw_weighted_momentum = df['Close_Minus_Kalman'].values
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE MAGICAL MULTIPLICATION (Unaltered original core value)
+# Hurst Amplification
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean NaNs strictly before creating rolling statistical channels
+# Clean NaNs before sequential math operations
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
@@ -114,12 +113,11 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
-# Arrays extract karein taaki loop operations seamless ho sakein
 col_a_vals = df['Column_A'].bfill().values
 col_b_vals = df['Column_B'].bfill().values
 atr_vals = df['ATR'].bfill().values
 
-# Strict ATR adjustment engine mapping
+# Dynamic ATR Adjustment Layer
 df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
 df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
 
@@ -135,16 +133,12 @@ for i in range(1, len(df)):
     curr_kb = df['Kalman_Column_B'].iloc[i]
     prev_kb = df['Kalman_Column_B'].iloc[i-1]
     
-    # Directions naapna
     ka_increased = curr_ka > prev_ka
     kb_increased = curr_kb > prev_kb
     
-    # 50:50 Directional Rule Condition
     if ka_increased == kb_increased:
-        # Dono same side par chale (dono inc ya dono dec) -> TRAP
         status = "⚠️ TRAP"
     else:
-        # Dono opposite directions me hain -> GREEN BOX BTX
         status = "🟩 BTX"
         
     btc_status_list.append(status)
@@ -156,15 +150,13 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Production Data Verified:** 2-Year horizon completely loaded, 1-Hour candles locked, leakage free.")
+st.success("🟢 **1-Year Window Synced:** Data range localized to past 12 months. Pure leakage protection active.")
 
-# Display grid strictly requested columns
 clean_cols = [
     'Close', 'High', 'Low', 'ATR', 'Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
 display_df = df_predict[clean_cols].copy()
-
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
 # Precision Rounding
@@ -177,9 +169,9 @@ display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
 for c in ['Close_Raw', 'High', 'Low', 'ATR']:
     display_df[c] = display_df[c].round(2)
 
-# Latest records on top (Chronological Lock)
+# Reverse for latest data on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Bitcoin 2-Year Pure Raw Values Trading Matrix")
+st.subheader("📋 Bitcoin 1-Year Pure Raw Values Trading Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
