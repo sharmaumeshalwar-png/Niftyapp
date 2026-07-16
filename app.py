@@ -13,13 +13,13 @@ st.write("🎯 **Dual-Engine Scaled Analytics:** Smoothed and scaled rocket mome
 # =====================================================================
 def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, drag=0.88):
     if len(price_array) == 0: return [], []
-    x1 = price_array[0]
+    x1 = float(price_array[0])
     x2 = 0.0
     est_price = []
     est_velocity = []
     
     for z in price_array:
-        error = z - x1
+        error = float(z) - x1
         switching_control = k_gain * np.sign(error) if error != 0 else 0.0
         dx1 = x2 + (l_gain * error) + switching_control
         x1 = x1 + dx1
@@ -34,20 +34,24 @@ def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, dr
 
 def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.005):
     if len(data_array) == 0: return []
-    x, p = data_array[0], initial_p  
+    x, p = float(data_array[0]), initial_p  
     filtered_values = []
     for z in data_array:
         p = p + q_val
         k = p / (p + r_val)
-        x = x + k * (z - x)
+        x = x + k * (float(z) - x)
         p = (1 - k) * p
         filtered_values.append(x)
     return filtered_values
 
 def calculate_rolling_hurst(price_series, window=100):
     hurst_values = np.full(len(price_series), 0.5) 
-    log_returns = np.log(price_series / np.roll(price_series, 1))
-    log_returns[0] = 0
+    
+    # 🛡️ ZERO-LEAKAGE SHIFT (Anti np.roll leakage)
+    shifted_prices = pd.Series(price_series).shift(1).to_numpy()
+    shifted_prices[0] = price_series[0]  # Division by zero safety
+    log_returns = np.log(price_series / shifted_prices)
+    log_returns[0] = 0.0
     
     for i in range(window, len(price_series)):
         window_data = log_returns[i-window+1:i+1]
@@ -65,22 +69,33 @@ def calculate_rolling_hurst(price_series, window=100):
 df = None
 with st.spinner("Fetching Live 1-Year BTC Data..."):
     try:
+        # Fetch with explicit single-level column structure formatting
         df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        
+        if df is not None and not df.empty:
+            # Flatten multi-index columns securely if present
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 120: 
-            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+            # Clean duplicate columns or indexing quirks
+            df = df.loc[:, ~df.columns.duplicated()]
             
-            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
-            df = df.iloc[:-1]
-            
-            if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+            if len(df) > 120: 
+                df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+                
+                # ⛔ CUTOFF ENGINE: Drop active unclosed live candle to stop leakage
+                df = df.iloc[:-1]
+                
+                # Standardize Timezones
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+                else:
+                    df.index = df.index.tz_convert('Asia/Kolkata')
             else:
-                df.index = df.index.tz_convert('Asia/Kolkata')
+                st.error("🚨 Error: Insufficient data lines.")
+                st.stop()
         else:
-            st.error("🚨 Error: Insufficient data lines.")
+            st.error("🚨 Error: Empty DataFrame returned.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
@@ -89,31 +104,32 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION PIPELINE (Forward Flow Only)
 # =====================================================================
-close_arr = df['Close'].values
+# Squeeze or flatten arrays to ensure explicit 1D processing vectors
+close_arr = df['Close'].to_numpy().flatten()
 
 # 1. Apply SMO Trajectory 
 est_p, est_v = apply_sliding_mode_observer_damped(close_arr, k_gain=0.25, l_gain=0.10, drag=0.88)
 df['SMO_Price_Baseline'] = est_p
 df['SMO_Velocity'] = est_v
 
-# 2. Hurst Vector Generation
+# 2. Hurst Vector Generation (Leakage-free)
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. 🎯 SCALED UP: Hurst Amplified Momentum (Multiplied by 10000.0 instead of 100.0)
+# 3. 🎯 SCALED UP: Hurst Amplified Momentum
 df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 10000.0)
 
 # Clean dynamic NaNs safely before mapping secondary Kalman
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 4. Apply 0.50 Kalman Filter directly onto scaled Hurst_Amp_Momentum
-ham_raw_vals = df['Hurst_Amp_Momentum'].values
-df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.005, r_val=0.005)
+# 4. Apply Highly-Smoothed Kalman Filter onto scaled Hurst_Amp_Momentum
+# ⚙️ Optimized Settings: q_val=0.0002 (Very low process noise), r_val=0.08 (High measurement damping)
+ham_raw_vals = df['Hurst_Amp_Momentum'].to_numpy().flatten()
+df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.0002, r_val=0.08)
 
-# 5. Volume Rolling Mean for Causal Strength Analysis
+# 5. Volume Rolling Mean for Causal Strength Analysis (Strictly ffill() used)
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
 # 6. SMO + Kalman Volume-Momentum Decision Engine
-# 🎯 Proportional thresholds scaled up from 0.10 to 10.0 to match new values scale!
 vol_mom_decisions = []
 for i in range(len(df)):
     curr_kalman_amp = df['HAM_Kalman'].iloc[i]
@@ -135,7 +151,7 @@ df['Vol_Mom_Decision'] = vol_mom_decisions
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Values Scaled Up (100x):** HAM_Kalman and Hurst_Amp_Momentum are now highly readable!")
+st.success("🟢 **Values Scaled Up & Smoothed:** Kalman Settings (Q=0.0002, R=0.08) applied successfully with 100% Zero-Leakage!")
 
 # Target Display Order
 clean_cols = [
@@ -151,9 +167,10 @@ display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
 display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(4)
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2) # Rounded to 2 decimal for cleaner look
-display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)                 # Rounded to 2 decimal for cleaner look
+display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2)
+display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)
 
+# Reverse data presentation chronologically for UI display
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
