@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof & Repaint-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -167,18 +167,18 @@ df['Prob_Up'] = prob_up
 df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY SLICING (Happens LAST to prevent calculation drift)
+# 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
 # =====================================================================
-# Slicing the stable computed rows for UI rendering (e.g., last 500 candles)
-df_predict = df.iloc[-500:].copy()
+# Paji, ab bina slice kiye poora 2 saal ka data ek sath screen pr dikhega
+df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (No Leakage & Value Locked)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Full History & Value Locked)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
-# Rename to match original UI spec if needed
+# Rename to match original UI spec
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
