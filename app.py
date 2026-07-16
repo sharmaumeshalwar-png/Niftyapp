@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof & Repaint-Free)")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Dual-Kalman Gap Core (100% Leak-Proof & Repaint-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -64,9 +64,8 @@ with st.spinner("Fetching Live BTC Data..."):
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
+# 🔥 GLOBAL CALCULATION (Exact Original Core Layout)
 # =====================================================================
-# Setup Isolated Price Arrays from Full DataFrame
 close_arr = df['Close'].values
 
 # Strict Isolated Price Kalman Baseline Calculation
@@ -86,8 +85,22 @@ df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+# 🔥 THE ORIGINAL UNTOUCHED MAGICAL MULTIPLICATION
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
+
+# 🧠 --- NEW ADDITION: PURE DUAL-KALMAN GAP GENERATOR ON ORIGINAL VALUE ---
+# Paji, bina kisi normalization ya price distortion ke, raw_ham par dual tracking chala rahe hain
+raw_ham_arr = df['Hurst_Amp_Momentum'].values
+
+# ⚡ Fast Kalman (High tracking rate for prompt shifts)
+df['Fast_Kalman_HAM'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.01, r_val=0.05)
+
+# 🐢 Slow Kalman (Heavy filtering baseline)
+df['Slow_Kalman_HAM'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.001, r_val=0.3)
+
+# 🏁 Pure Convergence/Divergence Gap Matrix
+df['HAM_Kalman_Gap'] = df['Fast_Kalman_HAM'] - df['Slow_Kalman_HAM']
+# ------------------------------------------------------------------------
 
 # Clean NaNs strictly before creating rolling statistical channels
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
@@ -169,26 +182,25 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 # 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
 # =====================================================================
-# Paji, ab bina slice kiye poora 2 saal ka data ek sath screen pr dikhega
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Full History & Value Locked)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Dual-Kalman Extracted Matrix Ready)!**")
 
-# Format Layout Columns Matrix
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
+# Grid layout with the new numeric parameters side by side
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'HAM_Kalman_Gap', 'Accumulator_Channel', 'Signal']
 display_df = df_predict[clean_cols].copy()
 
-# Rename to match original UI spec
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
-# Precision Matrix Formatting
-for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
-    display_df[c] = display_df[c].round(2)
+# Rounded precisely to 4 decimals for the pure value columns so you can see micro-changes
+for c in ['Hurst_Amp_Momentum', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'HAM_Kalman_Gap']:
+    display_df[c] = display_df[c].round(4)
 
-# Chronological sorting for dashboard display panel (latest on top)
+display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
+
+# Latest outputs on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-# Clean Header & Rendering
-st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
+st.subheader("📋 5-Channel Matrix with Dual-Kalman Momentum Gap Extraction")
 st.dataframe(display_df, use_container_width=True, height=750)
