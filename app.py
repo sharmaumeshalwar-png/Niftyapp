@@ -5,9 +5,9 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="GIFT Nifty 21-Hour Engine", layout="wide")
-st.title("⚡ GIFT Nifty 21-Hour Volatility Accumulator")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum Engine mapped onto Continuous 21-Hour Stream (100% Repaint-Free & Gap-Immune)")
+st.set_page_config(page_title="Silver Master Engine", layout="wide")
+st.title("⚡ Silver Continuous 24-Hour Volatility Accumulator")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum Engine mapped onto Silver Global Futures (100% Repaint-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -40,31 +40,31 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Targeting Continuous GIFT Nifty Futures)
+# 🛡️ SYSTEM DATA INGESTION (Targeting Continuous Silver Futures)
 # -----------------------------------------------------------------
 df = None
-# Paji, Continuous International GIFT Nifty contract lock kar diya hai
-target_ticker = "IN1=F" 
+# Paji, COMEX Silver Futures ka global continuous ticker lock kiya hai
+target_ticker = "SI=F" 
 
-with st.spinner(f"Ingesting Continuous 21-Hour {target_ticker} Global Matrix..."):
+with st.spinner(f"Ingesting Continuous 24-Hour {target_ticker} Liquidity Matrix..."):
     try:
-        # Step 1 & 2: Full 2-Year data loop for underlying learning memory
+        # Step 1 & 2: Ingest full 2-year sequence for underlying engine learning memory
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Step 3: Hard Protection against live incomplete bars (Absolute Zero Leakage)
+            # Step 3: Live Incomplete hourly candle protection (No Leakage)
             df = df.iloc[:-1]
             
-            # Pure Asia/Kolkata Alignment for accurate late-night/early-morning timestamps
+            # IST Alignment
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error(f"🚨 Error: Insufficient continuous data points for {target_ticker}.")
+            st.error(f"🚨 Error: Insufficient historical data lines for {target_ticker}.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 Ingestion Rail Failure: {e}")
@@ -135,16 +135,16 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION (GIFT Nifty Continuous Micro-Trend Architecture)
+# 🤖 SIGNAL GENERATION (Silver Momentum Dynamic Allocation)
 signal_log = []
-current_sig = "🔴 RISK OFF / TREND SHANTI"
+current_sig = "🔴 BEARISH VOLATILITY / SHANTI ZONE"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
     if acc_chan >= 4:
-        current_sig = "🟢 ACCUMULATIVE RALLY / EXPLOSIVE UP"
+        current_sig = "🟢 BULLISH LIQUIDITY / METALS RALLY"
     elif acc_chan <= 2:
-        current_sig = "🔴 ACCUMULATIVE LIQUIDATION / EXPLOSIVE DOWN"
+        current_sig = "🔴 BEARISH LIQUIDITY / METALS CRASH"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -160,7 +160,7 @@ for i in range(len(df)):
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        p_up = 0.55 if "EXPLOSIVE UP" in sig else 0.45
+        p_up = 0.55 if "METALS RALLY" in sig else 0.45
     elif acc_chan == 2:
         p_up = 0.25
     else:
@@ -172,27 +172,27 @@ df['Prob_Up'] = prob_up
 df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 
 # =====================================================================
-# 🎛️ STRICT LEARNING FILTER (Displaying only the post-learning phase)
+# 🎛️ STRICT LEARNING FILTER (Slicing data for final 1-year prediction display)
 # =====================================================================
-# Step 7: Today minus 365 days window slicing
+# Step 7: Calculate cutoff date (Today minus 365 days) for the prediction phase display
 cutoff_date = df.index.max() - timedelta(days=365)
 df_predict = df[df.index >= cutoff_date].copy()
 
-st.success(f"🟢 **GIFT Nifty Engine Locked:** 1st Year strictly used for Learning Window. 2nd Year Prediction Frame fully initialized from {cutoff_date.strftime('%B %Y')}!")
+st.success(f"🟢 **Silver Engine Locked:** 1st Year (2024–2025) strictly used for Learning Window. 2nd Year Prediction Frame fully initialized from {cutoff_date.strftime('%B %Y')}!")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
-display_df.rename(columns={'Close': 'GIFT_Nifty_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'Silver_Raw_Price'}, inplace=True)
 
-for c in ['GIFT_Nifty_Raw', 'Hurst_Amp_Momentum']:
+for c in ['Silver_Raw_Price', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting & Pure IST String Conversion
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-# Step 8: Final display output verified outcome
-st.subheader(f"📋 Verified 1-Year Prediction Matrix (Continuous 21-Hour Flow via {target_ticker})")
+# Step 8: Final display output showing the verified tracking frame
+st.subheader(f"📋 Verified 1-Year Silver Prediction Matrix (Continuous 24-Hour Stream)")
 st.dataframe(display_df, use_container_width=True, height=750)
