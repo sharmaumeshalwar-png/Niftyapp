@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Strict Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Custom ATR x Hurst Weighting | 100% Leakage Free")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman & WMA on ATR x Hurst | 100% Leakage Free")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -49,6 +49,11 @@ def calculate_rolling_hurst(price_series, window=100):
         h = np.log(rs_ratio) / np.log(window)
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
+
+# Custom 2-Period Weighted Moving Average function
+def calculate_wma_2(series):
+    # WMA(2) = (Value[t-1]*1 + Value[t]*2) / 3
+    return series.rolling(2).apply(lambda x: (x.iloc[0] * 1.0 + x.iloc[1] * 2.0) / 3.0, raw=False)
 
 # -----------------------------------------------------------------
 # 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to BTC-USD)
@@ -107,11 +112,19 @@ df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
-# 🧮 CUSTOM MATH COLUMNS & ATR-ADAPTIVE KALMAN FILTERS
+# 🧮 CUSTOM MATH COLUMNS, KALMANS & WMA OPERATIONS
 # =====================================================================
-# New Requested Column: ATR * Hurst (Volatility Weighted Trend scale)
+# 1. Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
+# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50)
+atr_hurst_vals = df['ATR_x_Hurst'].bfill().values
+df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+# 3. 2-Period WMA on ATR * Hurst (with bfill to prevent NaNs on index 0)
+df['WMA_ATR_Hurst'] = calculate_wma_2(df['ATR_x_Hurst']).bfill()
+
+# Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
@@ -119,6 +132,7 @@ col_a_vals = df['Column_A'].bfill().values
 col_b_vals = df['Column_B'].bfill().values
 atr_vals = df['ATR'].bfill().values
 
+# Adaptive Kalmans on Column A and Column B
 df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
 df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
 
@@ -137,14 +151,12 @@ for i in range(1, len(df)):
     curr_kb = df['Kalman_Column_B'].iloc[i]
     prev_kb = df['Kalman_Column_B'].iloc[i-1]
     
-    # 15% Standard Deviation filter for cutting flat line jitter
     thresh_a = 0.15 * df['Std_KA'].iloc[i]
     thresh_b = 0.15 * df['Std_KB'].iloc[i]
     
     diff_a = curr_ka - prev_ka
     diff_b = curr_kb - prev_kb
     
-    # Get direct strict states (-1, 0, 1)
     dir_a = 0
     if abs(diff_a) > thresh_a:
         dir_a = 1 if diff_a > 0 else -1
@@ -153,7 +165,6 @@ for i in range(1, len(df)):
     if abs(diff_b) > thresh_b:
         dir_b = 1 if diff_b > 0 else -1
         
-    # Paji strict rule mapping:
     if dir_a != 0 and dir_b != 0 and dir_a != dir_b:
         status = "🟩 BTX"
     else:
@@ -168,11 +179,12 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Strict Loop Synchronized:** System locked with new ATR x Hurst Volatility scale.")
+st.success("🟢 **Grid Re-engineered:** Added Kalman & 2-Period WMA on ATR x Hurst metrics successfully.")
 
-# Display grid with the newly requested column
+# Display grid with the newly requested columns
 clean_cols = [
-    'Close', 'High', 'Low', 'ATR', 'Hurst', 'ATR_x_Hurst', 'Hurst_Amp_Momentum', 
+    'Close', 'High', 'Low', 'ATR', 'Hurst', 
+    'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'WMA_ATR_Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
 display_df = df_predict[clean_cols].copy()
@@ -181,6 +193,8 @@ display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplac
 # Precision Rounding
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['ATR_x_Hurst'] = display_df['ATR_x_Hurst'].round(4)
+display_df['Kalman_ATR_Hurst'] = display_df['Kalman_ATR_Hurst'].round(4)
+display_df['WMA_ATR_Hurst'] = display_df['WMA_ATR_Hurst'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 display_df['Column_A'] = display_df['Column_A'].round(4)
 display_df['Kalman_Column_A'] = display_df['Kalman_Column_A'].round(4)
