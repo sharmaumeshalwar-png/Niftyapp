@@ -4,21 +4,21 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Sliding Mode Observer Engine", layout="wide")
-st.title("🚀 Bitcoin (BTC-USD) Sliding Mode Observer Engine")
-st.write("🎯 **Aerospace Grade Trading:** 1-Hour Candles | Sliding Mode Observer (SMO) | 100% Zero-Leakage")
+st.set_page_config(page_title="BTC Damped SMO Engine", layout="wide")
+st.title("🚀 Bitcoin (BTC-USD) Damped Sliding Mode Observer")
+st.write("🎯 **Aerospace Grade Trading:** 1-Hour Candles | SMO with Atmospheric Drag | 100% Zero-Leakage")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal - Sliding Mode Observer Theory)
+# MATHEMATICAL ENGINES (Strictly Causal - SMO with Atmospheric Drag)
 # =====================================================================
-def apply_sliding_mode_observer(price_array, k_gain=0.15, l_gain=0.05):
+def apply_sliding_mode_observer_damped(price_array, k_gain=0.15, l_gain=0.05, drag=0.90):
     """
-    Sliding Mode Observer (SMO) for State Estimation (Speed/Velocity)
-    Mathematically proven rocket trajectory tracking without Kalman Filters.
+    Damped Sliding Mode Observer (SMO)
+    Adds physical 'atmospheric drag' to stop infinite speed drift/leakage.
     """
     if len(price_array) == 0: return [], []
     
-    # State variables: x1 (Estimated Price), x2 (Estimated Speed/Velocity)
+    # State variables: x1 (Estimated Price), x2 (Estimated Speed)
     x1 = price_array[0]
     x2 = 0.0
     
@@ -26,20 +26,19 @@ def apply_sliding_mode_observer(price_array, k_gain=0.15, l_gain=0.05):
     est_velocity = []
     
     for z in price_array:
-        # 1. Calculate Observer Error (Output Error)
+        # 1. Output error
         error = z - x1
         
-        # 2. Sliding Surface Switching Logic (Signum Multiplier)
+        # 2. Binary switching logic
         switching_control = k_gain * np.sign(error) if error != 0 else 0.0
         
-        # 3. State Update Equations (Discontinuous Correction)
-        # dx1/dt = x2 + L * error + K * sign(error)
+        # 3. Trajectory Update
         dx1 = x2 + (l_gain * error) + switching_control
-        x1 = x1 + dx1  # Update virtual position
+        x1 = x1 + dx1
         
-        # dx2/dt = K_speed * sign(error) -> Integrated velocity update
-        dx2 = 0.01 * switching_control
-        x2 = x2 + dx2  # Update virtual speed
+        # 4. Damped Velocity Update (Applying 0.90 Drag factor to prevent infinite minus drift)
+        dx2 = 0.05 * switching_control
+        x2 = (x2 * drag) + dx2  # Drag pulls velocity back to zero when trend slows down
         
         est_price.append(x1)
         est_velocity.append(x2)
@@ -74,7 +73,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Drop the active unclosed dynamic 1-hour candle.
+            # ⛔ CUTOFF ENGINE: Drop the active unclosed 1-hour candle
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -93,34 +92,34 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# 1. APPLY SLIDING MODE OBSERVER (Replacing Kalman Filter completely)
-# k_gain=0.15 represents the switching intensity, l_gain=0.05 is the error feedback
-est_p, est_v = apply_sliding_mode_observer(close_arr, k_gain=0.15, l_gain=0.05)
+# 1. APPLY DAMPED SMO (Atmospheric friction locked)
+# k_gain=0.25, l_gain=0.10 for fast tracking, drag=0.88 for strong stabilization
+est_p, est_v = apply_sliding_mode_observer_damped(close_arr, k_gain=0.25, l_gain=0.10, drag=0.88)
 df['SMO_Price_Baseline'] = est_p
 df['SMO_Velocity'] = est_v
 
 # 2. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. Hurst Amplified Momentum Pipeline (Using pure SMO output instead of Kalman)
-df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 2000.0) # Scaling velocity for readability
+# 3. Hurst Amplified Momentum Pipeline (Scaling with damped velocity)
+df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 100.0)
 
 # Clean dynamic NaNs
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 4. Volume Rolling Mean for Causal Strength Analysis
+# 4. Volume Rolling Mean
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
-# 5. SMO Volume-Momentum Decision Engine
+# 5. SMO Volume-Momentum Decision Engine (Slightly adjusted thresholds)
 vol_mom_decisions = []
 for i in range(len(df)):
     curr_amp = df['Hurst_Amp_Momentum'].iloc[i]
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    if curr_amp > 0.05 and curr_vol > avg_vol:
+    if curr_amp > 0.10 and curr_vol > avg_vol:
         status = "🟢 SMO BULL"
-    elif curr_amp < -0.05 and curr_vol > avg_vol:
+    elif curr_amp < -0.10 and curr_vol > avg_vol:
         status = "🔴 SMO BEAR"
     else:
         status = "⚪ NEUTRAL FLAT"
@@ -133,9 +132,9 @@ df['Vol_Mom_Decision'] = vol_mom_decisions
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Sliding Mode Observer Locked:** Kalman Filter completely purged. Trajectory-tracking physics applied.")
+st.success("🟢 **SMO Friction Calibrated:** Atmospheric drag applied. Speed will now naturally revert to zero during flat markets!")
 
-# Custom Rocket Matrix Layout
+# Display order
 clean_cols = [
     'Close', 'SMO_Price_Baseline', 'SMO_Velocity', 'Volume', 
     'Hurst', 'Hurst_Amp_Momentum', 'Vol_Mom_Decision'
@@ -143,10 +142,10 @@ clean_cols = [
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
-# Precision Rounding Layers
+# Precision Rounding
 display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
 display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
-display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(6) # Highly precise trajectory feedback
+display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(4) # Clean responsive speed
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
