@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Crypto Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
+st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,97 +39,81 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (BTC-USD Setup - 2y, 1h)
+# 🛡️ SYSTEM DATA INGESTION
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
+with st.spinner("Fetching Live BTC Data..."):
     try:
-        # Crypto ticker 'BTC-USD' strictly 2 saal ka data aur 1 hourly intervals
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Live Running Candle Protection (Strictly No Leakage)
-            
-            # Crypto standard UTC timezone locking
+            # Live Incomplete hourly candle protection
+            df = df.iloc[:-1]
             if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC')
+                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
-                df.index = df.index.tz_convert('UTC')
+                df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
+            st.error("🚨 Error: Insufficient data lines.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
+# 🔥 CRITICAL DATA SCIENCE RULE: Split data FIRST to prevent lookahead leakage globally
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Bitcoin Candles (No Leakage)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (No Leakage)!**")
 
-# =====================================================================
-# ⚡ NON-LINEAR HURST KINEMATICS CORE
-# =====================================================================
+# Setup Isolated Price Arrays
 df_predict['Close_Raw'] = df_predict['Close']
 close_arr = df_predict['Close_Raw'].values
 
-# 1. Base Kalman System & Innovation Error Extraction
+# Strict Isolated Price Kalman Baseline Calculation
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 
-# 2. Pure Hurst Base Calculation
+# ATR calculation without lookahead/bfill bias
+high_low = df_predict['High'] - df_predict['Low']
+high_close = np.abs(df_predict['High'] - df_predict['Close'].shift(1))
+low_close = np.abs(df_predict['Low'] - df_predict['Close'].shift(1))
+true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+df_predict['ATR'] = true_range.rolling(14).mean().ffill() 
+
+# Hurst Vector Generation on isolated window
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. MODIFICATION 1: HURST VELOCITY ENGINE
-df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
-df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
-
-# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
-df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
-df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
-
-# 5. Raw Price-based Weighted Momentum
+# Exact original Price-based Weighted Momentum Calculation
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-df_predict['Hurst_Amp_Momentum'] = (
-    df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
-)
-
-# 6. 🔥 PAJI'S MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
-raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
-
-# ✨ Adaptive Energy Scaling for Crypto Volatility
-df_predict['Dynamic_Energy_Factor'] = np.where(df_predict['Hurst'] < 0.48, raw_multiplied_drift * 0.3, raw_multiplied_drift * 1.5)
-
-smoothed_drift = apply_kalman_filter_custom(df_predict['Dynamic_Energy_Factor'].values, initial_p=1.0, q_val=0.005, r_val=0.5)
-
-# Bounded range engine (-100 to +100 Scaling using Hyperbolic Tangent)
-df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.03) * 100.0
+# 🔥 THE MAGICAL MULTIPLICATION: Scaling Momentum by Hurst Intensity
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
 # Clean NaNs strictly before creating rolling statistical channels
-df_predict.dropna(subset=['Hurst'], inplace=True)
+df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
 # 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
 # =====================================================================
+# Calculate rolling statistical bands of Hurst_Amp_Momentum for dynamic channel sizing
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 rolling_window = 50
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
 mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
 
 channels = np.zeros(len(mom_vals), dtype=int)
-accumulator = np.zeros(len(mom_vals), dtype=int) 
+accumulator = np.zeros(len(mom_vals), dtype=int) # Filtered tracking channel state (1 to 5)
 
 for i in range(len(mom_vals)):
     val = mom_vals[i]
     m = mom_mean[i]
     s = mom_std[i]
     
+    # 1. Assign Raw Channel Band
     if val > (m + 1.5 * s):
         channels[i] = 5
     elif val > (m + 0.5 * s):
@@ -141,22 +125,24 @@ for i in range(len(mom_vals)):
     else:
         channels[i] = 3
         
+    # 2. Accumulator Logic (Smooths transitions and filters false touches)
     if i == 0:
         accumulator[i] = channels[i]
     else:
         prev_acc = accumulator[i-1]
         curr_chan = channels[i]
+        # Only transition the accumulator if there's a confirmed zone shift
         if abs(curr_chan - prev_acc) >= 1:
             accumulator[i] = curr_chan
         else:
             accumulator[i] = prev_acc
 
+df_predict['Raw_Channel'] = channels
 df_predict['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL & PROBABILITY GENERATION
+# 🤖 SIGNAL GENERATION (Memory-based transition to prevent Channel 3 whipsaws)
 signal_log = []
-prob_up = []
-current_sig = "🔴 SELL"  
+current_sig = "🔴 SELL"  # Default start state
 
 for i in range(len(df_predict)):
     acc_chan = accumulator[i]
@@ -164,37 +150,50 @@ for i in range(len(df_predict)):
         current_sig = "🟢 BUY"
     elif acc_chan <= 2:
         current_sig = "🔴 SELL"
+    # If in Channel 3 (Neutral), we hold the previous confirmed state (current_sig unchanged)
     signal_log.append(current_sig)
-    
-    if acc_chan == 5: p = 0.95
-    elif acc_chan == 4: p = 0.75
-    elif acc_chan == 3: p = 0.55 if current_sig == "🟢 BUY" else 0.45
-    elif acc_chan == 2: p = 0.25
-    else: p = 0.05
-    prob_up.append(round(p, 2))
 
 df_predict['Signal'] = signal_log
-df_predict['Prob_Up'] = prob_up
 
-# =====================================================================
-# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
-# =====================================================================
-clean_cols = [
-    'Close_Raw', 
-    'Hurst_Amp_Momentum', 
-    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
-    'Accumulator_Channel', 
-    'Signal', 
-    'Prob_Up'
-]
+# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
+prob_up = []
+prob_down = []
+
+for i in range(len(df_predict)):
+    acc_chan = accumulator[i]
+    sig = signal_log[i]
+    
+    # Probabilities mapped directly to structural 1 to 5 channel strength
+    if acc_chan == 5:
+        p_up = 0.95
+    elif acc_chan == 4:
+        p_up = 0.75
+    elif acc_chan == 3:
+        # Balanced zone, slight lean towards current signal direction
+        p_up = 0.55 if sig == "🟢 BUY" else 0.45
+    elif acc_chan == 2:
+        p_up = 0.25
+    else: # Channel 1
+        p_up = 0.05
+        
+    prob_up.append(round(p_up, 2))
+    prob_down.append(round(1.0 - p_up, 2))
+
+df_predict['Prob_Up'] = prob_up
+df_predict['Prob_Down'] = prob_down
+
+# Format Layout Columns Matrix
+clean_cols = ['Close_Raw', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
-for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift_Score']:
+# Precision Matrix Formatting
+for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
-# Latest on top display in UTC
+# Chronological sorting for dashboard display panel (latest on top)
 display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 5-Channel Kinematic Bounded Bitcoin Action Matrix")
+# Clean Header & Rendering
+st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
