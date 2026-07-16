@@ -6,10 +6,10 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Dual-Kalman Gap Core (100% Leak-Proof & Repaint-Free)")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Previous Candle Break Validation (100% Locked Core)")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
+# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
@@ -39,7 +39,7 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION
+# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion Integrity Check)
 # -----------------------------------------------------------------
 df = None
 with st.spinner("Fetching Live BTC Data..."):
@@ -50,8 +50,11 @@ with st.spinner("Fetching Live BTC Data..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            # Live Incomplete hourly candle protection
+            
+            # ⛔ STRICT LEAKAGE PROTECTION BLOCK (Patthar ki Lakeer)
+            # Live adhoori hourly candle ko process karne se pehle hi uda deta hai
             df = df.iloc[:-1]
+            
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -64,7 +67,7 @@ with st.spinner("Fetching Live BTC Data..."):
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION (Exact Original Core Layout)
+# 🔥 GLOBAL CALCULATION (Exact Original Calculation Pipeline - NO CHANGES)
 # =====================================================================
 close_arr = df['Close'].values
 
@@ -85,22 +88,8 @@ df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE ORIGINAL UNTOUCHED MAGICAL MULTIPLICATION
+# 🔥 THE MAGICAL MULTIPLICATION (Unaltered Core Value)
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
-
-# 🧠 --- NEW ADDITION: PURE DUAL-KALMAN GAP GENERATOR ON ORIGINAL VALUE ---
-# Paji, bina kisi normalization ya price distortion ke, raw_ham par dual tracking chala rahe hain
-raw_ham_arr = df['Hurst_Amp_Momentum'].values
-
-# ⚡ Fast Kalman (High tracking rate for prompt shifts)
-df['Fast_Kalman_HAM'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.01, r_val=0.05)
-
-# 🐢 Slow Kalman (Heavy filtering baseline)
-df['Slow_Kalman_HAM'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.001, r_val=0.3)
-
-# 🏁 Pure Convergence/Divergence Gap Matrix
-df['HAM_Kalman_Gap'] = df['Fast_Kalman_HAM'] - df['Slow_Kalman_HAM']
-# ------------------------------------------------------------------------
 
 # Clean NaNs strictly before creating rolling statistical channels
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
@@ -143,64 +132,56 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION
-signal_log = []
-current_sig = "🔴 SELL"
+# =====================================================================
+# 🧠 CANDLE HIGH/LOW BREAK VALIDATION LOGIC (Strict Chronological Path)
+# =====================================================================
+validation_signals = []
+validation_signals.append("HOLD / NO DATA")
 
-for i in range(len(df)):
-    acc_chan = accumulator[i]
-    if acc_chan >= 4:
-        current_sig = "🟢 BUY"
-    elif acc_chan <= 2:
-        current_sig = "🔴 SELL"
-    signal_log.append(current_sig)
-
-df['Signal'] = signal_log
-
-# 🚀 PROBABILITY MATRIX BASED ON CHANNELS
-prob_up = []
-for i in range(len(df)):
-    acc_chan = accumulator[i]
-    sig = signal_log[i]
+for i in range(1, len(df)):
+    current_mom = df['Hurst_Amp_Momentum'].iloc[i]
+    prev_mom = df['Hurst_Amp_Momentum'].iloc[i-1]
     
-    if acc_chan == 5:
-        p_up = 0.95
-    elif acc_chan == 4:
-        p_up = 0.75
-    elif acc_chan == 3:
-        p_up = 0.55 if sig == "🟢 BUY" else 0.45
-    elif acc_chan == 2:
-        p_up = 0.25
+    current_low = df['Low'].iloc[i]
+    prev_low = df['Low'].iloc[i-1]
+    
+    current_high = df['High'].iloc[i]
+    prev_high = df['High'].iloc[i-1]
+    
+    # 🔴 Down Momentum + Price Action Confirmation
+    if current_mom < prev_mom and current_low < prev_low:
+        status = "🔴 RED SIGNAL"
+    # 🟢 Up Momentum + Price Action Confirmation
+    elif current_mom > prev_mom and current_high > prev_high:
+        status = "🟢 GREEN SIGNAL"
+    # ⏳ Whipsaw Trap Caught (No Break)
     else:
-        p_up = 0.05
+        status = "⏳ HOLD"
         
-    prob_up.append(round(p_up, 2))
+    validation_signals.append(status)
 
-df['Prob_Up'] = prob_up
-df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
+df['Action_Validation'] = validation_signals
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
+# 🎛️ DASHBOARD DISPLAY PANEL (Zero Repaint Frozen Layout)
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Dual-Kalman Extracted Matrix Ready)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Core Architecture Fully Sealed)!**")
 
-# Grid layout with the new numeric parameters side by side
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'HAM_Kalman_Gap', 'Accumulator_Channel', 'Signal']
+clean_cols = ['Close', 'High', 'Low', 'Hurst_Amp_Momentum', 'Action_Validation', 'Accumulator_Channel']
 display_df = df_predict[clean_cols].copy()
 
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
-# Rounded precisely to 4 decimals for the pure value columns so you can see micro-changes
-for c in ['Hurst_Amp_Momentum', 'Fast_Kalman_HAM', 'Slow_Kalman_HAM', 'HAM_Kalman_Gap']:
-    display_df[c] = display_df[c].round(4)
+# Exact formatting specifications
+display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
+for c in ['Close_Raw', 'High', 'Low']:
+    display_df[c] = display_df[c].round(2)
 
-display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
-
-# Latest outputs on top
+# Latest records strictly on top for grid view
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 5-Channel Matrix with Dual-Kalman Momentum Gap Extraction")
+st.subheader("📋 Whipsaw Protection Bitcoin Execution Grid")
 st.dataframe(display_df, use_container_width=True, height=750)
