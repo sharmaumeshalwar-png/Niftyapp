@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof & Repaint-Free)")
+st.set_page_config(page_title="VIX Master Signal Engine", layout="wide")
+st.title("⚡ Volatility (VIX) Pure Action Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Volatility Accumulator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,12 +39,15 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION
+# 🛡️ SYSTEM DATA INGESTION (Targeting Macro VIX Index)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live BTC Data..."):
+# Paji, standard macro stream ke liye '^VIX' ticker set kiya hai jo BTC market direction dictate karta hai
+target_ticker = "^VIX" 
+
+with st.spinner(f"Fetching Live {target_ticker} Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -66,7 +69,7 @@ with st.spinner("Fetching Live BTC Data..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
-# Setup Isolated Price Arrays from Full DataFrame
+# Setup Isolated Volatility Price Arrays from Full DataFrame
 close_arr = df['Close'].values
 
 # Strict Isolated Price Kalman Baseline Calculation
@@ -130,16 +133,18 @@ for i in range(len(mom_vals)):
 df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION
+# 🤖 SIGNAL GENERATION (Volatility Expansion/Contraction Logic Locked)
 signal_log = []
-current_sig = "🔴 SELL"
+current_sig = "🔴 CRASH RISK / HIGH VOL"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
+    # Volatility Spike (Channel >= 4) means market panic / BTC drawdown pressure high
     if acc_chan >= 4:
-        current_sig = "🟢 BUY"
+        current_sig = "🟢 VOL SPIKE / LONG HEDGE"
+    # Volatility Crush (Channel <= 2) means stable calm market / BTC growth zone
     elif acc_chan <= 2:
-        current_sig = "🔴 SELL"
+        current_sig = "🔴 VOL CRUSH / RISK ON"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -155,7 +160,7 @@ for i in range(len(df)):
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        p_up = 0.55 if sig == "🟢 BUY" else 0.45
+        p_up = 0.55 if "VOL SPIKE" in sig else 0.45
     elif acc_chan == 2:
         p_up = 0.25
     else:
@@ -169,20 +174,19 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 # 🎛️ DASHBOARD DISPLAY (Full Data Stream Locked)
 # =====================================================================
-# Paji, ab bina slice kiye poora 2 saal ka data ek sath screen pr dikhega
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Full History & Value Locked)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Volatility Candles (Full History & Value Locked)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Rename to match original UI spec
-display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'VIX_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
-for c in ['Close_Raw', 'Hurst_Amp_Momentum']:
+for c in ['VIX_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting for dashboard display panel (latest on top)
@@ -190,5 +194,5 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 # Clean Header & Rendering
-st.subheader("📋 5-Channel Accumulated Bitcoin Action Matrix")
+st.subheader(f"📋 5-Channel Accumulated {target_ticker} Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
