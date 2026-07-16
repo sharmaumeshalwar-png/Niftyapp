@@ -4,18 +4,14 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC SMO + Kalman Hybrid", layout="wide")
-st.title("🚀 Bitcoin (BTC-USD) SMO + Kalman Hybrid Engine")
-st.write("🎯 **Dual-Engine Analytics:** SMO Rocket Speed smoothed with a strict 0.50 Kalman Filter | 100% Zero-Leakage")
+st.set_page_config(page_title="BTC Scaled SMO + Kalman Hybrid", layout="wide")
+st.title("🚀 Bitcoin (BTC-USD) Scaled SMO-Kalman Hybrid Engine")
+st.write("🎯 **Dual-Engine Scaled Analytics:** Smoothed and scaled rocket momentum for highly readable signals | 100% Zero-Leakage")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - SMO & New Kalman Filter)
 # =====================================================================
 def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, drag=0.88):
-    """
-    Damped Sliding Mode Observer (SMO)
-    Calculates rocket trajectory velocity without leakage.
-    """
     if len(price_array) == 0: return [], []
     x1 = price_array[0]
     x2 = 0.0
@@ -37,10 +33,6 @@ def apply_sliding_mode_observer_damped(price_array, k_gain=0.25, l_gain=0.10, dr
     return est_price, est_velocity
 
 def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.005):
-    """
-    Custom Kalman Filter tailored specifically for stabilizing momentum vectors.
-    Using balanced process noise (q) and measurement noise (r) ratio for a 0.50 baseline.
-    """
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -80,7 +72,7 @@ with st.spinner("Fetching Live 1-Year BTC Data..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CUTOFF ENGINE: Drop the active unclosed 1-hour candle.
+            # ⛔ CUTOFF ENGINE: Immediately drop active unclosed candle
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -107,14 +99,13 @@ df['SMO_Velocity'] = est_v
 # 2. Hurst Vector Generation
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. Raw Hurst Amplified Momentum (SMO Velocity base)
-df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 100.0)
+# 3. 🎯 SCALED UP: Hurst Amplified Momentum (Multiplied by 10000.0 instead of 100.0)
+df['Hurst_Amp_Momentum'] = df['SMO_Velocity'] * (df['Hurst'] * 10000.0)
 
 # Clean dynamic NaNs safely before mapping secondary Kalman
 df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
 
-# 🎯 4. NEW REQ: Apply 0.50 Kalman Filter directly onto Hurst_Amp_Momentum
-# Custom-tuned parameter mapping representing 0.50 structural covariance scale
+# 4. Apply 0.50 Kalman Filter directly onto scaled Hurst_Amp_Momentum
 ham_raw_vals = df['Hurst_Amp_Momentum'].values
 df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.005, r_val=0.005)
 
@@ -122,16 +113,16 @@ df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_va
 df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
 
 # 6. SMO + Kalman Volume-Momentum Decision Engine
-# Now using HAM_Kalman instead of raw Hurst_Amp_Momentum to avoid choppy signals!
+# 🎯 Proportional thresholds scaled up from 0.10 to 10.0 to match new values scale!
 vol_mom_decisions = []
 for i in range(len(df)):
     curr_kalman_amp = df['HAM_Kalman'].iloc[i]
     curr_vol = df['Volume'].iloc[i]
     avg_vol = df['Vol_MA_20'].iloc[i]
     
-    if curr_kalman_amp > 0.10 and curr_vol > avg_vol:
+    if curr_kalman_amp > 10.0 and curr_vol > avg_vol:
         status = "🟢 HYBRID BULL"
-    elif curr_kalman_amp < -0.10 and curr_vol > avg_vol:
+    elif curr_kalman_amp < -10.0 and curr_vol > avg_vol:
         status = "🔴 HYBRID BEAR"
     else:
         status = "⚪ NEUTRAL FLAT"
@@ -144,7 +135,7 @@ df['Vol_Mom_Decision'] = vol_mom_decisions
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **HAM Kalman 0.50 Activated:** Smoothed rocket speed momentum nested as a core decision metric!")
+st.success("🟢 **Values Scaled Up (100x):** HAM_Kalman and Hurst_Amp_Momentum are now highly readable!")
 
 # Target Display Order
 clean_cols = [
@@ -160,8 +151,8 @@ display_df['SMO_Price_Baseline'] = display_df['SMO_Price_Baseline'].round(2)
 display_df['SMO_Velocity'] = display_df['SMO_Velocity'].round(4)
 display_df['Volume'] = display_df['Volume'].round(0)
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
-display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(4) # New Column Rounded
+display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2) # Rounded to 2 decimal for cleaner look
+display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2)                 # Rounded to 2 decimal for cleaner look
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
