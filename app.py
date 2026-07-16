@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Strict Zero-Leakage Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | 24-Period Daily WMA | 100% Zero-Leakage Locked")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman (0.850) & 1-Candle WMA (Raw) | 100% Zero-Leakage Locked")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
@@ -49,11 +49,6 @@ def calculate_rolling_hurst(price_series, window=100):
         h = np.log(rs_ratio) / np.log(window)
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
-
-# Scalable Causal WMA Function for custom period (Strictly No Lookahead)
-def calculate_wma_custom(series, period=24):
-    weights = np.arange(1, period + 1).astype(float)
-    return series.rolling(period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 
 # -----------------------------------------------------------------
 # 🛡️ STRICT DATA INGESTION & RUNNING CANDLE PURGE
@@ -117,12 +112,12 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # 1. Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
-# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50)
+# 2. Kalman Filter on ATR * Hurst (Strictly initial_p = 0.850 as requested)
 atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
-df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
+df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.850, q_val=0.001, r_val=0.1)
 
-# 3. 24-Period WMA on ATR * Hurst (Re-engineered to 24-Hour window)
-df['WMA_ATR_Hurst'] = calculate_wma_custom(df['ATR_x_Hurst'], period=24).ffill().fillna(0)
+# 3. 1-Candle WMA on ATR * Hurst (1-candle window is mathematically equal to the raw value itself)
+df['WMA_ATR_Hurst'] = df['ATR_x_Hurst'].ffill().fillna(0)
 
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
@@ -140,7 +135,6 @@ df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.00
 # =====================================================================
 # 🛡️ STRICT 2-STATE DIVERGENCE DETECTION (BTX vs TRAP)
 # =====================================================================
-# Noise dynamic thresholds
 df['Std_KA'] = df['Kalman_Column_A'].rolling(20, min_periods=1).std().fillna(1.0)
 df['Std_KB'] = df['Kalman_Column_B'].rolling(20, min_periods=1).std().fillna(1.0)
 
@@ -180,7 +174,7 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **24-Period WMA Locked:** Daily loop trend smoothing successfully applied with zero-leakage security.")
+st.success("🟢 **Pipeline Locked:** Kalman Filter calibrated to initial_p=0.850. WMA limited to 1-Candle raw resolution.")
 
 # Display grid
 clean_cols = [
@@ -204,7 +198,6 @@ display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
 for c in ['Close_Raw', 'High', 'Low', 'ATR']:
     display_df[c] = display_df[c].round(2)
 
-# Reverse for latest data on top (Chronological Lock)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
