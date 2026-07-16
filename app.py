@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Pure Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Numeric Value Engine")
-st.write("🎯 **Pure Value Trading:** 100% Untouched Hurst-Amplified Momentum + Velocity Kalman Smoothing (Zero Signals, Zero ML)")
+st.write("🎯 **Pure Value Trading:** 100% Untouched Hurst-Amplified Momentum + Live Hurst Exponent (Zero Signals, Zero ML)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -80,7 +80,7 @@ low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill() 
 
-# Hurst Vector Generation on full window
+# Hurst Vector Generation on full window (We capture this directly)
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
 # Exact original Price-based Weighted Momentum Calculation
@@ -126,12 +126,11 @@ for i in range(len(mom_vals)):
 df['Accumulator_Channel'] = accumulator
 
 # =====================================================================
-# ⚡ PURE NUMERIC VELOCITY DERIVATION & NEW VELOCITY KALMAN
+# ⚡ PURE NUMERIC VELOCITY DERIVATION & VELOCITY KALMAN
 # =====================================================================
 df['Momentum_Velocity'] = df['Hurst_Amp_Momentum'] - df['Hurst_Amp_Momentum'].shift(1)
 
-# Paji yeh raha aapka naya requested column strictly initial_p=0.50 ke sath
-# Handling NaN for the first element using bfill just for filter processing stability
+# Velocity Kalman Filter with initial_p=0.50
 velocity_vals = df['Momentum_Velocity'].bfill().values
 df['Velocity_Kalman'] = apply_kalman_filter_custom(velocity_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
@@ -140,15 +139,16 @@ df['Velocity_Kalman'] = apply_kalman_filter_custom(velocity_vals, initial_p=0.50
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Bitcoin Grid Synchronized:** Velocity Kalman added successfully with initial_p=0.50.")
+st.success("🟢 **Bitcoin Grid Synchronized:** Live Hurst column active!")
 
-# Display grid including the new filter column
-clean_cols = ['Close', 'High', 'Low', 'Hurst_Amp_Momentum', 'Momentum_Velocity', 'Velocity_Kalman', 'Accumulator_Channel']
+# Display grid showing the new Hurst column and all previous elements
+clean_cols = ['Close', 'High', 'Low', 'Hurst', 'Hurst_Amp_Momentum', 'Momentum_Velocity', 'Velocity_Kalman', 'Accumulator_Channel']
 display_df = df_predict[clean_cols].copy()
 
-display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
 # Precision Rounding
+display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 display_df['Momentum_Velocity'] = display_df['Momentum_Velocity'].round(4)
 display_df['Velocity_Kalman'] = display_df['Velocity_Kalman'].round(4)
