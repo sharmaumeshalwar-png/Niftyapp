@@ -4,8 +4,8 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Pure Action Master Engine")
+st.set_page_config(page_title="ETH Master Signal Engine", layout="wide")
+st.title("⚡ Ethereum (ETH-USD) Pure Action Master Engine")
 st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & Previous Candle Break Validation (100% Locked Core)")
 
 # =====================================================================
@@ -39,20 +39,19 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion Integrity Check)
+# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to ETH-USD)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live BTC Data..."):
+with st.spinner("Fetching Live ETH Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        df = yf.download(tickers="ETH-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ STRICT LEAKAGE PROTECTION BLOCK (Patthar ki Lakeer)
-            # Live adhoori hourly candle ko process karne se pehle hi uda deta hai
+            # ⛔ STRICT LEAKAGE PROTECTION BLOCK
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -67,7 +66,7 @@ with st.spinner("Fetching Live BTC Data..."):
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION (Exact Original Calculation Pipeline - NO CHANGES)
+# 🔥 GLOBAL CALCULATION (Exact Original Pipeline - UNTOUCHED VALUES)
 # =====================================================================
 close_arr = df['Close'].values
 
@@ -84,11 +83,13 @@ df['ATR'] = true_range.rolling(14).mean().ffill()
 # Hurst Vector Generation on full window
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Exact original Price-based Weighted Momentum Calculation
+# 🎯 NEW CHRONOLOGY FOR MOMENTUM: Strictly (Close - Kalman_Baseline)
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
+
+# Pass the exact raw momentum through untouched custom filter
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE MAGICAL MULTIPLICATION (Unaltered Core Value)
+# 🔥 THE MAGICAL MULTIPLICATION (Unaltered Core Scaling)
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
 # Clean NaNs strictly before creating rolling statistical channels
@@ -133,7 +134,7 @@ df['Raw_Channel'] = channels
 df['Accumulator_Channel'] = accumulator
 
 # =====================================================================
-# 🧠 CANDLE HIGH/LOW BREAK VALIDATION LOGIC (Strict Chronological Path)
+# 🧠 CANDLE HIGH/LOW BREAK VALIDATION LOGIC
 # =====================================================================
 validation_signals = []
 validation_signals.append("HOLD / NO DATA")
@@ -167,7 +168,7 @@ df['Action_Validation'] = validation_signals
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Candles (Core Architecture Fully Sealed)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Ethereum Candles (100% Untouched Core)!**")
 
 clean_cols = ['Close', 'High', 'Low', 'Hurst_Amp_Momentum', 'Action_Validation', 'Accumulator_Channel']
 display_df = df_predict[clean_cols].copy()
@@ -183,5 +184,5 @@ for c in ['Close_Raw', 'High', 'Low']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Whipsaw Protection Bitcoin Execution Grid")
+st.subheader("📋 Whipsaw Protection Ethereum Execution Grid")
 st.dataframe(display_df, use_container_width=True, height=750)
