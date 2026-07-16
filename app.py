@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Pure Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Numeric Value Engine")
-st.write("🎯 **Pure Value Trading:** 100% Locked Engine with Double Kalman Custom Math Layer (Zero Signals, Zero ML)")
+st.write("🎯 **Pure Value Trading:** 100% Locked Engine with ATR-Adaptive Kalman Layers (Zero Signals, Zero ML)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -17,6 +17,19 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     filtered_values = []
     for z in data_array:
         p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
+
+# Dynamic Kalman Engine that accepts an array of changing P (ATR) values
+def apply_kalman_adaptive_p(data_array, p_array, q_val=0.001, r_val=0.1):
+    if len(data_array) == 0: return []
+    x = data_array[0]
+    filtered_values = []
+    for z, p_init in zip(data_array, p_array):
+        p = p_init + q_val
         k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
@@ -130,34 +143,34 @@ df['Accumulator_Channel'] = accumulator
 # =====================================================================
 df['Momentum_Velocity'] = df['Hurst_Amp_Momentum'] - df['Hurst_Amp_Momentum'].shift(1)
 
-# Velocity Kalman Filter with initial_p=0.50
 velocity_vals = df['Momentum_Velocity'].bfill().values
 df['Velocity_Kalman'] = apply_kalman_filter_custom(velocity_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # =====================================================================
-# 🧮 MATHEMATICAL COLUMNS & NEW KALMAN FILTERS (initial_p=0.50)
+# 🧮 CUSTOM MATH COLUMNS & ATR-ADAPTIVE KALMAN FILTERS
 # =====================================================================
-# Column A & B Generation
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
-# Paji yeh rahe aapke dono naye requested columns strictly 0.50 setup ke sath
+# Arrays extract karein taaki loop operations seamless ho sakein
 col_a_vals = df['Column_A'].bfill().values
 col_b_vals = df['Column_B'].bfill().values
+atr_vals = df['ATR'].bfill().values
 
-df['Kalman_Column_A'] = apply_kalman_filter_custom(col_a_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
-df['Kalman_Column_B'] = apply_kalman_filter_custom(col_b_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
+# Paji yahan strict ATR adjustment engine map kar diya hai
+df['Kalman_Column_A'] = apply_kalman_adaptive_p(col_a_vals, atr_vals, q_val=0.001, r_val=0.1)
+df['Kalman_Column_B'] = apply_kalman_adaptive_p(col_b_vals, atr_vals, q_val=0.001, r_val=0.1)
 
 # =====================================================================
 # 🎛️ DASHBOARD DISPLAY PANEL (Zero Repaint Frozen Layout)
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Bitcoin Grid Synchronized:** Double Kalman layer on custom columns fully activated.")
+st.success("🟢 **Bitcoin Grid Synchronized:** Kalman Column A & B are now dynamically adjusted via ATR vector.")
 
-# Display grid showing the new custom math and filtered columns
+# Display grid
 clean_cols = [
-    'Close', 'High', 'Low', 'Hurst', 'Hurst_Amp_Momentum', 
+    'Close', 'High', 'Low', 'ATR', 'Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B',
     'Momentum_Velocity', 'Velocity_Kalman', 'Accumulator_Channel'
 ]
@@ -174,7 +187,7 @@ display_df['Column_B'] = display_df['Column_B'].round(4)
 display_df['Kalman_Column_B'] = display_df['Kalman_Column_B'].round(4)
 display_df['Momentum_Velocity'] = display_df['Momentum_Velocity'].round(4)
 display_df['Velocity_Kalman'] = display_df['Velocity_Kalman'].round(4)
-for c in ['Close_Raw', 'High', 'Low']:
+for c in ['Close_Raw', 'High', 'Low', 'ATR']:
     display_df[c] = display_df[c].round(2)
 
 # Latest records on top
