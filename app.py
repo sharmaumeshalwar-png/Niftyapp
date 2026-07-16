@@ -5,15 +5,14 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Value Optimization Engine", layout="wide")
-st.title("⚡ Pure Numeric Value Master Engine")
-st.write("🎯 **Pure Value Focus:** Hurst-Amplified Momentum Core Precision Engine (Optimized for BTC Strongback & Multi-Asset Stabilization)")
+st.set_page_config(page_title="Amplified Value Engine", layout="wide")
+st.title("⚡ Amplified Numeric Value Master Engine")
+st.write("🎯 **Pure Value Focus:** Hurst-Amplified Momentum with Multiplier Scaling for High-Visibility Trading (100% Leakage-Free)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Zero Lag Core Math)
 # =====================================================================
 def apply_kalman_filter_precise(data_array, initial_p=50.0, q_val=0.005, r_val=0.05):
-    """High precision zero-lag Kalman core for mathematical baseline alignment"""
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -55,7 +54,7 @@ with st.spinner(f"Processing Data Streams for {target_ticker}..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Strict Leakage Protection Drop
+            df = df.iloc[:-1] # Strict Leakage Protection Drop (Patthar ki Lakeer)
             
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -73,11 +72,11 @@ with st.spinner(f"Processing Data Streams for {target_ticker}..."):
 # =====================================================================
 close_arr = df['Close'].values
 
-# Dynamic baseline generation
+# Baseline generation
 df['Kalman_Baseline'] = apply_kalman_filter_precise(close_arr, initial_p=50.0, q_val=0.01, r_val=0.02)
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# True Range integration for Volatility Dampening
+# True Range calculation without future bias
 high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
@@ -88,12 +87,12 @@ df['ATR'] = true_range.rolling(14).mean().ffill()
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_precise(raw_weighted_momentum.values, initial_p=0.50, q_val=0.005, r_val=0.05)
 
-# 🎯 THE SUPREME MULTIPLICATION STEP
+# THE EXPONENTIAL MULTIPLICATION
 df['Hurst_Amp_Momentum_Raw'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# 🛠️ VOLATILITY NORMALIZATION LAYER (Locks stabilization across ALL assets)
-# Isse raw prices ke bade structural digits factor out ho jaate hain
-df['Hurst_Amp_Momentum_Normalized'] = df['Hurst_Amp_Momentum_Raw'] / (df['ATR'] + 1e-8)
+# 🎯 THE HIGH-VISIBILITY AMPLIFIED LAYER
+# Paji yahan pehle normalise kiya ATR se, phir 100.0 se multiply kiya taaki sankhya badi dikhe!
+df['Amplified_Momentum_Value'] = (df['Hurst_Amp_Momentum_Raw'] / (df['ATR'] + 1e-8)) * 100.0
 
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
@@ -103,20 +102,20 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 cutoff_date = df.index.max() - timedelta(days=365)
 df_predict = df[df.index >= cutoff_date].copy()
 
-st.success(f"🟢 **Value Engine Synchronized:** Pure numeric tracking active for {target_ticker}.")
+st.success(f"🟢 **Visibility Engine Active:** Numbers successfully amplified by 100x factor!")
 
 # Clean matrix containing only the numeric parameters you care about
-clean_cols = ['Close', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Hurst_Amp_Momentum_Normalized']
+clean_cols = ['Close', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Amplified_Momentum_Value']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Raw_Price'}, inplace=True)
 
-# Precision rounding for hyper-accurate trade execution mapping
-for c in ['Raw_Price', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Hurst_Amp_Momentum_Normalized']:
+# Precision rounding
+for c in ['Raw_Price', 'Hurst', 'Weighted_Momentum', 'Hurst_Amp_Momentum_Raw', 'Amplified_Momentum_Value']:
     display_df[c] = display_df[c].round(4)
 
 # Chronological sorting for table reading
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader(f"📋 Verified Value Execution Matrix (Post-Learning Phase)")
+st.subheader(f"📋 Amplified Value Matrix (Check 'Amplified_Momentum_Value' for clear trend shifts)")
 st.dataframe(display_df, use_container_width=True, height=750)
