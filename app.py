@@ -5,8 +5,8 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(page_title="Crypto VIX 24/7 Engine", layout="wide")
-st.title("⚡ Crypto Volatility (BitVol) 24/7 Master Engine")
-st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Crypto Volatility Accumulator (100% Leak-Proof)")
+st.title("⚡ Crypto Volatility (CVOL) 24/7 Master Engine")
+st.write("🎯 **Pure Direct Signals:** Hurst-Amplified Momentum & 5-Channel Crypto VIX Accumulator (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -39,13 +39,13 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Targeting 24/7 Crypto BitVol Index)
+# 🛡️ SYSTEM DATA INGESTION (Targeting CVOL-USD 24/7 Index Feed)
 # -----------------------------------------------------------------
 df = None
-# Paji, Yahoo Finance ka authentic 24/7 Crypto VIX ticker set kar diya hai
-target_ticker = "BITVOL-USD" 
+# Paji, pure active index stream target kiya hai jo Yahoo Finance par high-density updates deta hai
+target_ticker = "CVOL-USD" 
 
-with st.spinner(f"Fetching Live 24/7 {target_ticker} Data..."):
+with st.spinner(f"Fetching Live 24/7 {target_ticker} Streaming Matrix..."):
     try:
         df = yf.download(tickers=target_ticker, period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
@@ -56,13 +56,13 @@ with st.spinner(f"Fetching Live 24/7 {target_ticker} Data..."):
             # Live Incomplete hourly candle protection
             df = df.iloc[:-1]
             
-            # Pure IST Conversion (24/7 Trading Alignment)
+            # Pure IST Conversion (24/7 Crypto Timeline Locked)
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data lines.")
+            st.error(f"🚨 Error: Insufficient historical candles for {target_ticker} on this frame.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
@@ -71,6 +71,7 @@ with st.spinner(f"Fetching Live 24/7 {target_ticker} Data..."):
 # =====================================================================
 # 🔥 GLOBAL CALCULATION (Calculations performed on full historical dataframe)
 # =====================================================================
+# Setup Isolated Volatility Index Arrays from Full Stream
 close_arr = df['Close'].values
 
 # Strict Price Kalman Baseline Calculation
@@ -136,14 +137,14 @@ df['Accumulator_Channel'] = accumulator
 
 # 🤖 SIGNAL GENERATION
 signal_log = []
-current_sig = "🔴 CRYPTO CRASH RISK / HIGH VOL"
+current_sig = "🔴 VOLATILITY CRUSH / RISK ON"
 
 for i in range(len(df)):
     acc_chan = accumulator[i]
     if acc_chan >= 4:
-        current_sig = "🟢 CRYPTO VOL SPIKE / RISK OFF"
+        current_sig = "🟢 VOLATILITY SPIKE / RISK OFF"
     elif acc_chan <= 2:
-        current_sig = "🔴 CRYPTO VOL CRUSH / RISK ON"
+        current_sig = "🔴 VOLATILITY CRUSH / RISK ON"
     signal_log.append(current_sig)
 
 df['Signal'] = signal_log
@@ -159,7 +160,7 @@ for i in range(len(df)):
     elif acc_chan == 4:
         p_up = 0.75
     elif acc_chan == 3:
-        p_up = 0.55 if "VOL SPIKE" in sig else 0.45
+        p_up = 0.55 if "SPIKE" in sig else 0.45
     elif acc_chan == 2:
         p_up = 0.25
     else:
@@ -175,17 +176,17 @@ df['Prob_Down'] = [round(1.0 - p, 2) for p in prob_up]
 # =====================================================================
 df_predict = df.copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Crypto VIX Candles (24/7 Streaming via IST)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live {target_ticker} Crypto Volatility Candles (24/7 IST)!**")
 
 # Format Layout Columns Matrix
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 
 # Rename to match UI spec
-display_df.rename(columns={'Close': 'BitVol_Raw'}, inplace=True)
+display_df.rename(columns={'Close': 'CVOL_Raw'}, inplace=True)
 
 # Precision Matrix Formatting
-for c in ['BitVol_Raw', 'Hurst_Amp_Momentum']:
+for c in ['CVOL_Raw', 'Hurst_Amp_Momentum']:
     display_df[c] = display_df[c].round(2)
 
 # Chronological sorting & Pure IST String Conversion
