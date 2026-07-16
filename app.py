@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Strict Value Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Strict 2-State Divergence (BTX or TRAP) | 100% Leakage Free")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Custom ATR x Hurst Weighting | 100% Leakage Free")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
@@ -109,6 +109,9 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # =====================================================================
 # 🧮 CUSTOM MATH COLUMNS & ATR-ADAPTIVE KALMAN FILTERS
 # =====================================================================
+# New Requested Column: ATR * Hurst (Volatility Weighted Trend scale)
+df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
+
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
@@ -151,11 +154,9 @@ for i in range(1, len(df)):
         dir_b = 1 if diff_b > 0 else -1
         
     # Paji strict rule mapping:
-    # Only if direction A and B are totally opposite AND both are not flat (0)
     if dir_a != 0 and dir_b != 0 and dir_a != dir_b:
         status = "🟩 BTX"
     else:
-        # Baki saare scenarios me direct TRAP
         status = "⚠️ TRAP"
         
     btc_status_list.append(status)
@@ -167,11 +168,11 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Strict Loop Synchronized:** System locked on 2-State (BTX/TRAP) Output.")
+st.success("🟢 **Strict Loop Synchronized:** System locked with new ATR x Hurst Volatility scale.")
 
-# Display grid
+# Display grid with the newly requested column
 clean_cols = [
-    'Close', 'High', 'Low', 'ATR', 'Hurst', 'Hurst_Amp_Momentum', 
+    'Close', 'High', 'Low', 'ATR', 'Hurst', 'ATR_x_Hurst', 'Hurst_Amp_Momentum', 
     'Column_A', 'Kalman_Column_A', 'Column_B', 'Kalman_Column_B', 'BTC_Status'
 ]
 display_df = df_predict[clean_cols].copy()
@@ -179,6 +180,7 @@ display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplac
 
 # Precision Rounding
 display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
+display_df['ATR_x_Hurst'] = display_df['ATR_x_Hurst'].round(4)
 display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(4)
 display_df['Column_A'] = display_df['Column_A'].round(4)
 display_df['Kalman_Column_A'] = display_df['Kalman_Column_A'].round(4)
