@@ -4,12 +4,12 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Strict Value Engine", layout="wide")
+st.set_page_config(page_title="BTC Strict Zero-Leakage Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Strict Divergence Engine")
-st.write("🎯 **Pure Value Trading:** 1-Hour Candles | Kalman & WMA on ATR x Hurst | 100% Strictly Leakage Free")
+st.write("🎯 **Pure Value Trading:** 1-Hour Candles | 24-Period Daily WMA | 100% Zero-Leakage Locked")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe - 100% UNTOUCHED ORIGINAL)
+# MATHEMATICAL ENGINES (Strictly Causal - Forward Only)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
@@ -50,16 +50,16 @@ def calculate_rolling_hurst(price_series, window=100):
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
 
-# Custom 2-Period Weighted Moving Average function
-def calculate_wma_2(series):
-    # WMA(2) = (Value[t-1]*1 + Value[t]*2) / 3 (Strictly causal, no lookahead)
-    return series.rolling(2).apply(lambda x: (x.iloc[0] * 1.0 + x.iloc[1] * 2.0) / 3.0, raw=False)
+# Scalable Causal WMA Function for custom period (Strictly No Lookahead)
+def calculate_wma_custom(series, period=24):
+    weights = np.arange(1, period + 1).astype(float)
+    return series.rolling(period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Strict Ingestion to BTC-USD)
+# 🛡️ STRICT DATA INGESTION & RUNNING CANDLE PURGE
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
+with st.spinner("Fetching Live 1-Year BTC Data..."):
     try:
         df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
@@ -68,7 +68,7 @@ with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # ⛔ CRITICAL 100% LEAKAGE PROTECTION BLOCK (Drops dynamic live candle)
+            # ⛔ CUTOFF ENGINE: Immediately drop the active, unclosed 1-hour candle.
             df = df.iloc[:-1]
             
             if df.index.tz is None:
@@ -83,21 +83,21 @@ with st.spinner("Fetching Live 1-Year BTC Data (1-Hour Intervals)..."):
         st.stop()
 
 # =====================================================================
-# 🔥 GLOBAL CALCULATION (Exact Original Pipeline - UNTOUCHED VALUES)
+# 🔥 GLOBAL CALCULATION PIPELINE (Forward Flow Only)
 # =====================================================================
 close_arr = df['Close'].values
 
 # Price Kalman Baseline
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation
+# ATR calculation (Using historical shift only)
 high_low = df['High'] - df['Low']
 high_close = np.abs(df['High'] - df['Close'].shift(1))
 low_close = np.abs(df['Low'] - df['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 df['ATR'] = true_range.rolling(14).mean().ffill().fillna(0)
 
-# Hurst Vector Generation
+# Hurst Vector Generation (Strictly historical window)
 df['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
 # Price-based Weighted Momentum
@@ -108,7 +108,7 @@ df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum, init
 # Hurst Amplification
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
 
-# Clean NaNs
+# Clean dynamic NaNs before sequential math operations
 df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 
 # =====================================================================
@@ -117,18 +117,18 @@ df.dropna(subset=['ATR', 'Hurst'], inplace=True)
 # 1. Base ATR * Hurst Column
 df['ATR_x_Hurst'] = df['ATR'] * df['Hurst']
 
-# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50 with forward fill)
+# 2. Kalman Filter on ATR * Hurst (strictly initial_p=0.50)
 atr_hurst_vals = df['ATR_x_Hurst'].ffill().fillna(0).values
 df['Kalman_ATR_Hurst'] = apply_kalman_filter_custom(atr_hurst_vals, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 3. 2-Period WMA on ATR * Hurst (ffill and fillna blocks lookahead leaks)
-df['WMA_ATR_Hurst'] = calculate_wma_2(df['ATR_x_Hurst']).ffill().fillna(0)
+# 3. 24-Period WMA on ATR * Hurst (Re-engineered to 24-Hour window)
+df['WMA_ATR_Hurst'] = calculate_wma_custom(df['ATR_x_Hurst'], period=24).ffill().fillna(0)
 
 # Original Custom Columns
 df['Column_A'] = df['Hurst'] * (df['High'] - df['Low'])
 df['Column_B'] = df['Column_A'] * df['Hurst_Amp_Momentum']
 
-# Pure forward filling for array extraction to completely block historical lookahead
+# Safe conversion with Forward Fill (ffill) and fillna(0) to block any lookahead gaps
 col_a_vals = df['Column_A'].ffill().fillna(0).values
 col_b_vals = df['Column_B'].ffill().fillna(0).values
 atr_vals = df['ATR'].ffill().fillna(0).values
@@ -180,9 +180,9 @@ df['BTC_Status'] = btc_status_list
 # =====================================================================
 df_predict = df.copy()
 
-st.success("🟢 **Grid Re-engineered:** Added Kalman & 2-Period WMA on ATR x Hurst metrics successfully.")
+st.success("🟢 **24-Period WMA Locked:** Daily loop trend smoothing successfully applied with zero-leakage security.")
 
-# Display grid with the newly requested columns
+# Display grid
 clean_cols = [
     'Close', 'High', 'Low', 'ATR', 'Hurst', 
     'ATR_x_Hurst', 'Kalman_ATR_Hurst', 'WMA_ATR_Hurst', 'Hurst_Amp_Momentum', 
