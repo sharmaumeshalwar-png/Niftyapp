@@ -173,7 +173,7 @@ df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
 # =====================================================================
-# 📈 DASHBOARD DISPLAY
+# 📋 DASHBOARD METRICS & TABLE ONLY
 # =====================================================================
 latest_row = df_predict.iloc[-1]
 col1, col2, col3, col4 = st.columns(4)
@@ -203,16 +203,6 @@ with col4:
         delta="Persistent Trend" if latest_row['Hurst'] > 0.5 else "Mean Reverting"
     )
 
-# Native Streamlit visual rendering - ZERO EXTERNAL LIBRARIES REQUIRED
-st.subheader("📈 Nifty H1 Spot & Kalman Trendline")
-chart_price_df = df_predict[['Close', 'Kalman_Baseline']]
-st.line_chart(chart_price_df)
-
-st.subheader("📊 Hurst-Amplified Momentum (*1000 Scale)")
-df_predict['Mom_Mean'] = mom_mean
-chart_mom_df = df_predict[['Hurst_Amp_Momentum', 'Mom_Mean']]
-st.line_chart(chart_mom_df)
-
 # Matrix Data Display
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
@@ -225,4 +215,4 @@ display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
 st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix")
-st.dataframe(display_df, use_container_width=True, height=450)
+st.dataframe(display_df, use_container_width=True, height=750)
