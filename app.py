@@ -45,7 +45,6 @@ def calculate_rolling_hurst(price_series, window=100):
 df = None
 with st.spinner("Fetching Live Bitcoin Data (2 Years, 1-Hour resolution)..."):
     try:
-        # Changed ticker to BTC-USD for Bitcoin tracking
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         
         # Robust multi-index column flattening
@@ -57,7 +56,6 @@ with st.spinner("Fetching Live Bitcoin Data (2 Years, 1-Hour resolution)..."):
             df = df.iloc[:-1]  # Live Incomplete running candle protection
             df = df.ffill().bfill()
             
-            # Standardizing to Indian Standard Time (Kolkata) for your local alignment
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -95,8 +93,8 @@ df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 Scaled by * 1000
-df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * 1000.0
+# 🔥 * 1000 is removed to keep HAM raw and clean
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
 # Dynamic alignment
 df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
