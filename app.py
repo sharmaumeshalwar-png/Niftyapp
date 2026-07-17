@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
+st.set_page_config(page_title="BTC Kinematic Newton Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Hyper Conservative Matrix:** Ultra-Filtered Noise-Free Kalman Engine (Initial P = 0.20)")
+st.write("🎯 **Newtonian Kinematics Matrix:** Bounded Hyper-Conservative Kalman with Newton Acceleration Vector")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking & Continuous)
@@ -77,7 +77,7 @@ df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr_global, initial_p=5
 # 2. Pure Hurst Base Calculation
 df['Hurst'] = calculate_rolling_hurst_leak_free(close_arr_global, window=100)
 
-# 3. 🧠 HYPER CONSERVATIVE NOISE FILTER: Fixed P=0.20, Ultra-low Q and high R for flat clean trend lines
+# 3. HYPER CONSERVATIVE NOISE FILTER (Fixed P=0.20)
 df['Hurst_Kalman'] = apply_kalman_filter_custom(
     df['Hurst'].values, 
     initial_p=0.20, 
@@ -89,8 +89,18 @@ df['Hurst_Kalman'] = apply_kalman_filter_custom(
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 5. Hurst Amplitude Weighted Momentum Core
+# 5. Hurst Amplitude Weighted Momentum Core (HAM)
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst_Kalman'] * 2.0)
+
+# =====================================================================
+# 🏎️ NEWTON ACCELERATION VECTOR ENGINES
+# =====================================================================
+# Method: Acceleration = Delta Velocity / Time (Dynamic Momentum Change Vector)
+df['Velocity_Change'] = df['Weighted_Momentum'].diff().fillna(0.0)
+# Rolling price variance acts as Dynamic Market Mass (Inertia)
+market_mass = df['Close'].rolling(window=20).std().fillna(1.0)
+# Newton's Formula: a = F / m (where Force is Velocity Change, adjusted for safety decimals)
+df['Newton_Acceleration'] = (df['Velocity_Change'] / (market_mass + 1e-5)) * 100.0
 
 # =====================================================================
 # 🔥 PRODUCTION SAFE ISOLATION VECTOR (Strict 50:50 Display Allocation)
@@ -99,27 +109,27 @@ split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=['Hurst'], inplace=True)
 
-st.success(f"🟢 **Hyper Conservative Mode Active! Noise completely eliminated from the calculation vector.**")
+st.success(f"🟢 **Newtonian Acceleration Vector Engine Deployed! Kinetic Metrics Engine Locked.**")
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND UTC DISPLAY
 # =====================================================================
 clean_cols = [
     'Close', 
-    'Hurst',
     'Hurst_Kalman',
     'Weighted_Momentum', 
+    'Newton_Acceleration',
     'Hurst_Amp_Momentum'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
 for c in display_df.columns:
-    display_df[c] = display_df[c].round(2)
+    display_df[c] = display_df[c].round(4) if c == 'Newton_Acceleration' else display_df[c].round(2)
 
 # Order framework with latest active matrix states on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 Production Bounded Hyper Conservative Matrix")
+st.subheader("📋 Production Bounded Newtonian Kinematic Matrix")
 st.dataframe(display_df, use_container_width=True, height=650)
