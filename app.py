@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Kinematic Newton Engine", layout="wide")
+st.set_page_config(page_title="BTC Newton Full Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Newtonian Kinematics Matrix:** Bounded Hyper-Conservative Kalman with Newton Acceleration Vector")
+st.write("🎯 **Newton Full Kinematics Suite:** Core Equations of Motion Vector Layer ($v, a, s$) with Bounded Hyper-Conservative Hurst Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking & Continuous)
@@ -85,22 +85,28 @@ df['Hurst_Kalman'] = apply_kalman_filter_custom(
     r_val=0.5
 )
 
-# 4. Raw Price-based Weighted Momentum
+# 4. Pure Kinetic Velocity (v) Matrix
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
-df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
-
-# 5. Hurst Amplitude Weighted Momentum Core (HAM)
-df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst_Kalman'] * 2.0)
+df['Newton_Velocity'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
 # =====================================================================
-# 🏎️ NEWTON ACCELERATION VECTOR ENGINES
+# 🏎️ NEWTON FULL KINETIC SUITE EQUATIONS
 # =====================================================================
-# Method: Acceleration = Delta Velocity / Time (Dynamic Momentum Change Vector)
-df['Velocity_Change'] = df['Weighted_Momentum'].diff().fillna(0.0)
-# Rolling price variance acts as Dynamic Market Mass (Inertia)
+# Initial Velocity (u) is the shifted state of velocity vector (t-1)
+df['Newton_Initial_Velocity'] = df['Newton_Velocity'].shift(1).fillna(0.0)
+
+# Market mass based on standard deviation volatility matrix
 market_mass = df['Close'].rolling(window=20).std().fillna(1.0)
-# Newton's Formula: a = F / m (where Force is Velocity Change, adjusted for safety decimals)
-df['Newton_Acceleration'] = (df['Velocity_Change'] / (market_mass + 1e-5)) * 100.0
+df['Velocity_Delta'] = df['Newton_Velocity'] - df['Newton_Initial_Velocity']
+
+# Equation 1: Acceleration (a = F / m)
+df['Newton_Acceleration'] = (df['Velocity_Delta'] / (market_mass + 1e-5)) * 100.0
+
+# Equation 2: Displacement Vector -> s = ut + 0.5 * a * t^2 (Assuming delta t = 1 candle unit)
+df['Newton_Displacement'] = df['Newton_Initial_Velocity'] + (0.5 * df['Newton_Acceleration'])
+
+# 5. Hurst Amplitude Weighted Momentum (HAM Core) modulated with Kinetic Displacement
+df['Hurst_Amp_Momentum'] = df['Newton_Displacement'] * (df['Hurst_Kalman'] * 2.0)
 
 # =====================================================================
 # 🔥 PRODUCTION SAFE ISOLATION VECTOR (Strict 50:50 Display Allocation)
@@ -109,7 +115,7 @@ split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=['Hurst'], inplace=True)
 
-st.success(f"🟢 **Newtonian Acceleration Vector Engine Deployed! Kinetic Metrics Engine Locked.**")
+st.success(f"🟢 **Newtonian Full Kinematic System Engaged! All Equations of Motion Bounded Successfully.**")
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND UTC DISPLAY
@@ -117,19 +123,23 @@ st.success(f"🟢 **Newtonian Acceleration Vector Engine Deployed! Kinetic Metri
 clean_cols = [
     'Close', 
     'Hurst_Kalman',
-    'Weighted_Momentum', 
+    'Newton_Velocity', 
     'Newton_Acceleration',
+    'Newton_Displacement',
     'Hurst_Amp_Momentum'
 ]
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close_Raw'}, inplace=True)
 
 for c in display_df.columns:
-    display_df[c] = display_df[c].round(4) if c == 'Newton_Acceleration' else display_df[c].round(2)
+    if c in ['Newton_Acceleration', 'Newton_Displacement']:
+        display_df[c] = display_df[c].round(4)
+    else:
+        display_df[c] = display_df[c].round(2)
 
 # Order framework with latest active matrix states on top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 Production Bounded Newtonian Kinematic Matrix")
+st.subheader("📋 Production Bounded Full Newtonian Kinematic Matrix")
 st.dataframe(display_df, use_container_width=True, height=650)
