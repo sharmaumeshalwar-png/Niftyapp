@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Crypto Signals:** 50:50 Split 1-Hour Candle Leak-Free Execution Matrix")
+st.write("🎯 **Pure Direct Crypto Signals:** 50:50 Split 1-Hour Candle Leak-Free Execution Matrix (Smoothed Hurst Layer)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking / No Leakage)
@@ -89,12 +89,15 @@ df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=
 # 2. Pure Hurst Base Calculation (Leak-Proof Windowing)
 df_predict['Hurst'] = calculate_rolling_hurst_leak_free(close_arr, window=100)
 
-# 3. Raw Price-based Weighted Momentum
+# 3. 🧠 MODIFICATION: Hurst par Kalman Filter Initial P = 0.50 lagaya
+df_predict['Hurst_Kalman'] = apply_kalman_filter_custom(df_predict['Hurst'].values, initial_p=0.50, q_val=0.001, r_val=0.1)
+
+# 4. Raw Price-based Weighted Momentum
 raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 4. Hurst Amplitude Weighted Momentum Core
-df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
+# 5. Hurst Amplitude Weighted Momentum Core (Using the new Hurst_Kalman column)
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst_Kalman'] * 2.0)
 
 # Clean NaNs strictly before UI pipeline formatting
 df_predict.dropna(subset=['Hurst'], inplace=True)
@@ -104,7 +107,8 @@ df_predict.dropna(subset=['Hurst'], inplace=True)
 # =====================================================================
 clean_cols = [
     'Close_Raw', 
-    'Hurst', 
+    'Hurst',
+    'Hurst_Kalman',
     'Weighted_Momentum', 
     'Hurst_Amp_Momentum'
 ]
