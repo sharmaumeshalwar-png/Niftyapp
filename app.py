@@ -54,7 +54,7 @@ with st.spinner("Fetching Live Bitcoin Data (2 Years, 1-Hour resolution)..."):
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1]  # Live Incomplete running candle protection
+            # 🚨 FIX: Removed `df.iloc[:-1]` to allow the active live price to update!
             df = df.ffill().bfill()
             
             if df.index.tz is None:
@@ -94,6 +94,12 @@ for i in range(1, len(raw_closes)):
             current_anchor += direction * range_size
             range_closes.append(current_anchor)
             range_times.append(raw_times[i])
+
+# 🚨 LIVE UPDATE INJECTION: If the active live price hasn't completed a 200pt block yet,
+# we temporarily append it at the end so the current live price is ALWAYS visible.
+if raw_closes[-1] != range_closes[-1]:
+    range_closes.append(raw_closes[-1])
+    range_times.append(raw_times[-1])
 
 # Create Range Bar DataFrame
 df_range = pd.DataFrame(index=range_times)
@@ -166,7 +172,7 @@ with col1:
         label="BTC Range Close (USD)", 
         value=f"${latest_row['Close']:.2f}", 
         delta=f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}",
-        help="Updates only when price prints a new 200-Point block."
+        help="Updates dynamically in real-time as the live price shifts."
     )
 with col2:
     st.metric(
@@ -199,5 +205,5 @@ display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 200-Point Range Bar Signal Matrix (No Time Noise)")
+st.subheader("📋 200-Point Range Bar Signal Matrix (Live Dynamic Updates)")
 st.dataframe(display_df, use_container_width=True, height=750)
