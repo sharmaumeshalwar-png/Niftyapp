@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Adaptive Engine Matrix:** Dynamic Volatility Tracking Layer via Real-Time Hurst Variance Scaling")
+st.write("🎯 **Fixed Engine Matrix:** Baseline Kalman Filter (Initial P = 0.20 Fix for Hurst Exponent)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking & Continuous)
@@ -20,33 +20,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
-
-def apply_adaptive_hurst_kalman(hurst_array, initial_p=0.50, base_q=0.001, base_r=0.1):
-    """
-    🧠 🔥 ADAPTIVE KALMAN ENGINE: Dynamic R-value adjustment based on Hurst state.
-    Accelerates tracking during strong trends, dampens tracking during structural noise.
-    """
-    if len(hurst_array) == 0: return []
-    x, p = hurst_array[0], initial_p
-    filtered_values = []
-    
-    for z in hurst_array:
-        # Dynamic tracking scalar: Inverse relationship with structural trend strength
-        # High Hurst (>0.6) drops scale factor -> lower R -> rapid tracking adjustment
-        # Low Hurst (<0.4) lifts scale factor -> higher R -> high smoothing variance
-        adaptive_scale = np.clip(1.5 - z, 0.1, 3.0) 
-        dynamic_r = base_r * adaptive_scale
-        
-        # Time Update (Predict)
-        p = p + base_q
-        
-        # Measurement Update (Correct)
-        k = p / (p + dynamic_r)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        
         filtered_values.append(x)
     return filtered_values
 
@@ -104,14 +77,14 @@ df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr_global, initial_p=5
 # 2. Pure Hurst Base Calculation
 df['Hurst'] = calculate_rolling_hurst_leak_free(close_arr_global, window=100)
 
-# 3. 🧠 DYNAMIC CHANGE: Hurst par ADAPTIVE Kalman Filter Initial P = 0.50 apply kiya
-df['Hurst_Kalman'] = apply_adaptive_hurst_kalman(df['Hurst'].values, initial_p=0.50, base_q=0.001, base_r=0.1)
+# 3. 🧠 FIXED INITIALIZATION: Hurst par Standard Kalman Filter Initial P = 0.20 strictly set kiya
+df['Hurst_Kalman'] = apply_kalman_filter_custom(df['Hurst'].values, initial_p=0.20, q_val=0.001, r_val=0.1)
 
 # 4. Raw Price-based Weighted Momentum
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
 df['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 5. Hurst Amplitude Weighted Momentum Core (Using the new Adaptive Hurst_Kalman data line)
+# 5. Hurst Amplitude Weighted Momentum Core
 df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst_Kalman'] * 2.0)
 
 # =====================================================================
@@ -121,7 +94,7 @@ split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=['Hurst'], inplace=True)
 
-st.success(f"🟢 **Trading Engine Adaptive Mode Engaged! {len(df_predict)} Candles Locked Without Indicator Drift.**")
+st.success(f"🟢 **Trading Engine Locked! Initial P = 0.20 Fix Applied with 0% Value Drift.**")
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND UTC DISPLAY
@@ -143,5 +116,5 @@ for c in display_df.columns:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 Production Bounded Adaptive Execution Matrix")
+st.subheader("📋 Production Bounded 0.20 Fixed Execution Matrix")
 st.dataframe(display_df, use_container_width=True, height=650)
