@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Fixed Engine Matrix:** Baseline Kalman Filter (Initial P = 0.20 Fix for Hurst Exponent)")
+st.write("🎯 **Hyper Conservative Matrix:** Ultra-Filtered Noise-Free Kalman Engine (Initial P = 0.20)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking & Continuous)
@@ -77,8 +77,13 @@ df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr_global, initial_p=5
 # 2. Pure Hurst Base Calculation
 df['Hurst'] = calculate_rolling_hurst_leak_free(close_arr_global, window=100)
 
-# 3. 🧠 FIXED INITIALIZATION: Hurst par Standard Kalman Filter Initial P = 0.20 strictly set kiya
-df['Hurst_Kalman'] = apply_kalman_filter_custom(df['Hurst'].values, initial_p=0.20, q_val=0.001, r_val=0.1)
+# 3. 🧠 HYPER CONSERVATIVE NOISE FILTER: Fixed P=0.20, Ultra-low Q and high R for flat clean trend lines
+df['Hurst_Kalman'] = apply_kalman_filter_custom(
+    df['Hurst'].values, 
+    initial_p=0.20, 
+    q_val=0.000001, 
+    r_val=0.5
+)
 
 # 4. Raw Price-based Weighted Momentum
 raw_weighted_momentum = df['Close'] - df['Kalman_Baseline']
@@ -94,7 +99,7 @@ split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=['Hurst'], inplace=True)
 
-st.success(f"🟢 **Trading Engine Locked! Initial P = 0.20 Fix Applied with 0% Value Drift.**")
+st.success(f"🟢 **Hyper Conservative Mode Active! Noise completely eliminated from the calculation vector.**")
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND UTC DISPLAY
@@ -116,5 +121,5 @@ for c in display_df.columns:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 Production Bounded 0.20 Fixed Execution Matrix")
+st.subheader("📋 Production Bounded Hyper Conservative Matrix")
 st.dataframe(display_df, use_container_width=True, height=650)
