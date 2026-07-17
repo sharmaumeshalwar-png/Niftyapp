@@ -4,61 +4,14 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Hyper-Newtonian Kalman Engine", layout="wide")
-st.title("🚀 Bitcoin (BTC-USD) Newtonian Kalman Hybrid Engine")
-st.write("🎯 **Dual-Engine Masterpiece:** Newtonian Velocity × Acceleration × Hurst Smoothed by a Strict 0.50 Kalman Filter | 100% Zero-Leakage")
+st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
+st.write("🎯 **Pure Direct Crypto Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal - Newtonian & Kalman Filter)
+# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
 # =====================================================================
-def calculate_kinematic_states(price_series, window=14):
-    """
-    Fits a local quadratic polynomial (y = A*t^2 + B*t + C) to calculate
-    instantaneous velocity (dy/dt) and acceleration (d^2y/dt^2).
-    """
-    n = len(price_series)
-    velocity = np.zeros(n)
-    acceleration = np.zeros(n)
-    
-    t = np.arange(window)
-    X = np.vstack([t**2, t, np.ones(window)]).T
-    X_pseudo = np.linalg.pinv(X)
-    
-    for i in range(window - 1, n):
-        y = price_series[i - window + 1 : i + 1]
-        beta = X_pseudo.dot(y)
-        curr_t = window - 1
-        
-        # Velocity v = 2A*t + B
-        velocity[i] = (2.0 * beta[0] * curr_t) + beta[1]
-        # Acceleration a = 2A
-        acceleration[i] = 2.0 * beta[0]
-        
-    return velocity, acceleration
-
-def calculate_rolling_hurst_safe(price_series, window=100):
-    """
-    Safe Hurst calculation without np.roll wrap-around leakage.
-    """
-    hurst_values = np.full(len(price_series), 0.5)
-    log_returns = np.zeros(len(price_series))
-    log_returns[1:] = np.log(price_series[1:] / price_series[:-1])
-    
-    for i in range(window, len(price_series)):
-        window_data = log_returns[i-window+1:i+1]
-        cum_dev = np.cumsum(window_data - np.mean(window_data))
-        r_val = np.max(cum_dev) - np.min(cum_dev)
-        s_val = np.std(window_data) + 1e-10
-        rs_ratio = r_val / s_val
-        h = np.log(rs_ratio) / np.log(window)
-        hurst_values[i] = np.clip(h, 0.0, 1.0)
-    return hurst_values
-
-def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.005):
-    """
-    Custom Kalman Filter tailored specifically to stabilize Hyper-Accelerated HAM.
-    Balanced process noise (q) and measurement noise (r) ratios map to 0.50 covariance.
-    """
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -70,103 +23,178 @@ def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.005, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
+def calculate_rolling_hurst(price_series, window=100):
+    hurst_values = np.full(len(price_series), 0.5) 
+    log_returns = np.log(price_series / np.roll(price_series, 1))
+    log_returns[0] = 0
+    
+    for i in range(window, len(price_series)):
+        window_data = log_returns[i-window+1:i+1]
+        cum_dev = np.cumsum(window_data - np.mean(window_data))
+        r_val = np.max(cum_dev) - np.min(cum_dev)
+        s_val = np.std(window_data) + 1e-10
+        rs_ratio = r_val / s_val
+        h = np.log(rs_ratio) / np.log(window)
+        hurst_values[i] = np.clip(h, 0.0, 1.0)
+    return hurst_values
+
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION & RUNNING CANDLE PURGE
+# 🛡️ SYSTEM DATA INGESTION (BTC-USD Setup - 2y, 1h)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live 1-Year BTC Data..."):
+with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="1y", interval="1h")
+        # Crypto ticker 'BTC-USD' strictly 2 saal ka data aur 1 hourly intervals
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+            df = df.iloc[:-1] # Live Running Candle Protection (Strictly No Leakage)
             
-            # ⛔ CUTOFF ENGINE: Drop the active unclosed dynamic 1-hour candle.
-            df = df.iloc[:-1]
-            
+            # Crypto standard UTC timezone locking
             if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+                df.index = df.index.tz_localize('UTC')
             else:
-                df.index = df.index.tz_convert('Asia/Kolkata')
+                df.index = df.index.tz_convert('UTC')
         else:
-            st.error("🚨 Error: Insufficient data lines.")
+            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
+# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
+split_idx = int(len(df) * 0.50)
+df_predict = df.iloc[split_idx:].copy()
+
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Bitcoin Candles (No Leakage)!**")
+
 # =====================================================================
-# 🔥 GLOBAL CALCULATION PIPELINE (Strict Forward Flow)
+# ⚡ NON-LINEAR HURST KINEMATICS CORE
 # =====================================================================
-close_arr = df['Close'].values
+df_predict['Close_Raw'] = df_predict['Close']
+close_arr = df_predict['Close_Raw'].values
 
-# 1. Kinematics Physics Engine (Velocity & Acceleration)
-velocity, acceleration = calculate_kinematic_states(close_arr, window=14)
-df['Kinematic_Velocity'] = velocity
-df['Kinematic_Acceleration'] = acceleration
+# 1. Base Kalman System & Innovation Error Extraction
+df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
 
-# 2. Safe Hurst Vector Generation
-df['Hurst'] = calculate_rolling_hurst_safe(close_arr, window=100)
+# 2. Pure Hurst Base Calculation
+df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# 3. Hyper-Accelerated HAM (Raw)
-df['Hurst_Amp_Momentum'] = df['Kinematic_Velocity'] * df['Kinematic_Acceleration'] * (df['Hurst'] * 2.0)
+# 3. MODIFICATION 1: HURST VELOCITY ENGINE
+df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
+df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
 
-# Clean NaNs before secondary Kalman execution
-df.dropna(subset=['Hurst', 'Hurst_Amp_Momentum'], inplace=True)
+# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
+df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
+df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
 
-# 🎯 4. NEW REQ: Apply 0.50 Kalman Filter directly onto the newly calculated Hyper-Accelerated HAM
-ham_raw_vals = df['Hurst_Amp_Momentum'].values
-df['HAM_Kalman'] = apply_kalman_filter_custom(ham_raw_vals, initial_p=0.50, q_val=0.005, r_val=0.005)
+# 5. Raw Price-based Weighted Momentum
+raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
+df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 5. Volume Rolling Mean
-df['Vol_MA_20'] = df['Volume'].rolling(20, min_periods=1).mean().ffill().fillna(0)
+df_predict['Hurst_Amp_Momentum'] = (
+    df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
+)
 
-# 6. Hybrid Newtonian-Kalman Volume-Momentum Decision Engine
-# Now checking the smoothed HAM_Kalman instead of raw choppy HAM
-vol_mom_decisions = []
-for i in range(len(df)):
-    curr_kalman_ham = df['HAM_Kalman'].iloc[i]
-    curr_vol = df['Volume'].iloc[i]
-    avg_vol = df['Vol_MA_20'].iloc[i]
+# 6. 🔥 PAJI'S MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
+raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
+
+# ✨ Adaptive Energy Scaling for Crypto Volatility
+df_predict['Dynamic_Energy_Factor'] = np.where(df_predict['Hurst'] < 0.48, raw_multiplied_drift * 0.3, raw_multiplied_drift * 1.5)
+
+smoothed_drift = apply_kalman_filter_custom(df_predict['Dynamic_Energy_Factor'].values, initial_p=1.0, q_val=0.005, r_val=0.5)
+
+# Bounded range engine (-100 to +100 Scaling using Hyperbolic Tangent)
+df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.03) * 100.0
+
+# Clean NaNs strictly before creating rolling statistical channels
+df_predict.dropna(subset=['Hurst'], inplace=True)
+
+# =====================================================================
+# 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
+# =====================================================================
+mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
+rolling_window = 50
+mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
+mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
+
+channels = np.zeros(len(mom_vals), dtype=int)
+accumulator = np.zeros(len(mom_vals), dtype=int) 
+
+for i in range(len(mom_vals)):
+    val = mom_vals[i]
+    m = mom_mean[i]
+    s = mom_std[i]
     
-    if curr_kalman_ham > 50.0 and curr_vol > avg_vol:
-        status = "🟢 HYBRID BULL"
-    elif curr_kalman_ham < -50.0 and curr_vol > avg_vol:
-        status = "🔴 HYBRID BEAR"
+    if val > (m + 1.5 * s):
+        channels[i] = 5
+    elif val > (m + 0.5 * s):
+        channels[i] = 4
+    elif val < (m - 1.5 * s):
+        channels[i] = 1
+    elif val < (m - 0.5 * s):
+        channels[i] = 2
     else:
-        status = "⚪ NEUTRAL FLAT"
-    vol_mom_decisions.append(status)
+        channels[i] = 3
+        
+    if i == 0:
+        accumulator[i] = channels[i]
+    else:
+        prev_acc = accumulator[i-1]
+        curr_chan = channels[i]
+        if abs(curr_chan - prev_acc) >= 1:
+            accumulator[i] = curr_chan
+        else:
+            accumulator[i] = prev_acc
 
-df['Vol_Mom_Decision'] = vol_mom_decisions
+df_predict['Accumulator_Channel'] = accumulator
+
+# 🤖 SIGNAL & PROBABILITY GENERATION
+signal_log = []
+prob_up = []
+current_sig = "🔴 SELL"  
+
+for i in range(len(df_predict)):
+    acc_chan = accumulator[i]
+    if acc_chan >= 4:
+        current_sig = "🟢 BUY"
+    elif acc_chan <= 2:
+        current_sig = "🔴 SELL"
+    signal_log.append(current_sig)
+    
+    if acc_chan == 5: p = 0.95
+    elif acc_chan == 4: p = 0.75
+    elif acc_chan == 3: p = 0.55 if current_sig == "🟢 BUY" else 0.45
+    elif acc_chan == 2: p = 0.25
+    else: p = 0.05
+    prob_up.append(round(p, 2))
+
+df_predict['Signal'] = signal_log
+df_predict['Prob_Up'] = prob_up
 
 # =====================================================================
-# 🎛️ DASHBOARD DISPLAY PANEL
+# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
 # =====================================================================
-df_predict = df.copy()
-
-st.success("🟢 **Newtonian Kalman Engine Locked:** Hyper-Accelerated HAM is now perfectly filtered with 0.50 Kalman covariance!")
-
-# Display Setup
 clean_cols = [
-    'Close', 'Kinematic_Velocity', 'Kinematic_Acceleration', 'Volume', 
-    'Hurst', 'Hurst_Amp_Momentum', 'HAM_Kalman', 'Vol_Mom_Decision'
+    'Close_Raw', 
+    'Hurst_Amp_Momentum', 
+    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
+    'Accumulator_Channel', 
+    'Signal', 
+    'Prob_Up'
 ]
 display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'Close_Raw', 'Hurst': 'Hurst_Value'}, inplace=True)
 
-# Precision Rounding
-display_df['Close_Raw'] = display_df['Close_Raw'].round(2)
-display_df['Kinematic_Velocity'] = display_df['Kinematic_Velocity'].round(2)
-display_df['Kinematic_Acceleration'] = display_df['Kinematic_Acceleration'].round(4)
-display_df['Volume'] = display_df['Volume'].round(0)
-display_df['Hurst_Value'] = display_df['Hurst_Value'].round(4)
-display_df['Hurst_Amp_Momentum'] = display_df['Hurst_Amp_Momentum'].round(2)
-display_df['HAM_Kalman'] = display_df['HAM_Kalman'].round(2) # New Column Rounded
+for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift_Score']:
+    display_df[c] = display_df[c].round(2)
 
+# Latest on top display in UTC
 display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
 
-st.subheader("📋 Bitcoin 1-Hour Newtonian-Kalman Hybrid Board")
+st.subheader("📋 5-Channel Kinematic Bounded Bitcoin Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
