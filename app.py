@@ -1,9 +1,20 @@
+import sys
+import subprocess
+
+# 🔥 AUTO-INSTALLER: Bina requirements.txt ke Plotly aur baaki files automatic install karne ke liye
+try:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+except ModuleNotFoundError:
+    # Agar library nahi milti, toh script khud background me deploy hote hi use install karegi
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
 import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # Page Configuration
 st.set_page_config(page_title="Nifty Master Signal Engine", layout="wide")
@@ -47,7 +58,6 @@ def calculate_rolling_hurst(price_series, window=100):
 df = None
 with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
     try:
-        # Paji, updated to 2 years and 1 hour intervals
         df = yf.download(tickers="^NSEI", period="2y", interval="1h")
         
         # Robust multi-index column flattening
@@ -55,13 +65,13 @@ with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
             df.columns = df.columns.droplevel(1)
             
         if len(df) > 120: 
-            # 1. First clean missing data points in incoming structure
+            # 1. Clean missing data points
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             
-            # 2. Live Incomplete running candle protection (100% Leak proof guard)
+            # 2. Live Incomplete running candle protection (Leak proof guard)
             df = df.iloc[:-1]  
             
-            # 3. Clean any middle data gaps safely without future-leakage
+            # 3. Clean middle data gaps safely
             df = df.ffill().bfill()
             
             # Timezone standardization
@@ -70,42 +80,42 @@ with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient data lines for historical computations.")
+            st.error("🚨 Error: Insufficient data lines.")
             st.stop()
     except Exception as e:
-        st.error(f"🚨 API Failure or Data Processing Error: {e}")
+        st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 CRITICAL DATA SCIENCE RULE: Split data 50:50 to prevent lookahead leakage globally
+# 🔥 50:50 Split for Zero Leakage
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (50% Out-of-Sample Partition)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (50% Out-of-Sample)!**")
 
 # Setup Isolated Price Arrays
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
-# Strict Isolated Price Kalman Baseline Calculation
+# Base Kalman calculations
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# ATR calculation without lookahead/bfill bias
+# ATR calculation
 high_low = df_predict['High'] - df_predict['Low']
 high_close = np.abs(df_predict['High'] - df_predict['Close'].shift(1))
 low_close = np.abs(df_predict['Low'] - df_predict['Close'].shift(1))
 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-df_predict['ATR'] = true_range.rolling(14).mean().ffill().bfill() # Safe fill
+df_predict['ATR'] = true_range.rolling(14).mean().ffill().bfill() 
 
-# Hurst Vector Generation on isolated window
+# Hurst Vector on isolated window
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
 
-# Exact original Price-based Weighted Momentum Calculation
+# Exact Weighted Momentum 
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 THE SCALED MULTIPLICATION: Amplified by * 1000 for high resolution channel sizing
+# 🔥 Scaled by * 1000
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * 1000.0
 
-# Clean NaNs strictly inside the prediction segment safely
+# Dynamic alignment
 df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
 df_predict = df_predict.ffill().bfill()
 
@@ -125,7 +135,6 @@ for i in range(len(mom_vals)):
     m = mom_mean[i]
     s = mom_std[i]
     
-    # 1. Assign Raw Channel Band
     if val > (m + 1.5 * s):
         channels[i] = 5
     elif val > (m + 0.5 * s):
@@ -137,7 +146,6 @@ for i in range(len(mom_vals)):
     else:
         channels[i] = 3
         
-    # 2. Accumulator Logic
     if i == 0:
         accumulator[i] = channels[i]
     else:
@@ -151,7 +159,7 @@ for i in range(len(mom_vals)):
 df_predict['Raw_Channel'] = channels
 df_predict['Accumulator_Channel'] = accumulator
 
-# 🤖 SIGNAL GENERATION
+# Signal Generation
 signal_log = []
 current_sig = "🔴 SELL"  
 
@@ -165,7 +173,7 @@ for i in range(len(df_predict)):
 
 df_predict['Signal'] = signal_log
 
-# PROBABILITY MATRIX
+# Probabilities
 prob_up, prob_down = [], []
 for i in range(len(df_predict)):
     acc_chan = accumulator[i]
@@ -184,7 +192,7 @@ df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 
 # =====================================================================
-# 📈 VISUAL DASHBOARD PRESENTATION
+# 📈 DASHBOARD DISPLAY
 # =====================================================================
 latest_row = df_predict.iloc[-1]
 col1, col2, col3, col4 = st.columns(4)
@@ -224,24 +232,20 @@ fig = make_subplots(
     row_heights=[0.6, 0.4]
 )
 
-# Price Baseline Tracking
 fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Close'], name='Close Price', line=dict(color='#1f77b4', width=2)), row=1, col=1)
 fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Kalman_Baseline'], name='Kalman Baseline', line=dict(color='#ff7f0e', dash='dot')), row=1, col=1)
 
-# Active Signal States on Candles
 buys = df_predict[df_predict['Signal'] == "🟢 BUY"]
 sells = df_predict[df_predict['Signal'] == "🔴 SELL"]
 fig.add_trace(go.Scatter(x=buys.index, y=buys['Close'], mode='markers', name='Buy Trigger', marker=dict(color='green', size=6, symbol='triangle-up')), row=1, col=1)
 fig.add_trace(go.Scatter(x=sells.index, y=sells['Close'], mode='markers', name='Sell Trigger', marker=dict(color='red', size=6, symbol='triangle-down')), row=1, col=1)
 
-# Amplified Subplot
 fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Hurst_Amp_Momentum'], name='Scaled HAM (x1000)', line=dict(color='#2ca02c', width=2)), row=2, col=1)
 fig.add_trace(go.Scatter(x=df_predict.index, y=mom_mean, name='Mom Average Line', line=dict(color='gray', dash='dash')), row=2, col=1)
 
 fig.update_layout(height=650, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(t=50, b=50, l=50, r=50))
 st.plotly_chart(fig, use_container_width=True)
 
-# Format & Print
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close Raw'}, inplace=True)
