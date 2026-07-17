@@ -1,16 +1,3 @@
-import sys
-import subprocess
-
-# 🔥 AUTO-INSTALLER: Bina requirements.txt ke Plotly aur baaki files automatic install karne ke liye
-try:
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-except ModuleNotFoundError:
-    # Agar library nahi milti, toh script khud background me deploy hote hi use install karegi
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -65,16 +52,10 @@ with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
             df.columns = df.columns.droplevel(1)
             
         if len(df) > 120: 
-            # 1. Clean missing data points
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            
-            # 2. Live Incomplete running candle protection (Leak proof guard)
-            df = df.iloc[:-1]  
-            
-            # 3. Clean middle data gaps safely
+            df = df.iloc[:-1]  # Live Incomplete running candle protection
             df = df.ffill().bfill()
             
-            # Timezone standardization
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -222,30 +203,17 @@ with col4:
         delta="Persistent Trend" if latest_row['Hurst'] > 0.5 else "Mean Reverting"
     )
 
-st.subheader("📈 Nifty H1 Price Actions & Amplified Momentum Bands")
+# Native Streamlit visual rendering - ZERO EXTERNAL LIBRARIES REQUIRED
+st.subheader("📈 Nifty H1 Spot & Kalman Trendline")
+chart_price_df = df_predict[['Close', 'Kalman_Baseline']]
+st.line_chart(chart_price_df)
 
-fig = make_subplots(
-    rows=2, cols=1, 
-    shared_xaxes=True, 
-    vertical_spacing=0.06, 
-    subplot_titles=("Nifty 50 Spot with Signal Overlays", "Hurst-Amplified Momentum (*1000 Scale)"),
-    row_heights=[0.6, 0.4]
-)
+st.subheader("📊 Hurst-Amplified Momentum (*1000 Scale)")
+df_predict['Mom_Mean'] = mom_mean
+chart_mom_df = df_predict[['Hurst_Amp_Momentum', 'Mom_Mean']]
+st.line_chart(chart_mom_df)
 
-fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Close'], name='Close Price', line=dict(color='#1f77b4', width=2)), row=1, col=1)
-fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Kalman_Baseline'], name='Kalman Baseline', line=dict(color='#ff7f0e', dash='dot')), row=1, col=1)
-
-buys = df_predict[df_predict['Signal'] == "🟢 BUY"]
-sells = df_predict[df_predict['Signal'] == "🔴 SELL"]
-fig.add_trace(go.Scatter(x=buys.index, y=buys['Close'], mode='markers', name='Buy Trigger', marker=dict(color='green', size=6, symbol='triangle-up')), row=1, col=1)
-fig.add_trace(go.Scatter(x=sells.index, y=sells['Close'], mode='markers', name='Sell Trigger', marker=dict(color='red', size=6, symbol='triangle-down')), row=1, col=1)
-
-fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Hurst_Amp_Momentum'], name='Scaled HAM (x1000)', line=dict(color='#2ca02c', width=2)), row=2, col=1)
-fig.add_trace(go.Scatter(x=df_predict.index, y=mom_mean, name='Mom Average Line', line=dict(color='gray', dash='dash')), row=2, col=1)
-
-fig.update_layout(height=650, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(t=50, b=50, l=50, r=50))
-st.plotly_chart(fig, use_container_width=True)
-
+# Matrix Data Display
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Raw_Channel', 'Accumulator_Channel', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Close Raw'}, inplace=True)
@@ -256,5 +224,5 @@ for c in ['Close Raw', 'Hurst_Amp_Momentum']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix (Clean Data Table)")
+st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=450)
