@@ -4,8 +4,8 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Master Signal Engine", layout="wide")
-st.title("⚡ Nifty 50 Pure Action Master Engine")
+st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
+st.title("⚡ BTC Pure Action Master Engine")
 st.write("🎯 **Pure Direct Signals:** Scaled Hurst-Amplified Momentum & 5-Channel Accumulator (100% Leak-Proof)")
 
 # =====================================================================
@@ -40,12 +40,13 @@ def calculate_rolling_hurst(price_series, window=100):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Nifty Index - 2 Years, 1 Hour Candles)
+# 🛡️ SYSTEM DATA INGESTION (Bitcoin - 2 Years, 1 Hour Candles)
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
+with st.spinner("Fetching Live Bitcoin Data (2 Years, 1-Hour resolution)..."):
     try:
-        df = yf.download(tickers="^NSEI", period="2y", interval="1h")
+        # Changed ticker to BTC-USD for Bitcoin tracking
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         
         # Robust multi-index column flattening
         if isinstance(df.columns, pd.MultiIndex):
@@ -56,6 +57,7 @@ with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
             df = df.iloc[:-1]  # Live Incomplete running candle protection
             df = df.ffill().bfill()
             
+            # Standardizing to Indian Standard Time (Kolkata) for your local alignment
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -71,7 +73,7 @@ with st.spinner("Fetching Live Nifty 50 Data (2 Years, 1-Hour resolution)..."):
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Nifty Candles (50% Out-of-Sample)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live BTC Candles (50% Out-of-Sample)!**")
 
 # Setup Isolated Price Arrays
 close_arr = df_predict['Close'].to_numpy(dtype=float)
@@ -180,9 +182,9 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric(
-        label="Nifty Close", 
-        value=f"{latest_row['Close']:.2f}", 
-        delta=f"{(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}"
+        label="BTC Close (USD)", 
+        value=f"${latest_row['Close']:.2f}", 
+        delta=f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}"
     )
 with col2:
     st.metric(
@@ -214,5 +216,5 @@ for c in ['Close Raw', 'Hurst_Amp_Momentum']:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 5-Channel Accumulated Nifty 50 Action Matrix")
+st.subheader("📋 5-Channel Accumulated BTC Action Matrix")
 st.dataframe(display_df, use_container_width=True, height=750)
