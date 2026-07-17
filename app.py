@@ -6,8 +6,8 @@ from scipy.stats import norm
 
 # Page Configuration
 st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
-st.title("⚡ BTC Pure HAM Probability Engine")
-st.write("🎯 **HAM-Direct Probabilities:** Continuous Probability Mapping directly from Raw Hurst-Amplified Momentum (100% Leak-Proof)")
+st.title("⚡ BTC Pure HAM Probability Engine (200-Point Bound)")
+st.write("🎯 **200-Point Normalized Engine:** Real-time prices scaled strictly to a 0-200 range with all downstream math preserved (100% Leak-Proof)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -74,40 +74,43 @@ df_predict = df.iloc[split_idx:].copy()
 
 st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live BTC Candles (50% Out-of-Sample)!**")
 
-# Setup Isolated Price Arrays
-close_arr = df_predict['Close'].to_numpy(dtype=float)
+# =====================================================================
+# 🎚️ 200-POINT RANGE NORMALIZATION ENGINE (Strict Bounds)
+# =====================================================================
+norm_window = 100
+roll_min = df_predict['Close'].rolling(window=norm_window, min_periods=1).min()
+roll_max = df_predict['Close'].rolling(window=norm_window, min_periods=1).max()
 
-# Base Kalman calculations
-df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+# Scaling raw close price to dynamic 0 to 200 range
+denom = (roll_max - roll_min).replace(0, 1e-6) # Prevents division by zero
+df_predict['Close_200'] = ((df_predict['Close'] - roll_min) / denom) * 200.0
 
-# ATR calculation
-high_low = df_predict['High'] - df_predict['Low']
-high_close = np.abs(df_predict['High'] - df_predict['Close'].shift(1))
-low_close = np.abs(df_predict['Low'] - df_predict['Close'].shift(1))
-true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-df_predict['ATR'] = true_range.rolling(14).mean().ffill().bfill() 
+# Setup Isolated Price Array based on 200-point normalized values
+close_200_arr = df_predict['Close_200'].to_numpy(dtype=float)
 
-# Hurst Vector on isolated window
-df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
+# Downstream Calculations using the 200-point scale
+df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_200_arr, initial_p=10.0, q_val=0.0005, r_val=0.2)
 
-# Exact Weighted Momentum 
-raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
+# Hurst Vector calculations
+df_predict['Hurst'] = calculate_rolling_hurst(close_200_arr, window=100)
+
+# Exact Weighted Momentum based on 200-point deviations
+raw_weighted_momentum = df_predict['Close_200'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 🔥 Raw Unscaled HAM (Hurst-Amplified Momentum)
+# Raw HAM calculation
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
-# Dynamic alignment
-df_predict.dropna(subset=['ATR', 'Hurst'], inplace=True)
+# Clean and align
+df_predict.dropna(subset=['Hurst', 'Close_200'], inplace=True)
 df_predict = df_predict.ffill().bfill()
 
 # =====================================================================
-# 📊 PURE HAM-BASED PROBABILITY ENGINE (No Static Channels)
+# 📊 PURE HAM-BASED PROBABILITY ENGINE
 # =====================================================================
 rolling_window = 50
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
-# Set a tiny epsilon floor to prevent division-by-zero
 mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1e-6).to_numpy()
 mom_std = np.where(mom_std == 0, 1e-6, mom_std)
 
@@ -119,17 +122,13 @@ for i in range(len(mom_vals)):
     m = mom_mean[i]
     s = mom_std[i]
     
-    # Calculate continuous deviation (Z-score) of raw HAM
     z_score = (val - m) / s
-    
-    # Map Z-score using Normal CDF to map strictly within 0.0 - 1.0 range
     p_up = norm.cdf(z_score)
-    p_up = np.clip(p_up, 0.01, 0.99) # Keep extreme bounds sane
+    p_up = np.clip(p_up, 0.01, 0.99)
     
     prob_up.append(round(p_up, 2))
     prob_down.append(round(1.0 - p_up, 2))
     
-    # Signal purely driven by Prob_Up crossing 50% equilibrium threshold
     if p_up > 0.50:
         signal_log.append("🟢 BUY")
     else:
@@ -147,9 +146,10 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric(
-        label="BTC Close (USD)", 
-        value=f"${latest_row['Close']:.2f}", 
-        delta=f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}"
+        label="BTC 200-Pt Bound Value", 
+        value=f"{latest_row['Close_200']:.2f} pts", 
+        delta=f"{(latest_row['Close_200'] - df_predict['Close_200'].iloc[-2]):.2f} pts",
+        help=f"Raw Market Price: ${latest_row['Close']:.2f}"
     )
 with col2:
     st.metric(
@@ -171,16 +171,17 @@ with col4:
     )
 
 # Matrix Data Display
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
+clean_cols = ['Close', 'Close_200', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'Close Raw', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
+display_df.rename(columns={'Close': 'Market Close Raw', 'Close_200': 'Normalized Price (0-200)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
 
-# Round close and format raw HAM with higher precision
-display_df['Close Raw'] = display_df['Close Raw'].round(2)
+# Round values
+display_df['Market Close Raw'] = display_df['Market Close Raw'].round(2)
+display_df['Normalized Price (0-200)'] = display_df['Normalized Price (0-200)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 100% HAM-Derived Probability Action Matrix")
+st.subheader("📋 100% HAM-Derived Probability Action Matrix (With 200-Point Price Base)")
 st.dataframe(display_df, use_container_width=True, height=750)
