@@ -5,9 +5,9 @@ import yfinance as yf
 from scipy.stats import norm
 
 # Page Configuration
-st.set_page_config(page_title="BTC Master Signal Engine", layout="wide")
-st.title("⚡ BTC Pure HAM Probability Engine (200-Point Bound)")
-st.write("🎯 **200-Point Normalized Engine:** Real-time prices scaled strictly to a 0-200 range with all downstream math preserved (100% Leak-Proof)")
+st.set_page_config(page_title="BTC Range Bar Signal Engine", layout="wide")
+st.title("⚡ BTC 200-Point Range Bar Master Engine")
+st.write("🎯 **Pure Price Action:** Time-Independent 200-Point Range Candles with HAM Probabilities (100% Noise Filtered)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -25,7 +25,8 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values[i] = x
     return filtered_values
 
-def calculate_rolling_hurst(price_series, window=100):
+def calculate_rolling_hurst(price_series, window=50):
+    # Reduced window to 50 for range bars as they compress time series
     hurst_values = np.full(len(price_series), 0.5) 
     log_returns = np.log(price_series / np.roll(price_series, 1))
     log_returns[0] = 0
@@ -68,47 +69,74 @@ with st.spinner("Fetching Live Bitcoin Data (2 Years, 1-Hour resolution)..."):
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
-# 🔥 50:50 Split for Zero Leakage
-split_idx = int(len(df) * 0.50)
-df_predict = df.iloc[split_idx:].copy()
+# =====================================================================
+# 🧱 200-POINT RANGE CANDLE GENERATION ENGINE (True Range Bars)
+# =====================================================================
+# Here we filter the hourly time-series into custom bars that only close 
+# when price moves by at least 200 points.
+raw_closes = df['Close'].to_numpy(dtype=float)
+raw_times = df.index
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live BTC Candles (50% Out-of-Sample)!**")
+range_size = 200.0
+range_closes = []
+range_times = []
+
+# Initialize with the first price point
+current_anchor = raw_closes[0]
+range_closes.append(current_anchor)
+range_times.append(raw_times[0])
+
+for i in range(1, len(raw_closes)):
+    price_diff = raw_closes[i] - current_anchor
+    
+    # If price moves up or down by 200 points or more
+    if abs(price_diff) >= range_size:
+        # Number of 200-point blocks completed in this move
+        num_bars = int(abs(price_diff) // range_size)
+        direction = np.sign(price_diff)
+        
+        for _ in range(num_bars):
+            current_anchor += direction * range_size
+            range_closes.append(current_anchor)
+            range_times.append(raw_times[i])
+
+# Create Range Bar DataFrame
+df_range = pd.DataFrame(index=range_times)
+df_range['Close'] = range_closes
+
+# 🔥 50:50 Out-of-Sample Split on these Range Bars
+split_idx = int(len(df_range) * 0.50)
+df_predict = df_range.iloc[split_idx:].copy()
+
+st.success(f"🟢 **Synced & Processed {len(df_predict)} Pure 200-Point Range Bars (50% Out-of-Sample)!**")
+
+# Setup Isolated Price Array based on Range Bar closes
+close_arr = df_predict['Close'].to_numpy(dtype=float)
 
 # =====================================================================
-# 🎚️ 200-POINT RANGE NORMALIZATION ENGINE (Strict Bounds)
+# 📊 DOWNSTREAM SIGNAL CALCULATIONS ON RANGE BARS
 # =====================================================================
-norm_window = 100
-roll_min = df_predict['Close'].rolling(window=norm_window, min_periods=1).min()
-roll_max = df_predict['Close'].rolling(window=norm_window, min_periods=1).max()
+# Kalman Baseline on range close
+df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 
-# Scaling raw close price to dynamic 0 to 200 range
-denom = (roll_max - roll_min).replace(0, 1e-6) # Prevents division by zero
-df_predict['Close_200'] = ((df_predict['Close'] - roll_min) / denom) * 200.0
+# Hurst Vector calculation
+df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
-# Setup Isolated Price Array based on 200-point normalized values
-close_200_arr = df_predict['Close_200'].to_numpy(dtype=float)
-
-# Downstream Calculations using the 200-point scale
-df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_200_arr, initial_p=10.0, q_val=0.0005, r_val=0.2)
-
-# Hurst Vector calculations
-df_predict['Hurst'] = calculate_rolling_hurst(close_200_arr, window=100)
-
-# Exact Weighted Momentum based on 200-point deviations
-raw_weighted_momentum = df_predict['Close_200'] - df_predict['Kalman_Baseline']
+# Exact Weighted Momentum on Range Bars
+raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Raw HAM calculation
+# Raw HAM (Hurst-Amplified Momentum)
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
 # Clean and align
-df_predict.dropna(subset=['Hurst', 'Close_200'], inplace=True)
+df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 df_predict = df_predict.ffill().bfill()
 
 # =====================================================================
-# 📊 PURE HAM-BASED PROBABILITY ENGINE
+# 📊 PURE HAM-BASED PROBABILITY ENGINE (No Static Channels)
 # =====================================================================
-rolling_window = 50
+rolling_window = 30 # Slightly tighter window since noise is already filtered
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
 mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1e-6).to_numpy()
@@ -146,10 +174,10 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric(
-        label="BTC 200-Pt Bound Value", 
-        value=f"{latest_row['Close_200']:.2f} pts", 
-        delta=f"{(latest_row['Close_200'] - df_predict['Close_200'].iloc[-2]):.2f} pts",
-        help=f"Raw Market Price: ${latest_row['Close']:.2f}"
+        label="BTC Range Close (USD)", 
+        value=f"${latest_row['Close']:.2f}", 
+        delta=f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}",
+        help="Updates only when price prints a new 200-Point block."
     )
 with col2:
     st.metric(
@@ -165,23 +193,22 @@ with col3:
     )
 with col4:
     st.metric(
-        label="Hurst Intensity", 
+        label="Hurst Intensity (Range)", 
         value=f"{latest_row['Hurst']:.2f}",
         delta="Persistent Trend" if latest_row['Hurst'] > 0.5 else "Mean Reverting"
     )
 
 # Matrix Data Display
-clean_cols = ['Close', 'Close_200', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
 display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'Market Close Raw', 'Close_200': 'Normalized Price (0-200)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
+display_df.rename(columns={'Close': 'Range Close (200-Pt steps)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
 
 # Round values
-display_df['Market Close Raw'] = display_df['Market Close Raw'].round(2)
-display_df['Normalized Price (0-200)'] = display_df['Normalized Price (0-200)'].round(2)
+display_df['Range Close (200-Pt steps)'] = display_df['Range Close (200-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 100% HAM-Derived Probability Action Matrix (With 200-Point Price Base)")
+st.subheader("📋 200-Point Range Bar Signal Matrix (No Time Noise)")
 st.dataframe(display_df, use_container_width=True, height=750)
