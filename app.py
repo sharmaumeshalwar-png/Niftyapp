@@ -5,9 +5,9 @@ import yfinance as yf
 from scipy.stats import norm
 
 # Page Configuration
-st.set_page_config(page_title="Nifty Range Bar Signal Engine", layout="wide")
+st.set_page_config(page_title="Nifty Locked Range Bar Engine", layout="wide")
 st.title("⚡ Nifty 50 - 20-Point Range Bar Master Engine")
-st.write("🎯 **Pure Price Action:** Time-Independent 20-Point Range Candles with HAM Probabilities")
+st.write("🎯 **Pure Price Action:** Frozen Past Data History + Highlighted Active Live Candle")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Exact Copy-Paste Logic)
@@ -41,22 +41,18 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (Nifty 50 - 2 Years, 1 Hour Candles)
+# 🛡️ SYSTEM DATA INGESTION
 # -----------------------------------------------------------------
 df = None
-with st.spinner("Fetching Live Nifty 50 Data (^NSEI - 2 Years)..."):
+with st.spinner("Fetching Live Nifty 50 Data (^NSEI)..."):
     try:
         df = yf.download(tickers="^NSEI", period="2y", interval="1h")
-        
-        # Robust multi-index column flattening
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
             
         if len(df) > 120: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             df = df.ffill().bfill()
-            
-            # Localize to Indian Standard Time (IST)
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -65,11 +61,11 @@ with st.spinner("Fetching Live Nifty 50 Data (^NSEI - 2 Years)..."):
             st.error("🚨 Error: Insufficient Nifty data lines.")
             st.stop()
     except Exception as e:
-        st.error(f"🚨 API Failure (NSE): {e}")
+        st.error(f"🚨 API Failure: {e}")
         st.stop()
 
 # =====================================================================
-# 🧱 20-POINT RANGE CANDLE GENERATION ENGINE (Nifty Dynamic)
+# 🧱 20-POINT RANGE CANDLE GENERATION ENGINE
 # =====================================================================
 raw_closes = df['Close'].to_numpy(dtype=float)
 raw_times = df.index
@@ -78,7 +74,6 @@ range_size = 20.0
 range_closes = []
 range_times = []
 
-# Initialize with the first price point
 current_anchor = raw_closes[0]
 range_closes.append(current_anchor)
 range_times.append(raw_times[0])
@@ -95,8 +90,10 @@ for i in range(1, len(raw_closes)):
             range_closes.append(current_anchor)
             range_times.append(raw_times[i])
 
-# LIVE UPDATE INJECTION: Live dynamic price tracking to prevent freeze
-if raw_closes[-1] != range_closes[-1]:
+# Check karne ke liye ki kya current active tick ne naya 20-point block lock kar diya hai
+is_live_candle_running = raw_closes[-1] != range_closes[-1]
+
+if is_live_candle_running:
     range_closes.append(raw_closes[-1])
     range_times.append(raw_times[-1])
 
@@ -104,11 +101,11 @@ if raw_closes[-1] != range_closes[-1]:
 df_range = pd.DataFrame(index=range_times)
 df_range['Close'] = range_closes
 
-# 50:50 Out-of-Sample Split
-split_idx = int(len(df_range) * 0.50)
-df_predict = df_range.iloc[split_idx:].copy()
+# Fixed Split Session State to fully lock past history boundary
+if 'fixed_split_idx' not in st.session_state:
+    st.session_state.fixed_split_idx = int(len(df_range) * 0.50)
 
-st.success(f"🟢 **Synced & Processed {len(df_predict)} Nifty 20-Point Range Bars (IST Timezone)!**")
+df_predict = df_range.iloc[st.session_state.fixed_split_idx:].copy()
 
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
@@ -121,11 +118,8 @@ df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Raw HAM (Hurst-Amplified Momentum)
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
-
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
-df_predict = df_predict.ffill().bfill()
 
 # =====================================================================
 # 📊 PURE HAM-BASED PROBABILITY ENGINE
@@ -138,6 +132,7 @@ mom_std = np.where(mom_std == 0, 1e-6, mom_std)
 
 prob_up, prob_down = [], []
 signal_log = []
+bar_status = []
 
 for i in range(len(mom_vals)):
     val = mom_vals[i]
@@ -151,58 +146,63 @@ for i in range(len(mom_vals)):
     prob_up.append(round(p_up, 2))
     prob_down.append(round(1.0 - p_up, 2))
     
+    # Base Signal Log
     if p_up > 0.50:
         signal_log.append("🟢 BUY")
     else:
         signal_log.append("🔴 SELL")
+        
+    # Bar status logging
+    if i == len(mom_vals) - 1 and is_live_candle_running:
+        bar_status.append("🔄 LIVE ACTIVE")
+    else:
+        bar_status.append("🔒 FROZEN")
 
 df_predict['Prob_Up'] = prob_up
 df_predict['Prob_Down'] = prob_down
 df_predict['Signal'] = signal_log
+df_predict['Bar_Status'] = bar_status
+
+# Modify live row identity if it is active
+if is_live_candle_running:
+    df_predict.iloc[-1, df_predict.columns.get_loc('Signal')] = f"⚡ LIVE ({df_predict['Signal'].iloc[-1].split()[-1]})"
 
 # =====================================================================
-# 📋 DASHBOARD METRICS & TABLE ONLY
+# 📋 DASHBOARD METRICS
 # =====================================================================
 latest_row = df_predict.iloc[-1]
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric(
-        label="Nifty Range Close (INR)", 
-        value=f"{latest_row['Close']:.2f}", 
-        delta=f"{(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}",
-        help="Updates dynamically in real-time as Nifty ticks up or down."
-    )
+    st.metric(label="Nifty Range Close (INR)", value=f"{latest_row['Close']:.2f}")
 with col2:
-    st.metric(
-        label="Active HAM Signal", 
-        value=f"{latest_row['Signal']}",
-        delta=f"HAM Val: {latest_row['Hurst_Amp_Momentum']:.4f}"
-    )
+    st.metric(label="Active HAM Signal", value=f"{latest_row['Signal']}")
 with col3:
-    st.metric(
-        label="HAM Up Probability", 
-        value=f"{latest_row['Prob_Up']*100:.0f}%",
-        delta="Bullish Momentum" if latest_row['Prob_Up'] > 0.5 else "Bearish Momentum"
-    )
+    st.metric(label="HAM Up Probability", value=f"{latest_row['Prob_Up']*100:.0f}%")
 with col4:
-    st.metric(
-        label="Hurst Intensity (Nifty)", 
-        value=f"{latest_row['Hurst']:.2f}",
-        delta="Persistent Trend" if latest_row['Hurst'] > 0.5 else "Mean Reverting"
-    )
+    st.metric(label="Bar Lock Status", value=f"{latest_row['Bar_Status']}")
 
-# Matrix Data Display
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down']
+# Matrix Data Display Formulation
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down', 'Bar_Status']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'Nifty Close (20-Pt steps)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
 
-# Round values
 display_df['Nifty Close (20-Pt steps)'] = display_df['Nifty Close (20-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
+# Invert table to put fresh live rows on Top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Nifty 20-Point Range Bar Signal Matrix (IST Live)")
-st.dataframe(display_df, use_container_width=True, height=750)
+# 🎨 LIVE CANDLE GREEN STYLING FUNCTION
+def highlight_live_row(row):
+    # Agar row status LIVE ACTIVE hai, toh background dark green aur font pure white stretch hoga
+    if row['Bar_Status'] == "🔄 LIVE ACTIVE":
+        return ['background-color: #155724; color: #ffffff; font-weight: bold;'] * len(row)
+    return [''] * len(row)
+
+# Apply dynamic custom pandas styling
+styled_df = display_df.style.apply(highlight_live_row, axis=1)
+
+st.subheader("📋 Nifty 20-Point Range Bar Matrix (Locked History vs Active Live)")
+st.dataframe(styled_df, use_container_width=True, height=750)
