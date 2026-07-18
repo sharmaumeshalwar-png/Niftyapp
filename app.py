@@ -121,12 +121,11 @@ df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
 # =====================================================================
-# 📊 PURE HAM-BASED PROBABILITY ENGINE (💥 SHIFTED TO 300-BAR WINDOW)
+# 📊 PURE HAM-BASED PROBABILITY ENGINE (💥 300-BAR WINDOW CONFIG)
 # =====================================================================
-rolling_window = 300  # 🌟 30 se badhakar 300 bars kar diya hai
+rolling_window = 300  
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 
-# 300 bars ka rolling mean aur standard deviation
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
 mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1e-6).to_numpy()
 mom_std = np.where(mom_std == 0, 1e-6, mom_std)
@@ -208,7 +207,7 @@ clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down', '
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'BTC Close (200-Pt steps)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
 
-display_df['BTC Close (200-Pt steps)'] = display_df['BTC Close (200-Pt steps)' Handy Window].round(2) if 'Handy Window' not in str(display_df['BTC Close (200-Pt steps)']) else display_df['BTC Close (200-Pt steps)']
+# Round values cleanly (Syntax Error Perfectly Fixed)
 display_df['BTC Close (200-Pt steps)'] = display_df['BTC Close (200-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
