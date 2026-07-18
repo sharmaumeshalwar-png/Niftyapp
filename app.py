@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 # Page Configuration
 st.set_page_config(page_title="BTC Zero-Leak ML Kalman Engine", layout="wide")
 st.title("⚡ BTC 200-Point Range Bar Master Engine")
-st.write("🎯 **Strict Zero-Leakage ML:** Per-Candle Volatility Evaluation, 100% Verified Safe OTM & Near-ATM Strike Identifier")
+st.write("🎯 **ML Regret Ingestion Enabled:** Learning Past Near-ATM Strikes That Expired Validated Zero Based on HAM Matrix State")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -123,7 +123,6 @@ df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_moment
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
-# DUAL KALMAN ON HAM
 ham_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 df_predict['Kalman_HAM_Fast'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.01, r_val=0.05)
 df_predict['Kalman_HAM_Slow'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.0005, r_val=0.5)
@@ -137,83 +136,101 @@ df_predict['HAM_Interaction_Corr'] = df_predict['HAM_Triple_Product'].rolling(wi
 df_predict.dropna(subset=['HAM_Triple_Product', 'HAM_Interaction_Corr'], inplace=True)
 
 # =====================================================================
-# 5. ML COMPUTE ENGINE (WALK-FORWARD BIFURCATION WITH 150 TREES)
+# 5. 🎯 BACK-DATA REGRET SCANNER: HISTORICAL EXPIRY EVALUATOR
+# =====================================================================
+strike_interval = 500.0
+prices = df_predict['Close'].to_numpy()
+n_len = len(df_predict)
+
+# Har candle ka calculated Near-ATM numerical value
+near_atm_numeric = np.round(prices / strike_interval) * strike_interval
+
+# Look-ahead expiry array creation: Did this specific strike settle at 0 at the end of its window?
+# Ek range-based cycle window letey hain (~750 bars window) to evaluate expiry levels safely
+expiry_window = 750 
+historical_zero_ce = np.zeros(n_len)
+historical_zero_pe = np.zeros(n_len)
+
+for idx in range(n_len):
+    current_atm = near_atm_numeric[idx]
+    end_idx = min(idx + expiry_window, n_len - 1)
+    
+    # Is time window block me maximum aur minimum trace kya hua price ka?
+    future_max = np.max(prices[idx:end_idx + 1])
+    future_min = np.min(prices[idx:end_idx + 1])
+    future_settle = prices[end_idx] # Window terminal node
+    
+    # CE zero tabhi hoti hai jab high ya settle us strike ko cross na kare (Out of the money)
+    if future_settle < current_atm and future_max < current_atm + 200:
+        historical_zero_ce[idx] = 1.0 # Successful True Zero
+        
+    # PE zero tabhi hoti hai jab low ya settle us strike se niche na jaye
+    if future_settle > current_atm and future_min > current_atm - 200:
+        historical_zero_pe[idx] = 1.0 # Successful True Zero
+
+df_predict['Hist_Zero_CE'] = historical_zero_ce
+df_predict['Hist_Zero_PE'] = historical_zero_pe
+
+# =====================================================================
+# 6. ML REGRET LEARNING COMPUTE ENGINE (150 TREES PROCESSOR)
 # =====================================================================
 features = df_predict[['HAM_Triple_Product', 'HAM_Interaction_Corr', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow']].to_numpy()
-target = df_predict['Hurst_Amp_Momentum'].to_numpy()
 
-optimal_ml_score = np.array(target, dtype=float)
-n_samples = len(df_predict)
+# ML directly is state predictive matrix ko seekhega base on historical successful zeros
+ml_ce_predictions = np.zeros(n_len)
+ml_pe_predictions = np.zeros(n_len)
 
-if n_samples > 40:
-    block_size = n_samples // 4
+if n_len > 100:
+    block = n_len // 4
     for b in range(1, 4):
-        train_end = b * block_size
-        test_end = min((b + 1) * block_size, n_samples)
+        t_end = b * block
+        test_end = min((b + 1) * block, n_len)
         
-        X_train = features[:train_end-1]
-        y_train = target[1:train_end]
-        X_test = features[train_end:test_end]
+        X_tr = features[:t_end-1]
+        y_tr_ce = historical_zero_ce[1:t_end]
+        y_tr_pe = historical_zero_pe[1:t_end]
         
-        if len(X_train) > 10 and len(X_test) > 0:
-            rf_150 = RandomForestRegressor(n_estimators=150, random_state=42, max_depth=6, n_jobs=-1)
-            rf_150.fit(X_train, y_train)
-            optimal_ml_score[train_end:test_end] = rf_150.predict(X_test)
-
-df_predict['ML_Optimal_Target'] = optimal_ml_score
-
-# =====================================================================
-# 6. STRIKE DERIVATION ENGINE (100% PASS OTM & 100% PURE NEAR-ATM)
-# =====================================================================
-# A. Near-ATM Calculation (Nearest standard $500 strike boundary)
-strike_interval = 500.0
-df_predict['Near_ATM_Strike'] = (df_predict['Close'] / strike_interval).round() * strike_interval
-df_predict['Near_ATM_Strike'] = df_predict['Near_ATM_Strike'].astype(int).astype(str) + " STRIKE"
-
-# B. 100% Pass OTM Strike Identifier
-rolling_volatility = df_predict['Close'].rolling(window=30, min_periods=5).std().fillna(200.0).to_numpy()
-current_prices = df_predict['Close'].to_numpy()
-
-safe_ce_list = []
-safe_pe_list = []
-
-for idx in range(len(df_predict)):
-    price = current_prices[idx]
-    vol = rolling_volatility[idx]
-    
-    raw_upper_bound = price + (vol * 3.5)
-    raw_lower_bound = price - (vol * 3.5)
-    
-    strike_ce = int(np.ceil(raw_upper_bound / 500.0) * 500)
-    strike_pe = int(np.floor(raw_lower_bound / 500.0) * 500)
-    
-    historical_max = np.max(current_prices[:idx+1])
-    historical_min = np.min(current_prices[:idx+1])
-    
-    if strike_ce <= historical_max:
-        strike_ce = int(np.ceil((historical_max + 2500) / 500.0) * 500)
-    if strike_pe >= historical_min:
-        strike_pe = int(np.floor((historical_min - 2500) / 500.0) * 500)
+        X_te = features[t_end:test_end]
         
-    safe_ce_list.append(f"{strike_ce} CE")
-    safe_pe_list.append(f"{strike_pe} PE")
+        if len(X_tr) > 20 and len(X_te) > 0:
+            # Train separate classifiers to find pattern correlations with HAM
+            rf_ce = RandomForestRegressor(n_estimators=150, random_state=42, max_depth=6, n_jobs=-1)
+            rf_ce.fit(X_tr, y_tr_ce)
+            ml_ce_predictions[t_end:test_end] = rf_ce.predict(X_te)
+            
+            rf_pe = RandomForestRegressor(n_estimators=150, random_state=42, max_depth=6, n_jobs=-1)
+            rf_pe.fit(X_tr, y_tr_pe)
+            ml_pe_predictions[t_end:test_end] = rf_pe.predict(X_te)
+
+df_predict['ML_CE_Zero_Prob'] = ml_ce_predictions
+df_predict['ML_PE_Zero_Prob'] = ml_pe_predictions
+
+# Setup conditional text indicators based on structural memory scan
+df_predict['Near_ATM_CE_Status'] = ["🔥 HIGH CHANCE ZERO" if p > 0.68 else "⚠️ RISK OF ITM" for p in ml_ce_predictions]
+df_predict['Near_ATM_PE_Status'] = ["🔥 HIGH CHANCE ZERO" if p > 0.68 else "⚠️ RISK OF ITM" for p in ml_pe_predictions]
+
+# String visual columns setup
+df_predict['Near_ATM_Strike'] = near_atm_numeric.astype(int).astype(str) + " STRIKE"
+
+# Dynamic Vol Bands Calculations for visual validation
+rolling_vol = df_predict['Close'].rolling(window=30, min_periods=5).std().fillna(200.0).to_numpy()
+safe_ce_list, safe_pe_list = [], []
+
+for idx in range(n_len):
+    price = prices[idx]
+    vol = rolling_vol[idx]
+    st_ce = int(np.ceil((price + (vol * 3.5)) / 500.0) * 500)
+    st_pe = int(np.floor((price - (vol * 3.5)) / 500.0) * 500)
+    
+    h_max = np.max(prices[:idx+1])
+    h_min = np.min(prices[:idx+1])
+    if st_ce <= h_max: st_ce = int(np.ceil((h_max + 2500) / 500.0) * 500)
+    if st_pe >= h_min: st_pe = int(np.floor((h_min - 2500) / 500.0) * 500)
+    safe_ce_list.append(f"{st_ce} CE")
+    safe_pe_list.append(f"{st_pe} PE")
 
 df_predict['Safe_Strike_CE'] = safe_ce_list
 df_predict['Safe_Strike_PE'] = safe_pe_list
-
-# Probability tracker metrics
-prob_up = []
-divergence = fast_kf - slow_kf
-rolling_div_std = pd.Series(divergence).rolling(window=10, min_periods=1).std().fillna(1e-6).to_numpy()
-
-for i in range(len(df_predict)):
-    div = divergence[i] if i < len(divergence) else 0.0
-    std_val = rolling_div_std[i] if i < len(rolling_div_std) and rolling_div_std[i] > 0 else 1e-6
-    z_score = div / std_val
-    p_up = np.clip(norm.cdf(z_score), 0.01, 0.99)
-    prob_up.append(round(p_up, 2))
-
-df_predict['Prob_Up'] = prob_up
 df_predict['Signal'] = ["🟢 BUY (Bullish)" if f > s else "🔴 SELL (Bearish)" for f, s in zip(fast_kf, slow_kf)]
 
 # =====================================================================
@@ -222,32 +239,31 @@ df_predict['Signal'] = ["🟢 BUY (Bullish)" if f > s else "🔴 SELL (Bearish)"
 latest_row = df_predict.iloc[-1]
 delta_close = f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}" if len(df_predict) > 1 else "$0.00"
 
-# Main Metrics Layout Panel
 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
 with m_col1:
     st.metric(label="BTC Current Close", value=f"${latest_row['Close']:.2f}", delta=delta_close)
 with m_col2:
-    st.metric(label="🎯 100% Accurate Near-ATM", value=latest_row['Near_ATM_Strike'])
+    st.metric(label="🎯 Current Near-ATM Strike", value=latest_row['Near_ATM_Strike'])
 with m_col3:
-    st.metric(label="🛡️ Safe OTM CE (100% Zero)", value=latest_row['Safe_Strike_CE'])
+    st.metric(label="📊 Near-ATM CE Zero Prob", value=f"{latest_row['ML_CE_Zero_Prob']*100:.1f}%")
 with m_col4:
-    st.metric(label="🛡️ Safe OTM PE (100% Zero)", value=latest_row['Safe_Strike_PE'])
+    st.metric(label="📊 Near-ATM PE Zero Prob", value=f"{latest_row['ML_PE_Zero_Prob']*100:.1f}%")
 
-# Setup Dataframe presentation layer
-clean_cols = ['Close', 'ML_Optimal_Target', 'Near_ATM_Strike', 'Safe_Strike_CE', 'Safe_Strike_PE', 'Signal']
+# Grid display configuration
+clean_cols = ['Close', 'Near_ATM_Strike', 'ML_CE_Zero_Prob', 'Near_ATM_CE_Status', 'ML_PE_Zero_Prob', 'Near_ATM_PE_Status', 'Signal']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={
     'Close': 'BTC Close Price', 
-    'ML_Optimal_Target': 'ML Predicted Alpha',
     'Near_ATM_Strike': '🎯 Near ATM Strike',
-    'Safe_Strike_CE': '🛡️ Verified Safe CE Strike (100% OTM)',
-    'Safe_Strike_PE': '🛡️ Verified Safe PE Strike (100% OTM)',
-    'Signal': 'Market Action Direction'
+    'ML_CE_Zero_Prob': '📈 CE Zero Confidence',
+    'Near_ATM_CE_Status': '🛡️ Near-ATM CE Risk Alert',
+    'ML_PE_Zero_Prob': '📉 PE Zero Confidence',
+    'Near_ATM_PE_Status': '🛡️ Near-ATM PE Risk Alert',
+    'Signal': 'Market Trend'
 }, inplace=True)
 
-# Invert table index to show latest bars first
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Live Options Strike & Volatility Matrix Matrix")
-st.dataframe(display_df_inverted, use_container_width=True, height=650)
+st.subheader("📋 Intelligent Pattern Learning Grid (HAM Dependent Expiry Risk Scans)")
+st.dataframe(display_df_inverted, use_container_width=True, height=600)
