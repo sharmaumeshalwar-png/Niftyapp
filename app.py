@@ -7,7 +7,7 @@ from scipy.stats import norm
 # Page Configuration
 st.set_page_config(page_title="BTC Range Bar Signal Engine", layout="wide")
 st.title("⚡ BTC 200-Point Range Bar Master Engine")
-st.write("🎯 **Pure Price Action:** Time-Independent 200-Point Range Candles with HAM Probabilities (300-Bar Base)")
+st.write("🎯 **Pure Price Action:** Time-Independent 200-Point Range Candles with HAM Probabilities (10-Bar Micro Base)")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -121,9 +121,9 @@ df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
 # =====================================================================
-# 📊 PURE HAM-BASED PROBABILITY ENGINE (💥 300-BAR WINDOW CONFIG)
+# 📊 PURE HAM-BASED PROBABILITY ENGINE (⚡ SHIFTED TO 10-BAR MICRO WINDOW)
 # =====================================================================
-rolling_window = 300  
+rolling_window = 10  # 🌟 Pure 10-bar micro processing baseline
 mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 
 mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
@@ -194,29 +194,28 @@ with col3:
     st.metric(
         label="HAM Up Probability", 
         value=f"{latest_row['Prob_Up']*100:.0f}%",
-        delta="Macro Bullish" if latest_row['Prob_Up'] > 0.5 else "Macro Bearish"
+        delta="Micro Bullish" if latest_row['Prob_Up'] > 0.5 else "Micro Bearish"
     )
 with col4:
     st.metric(
         label="Bar Lock Status", 
         value=f"{latest_row['Bar_Status']}",
-        delta=f"Baseline: 300 Bars"
+        delta=f"Baseline: 10 Bars"
     )
 
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Signal', 'Prob_Up', 'Prob_Down', 'Bar_Status']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={'Close': 'BTC Close (200-Pt steps)', 'Hurst_Amp_Momentum': 'Raw HAM'}, inplace=True)
 
-# Round values cleanly (Syntax Error Perfectly Fixed)
 display_df['BTC Close (200-Pt steps)'] = display_df['BTC Close (200-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 200-Point Range Bar Signal Matrix (Live 300-Bar Mathematical Model)")
+st.subheader("📋 200-Point Range Bar Signal Matrix (Live 10-Bar Micro Engine)")
 
 if is_live_candle_running:
-    st.info(f"⚡ **Active Macro Tracker:** Probability values are now tracking the baseline of the last 300 Range Bars.")
+    st.info(f"⚡ **Active Micro Tracker:** Engine is tracking immediate price acceleration relative to the last 10 range blocks.")
 
 st.dataframe(display_df_inverted, use_container_width=True, height=750)
