@@ -3,11 +3,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from scipy.stats import norm
+from sklearn.ensemble import RandomForestRegressor
 
 # Page Configuration
-st.set_page_config(page_title="BTC Kalman Crossover Engine", layout="wide")
+st.set_page_config(page_title="BTC ML Kalman Crossover Engine", layout="wide")
 st.title("⚡ BTC 200-Point Range Bar Master Engine")
-st.write("🎯 **Pure Price Action:** 200-Point Range Candles with Dual Kalman Crossover on Original HAM")
+st.write("🎯 **ML & Pure Price Action:** Dual Kalman on HAM with 150-Tree Random Forest Interaction Analytics")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
@@ -103,7 +104,7 @@ st.success(f"🟢 **Synced & Processed {len(df_predict)} Range Bars!**")
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
 # =====================================================================
-# 📊 ORIGINAL DOWNSTREAM SIGNAL CALCULATIONS (100% RESTORED 🎯)
+# 📊 ORIGINAL DOWNSTREAM SIGNAL CALCULATIONS
 # =====================================================================
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
@@ -111,35 +112,77 @@ df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Here is your original untouched HAM Value formula
+# Original Untouched HAM
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
 # =====================================================================
-# 🎯 DUAL KALMAN CROSSOVER APPLIED DIRECTLY ON ORIGINAL HAM
+# 🎯 DUAL KALMAN ON HAM
 # =====================================================================
 ham_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
-
-# 1. Fast Kalman applied on your original HAM array
 df_predict['Kalman_HAM_Fast'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.01, r_val=0.05)
-
-# 2. Slow Kalman applied on your original HAM array
 df_predict['Kalman_HAM_Slow'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.0005, r_val=0.5)
 
 fast_kf = df_predict['Kalman_HAM_Fast'].to_numpy()
 slow_kf = df_predict['Kalman_HAM_Slow'].to_numpy()
 
+# 💥 NEW CORE LOGIC: Triple Vector Product (Teeno columns ka multiplication)
+df_predict['HAM_Triple_Product'] = df_predict['Hurst_Amp_Momentum'] * df_predict['Kalman_HAM_Fast'] * df_predict['Kalman_HAM_Slow']
+
+# 💥 NEW CORE LOGIC: Dynamic Rolling Correlation (15-bar window) between Product and Raw HAM
+df_predict['HAM_Interaction_Corr'] = df_predict['HAM_Triple_Product'].rolling(window=15, min_periods=5).corr(df_predict['Hurst_Amp_Momentum']).fillna(0.0)
+
+# =====================================================================
+# 🧠 MACHINE LEARNING TREE ENSEMBLE SYSTEM (100 vs 150 Tree Preference Optimizer)
+# =====================================================================
+df_predict.dropna(subset=['HAM_Triple_Product', 'HAM_Interaction_Corr'], inplace=True)
+
+# Data separation for ML Matrix tracking
+features = df_predict[['HAM_Triple_Product', 'HAM_Interaction_Corr', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow']].to_numpy()
+target = df_predict['Hurst_Amp_Momentum'].to_numpy()
+
+optimal_ml_score = []
+chosen_tree_count = []
+
+if len(df_predict) > 30:
+    # 1. Run Baseline Engine (100 Trees)
+    rf_100 = RandomForestRegressor(n_estimators=100, random_state=42)
+    rf_100.fit(features[:-1], target[1:]) # Predict one-step ahead alignment
+    score_100 = rf_100.score(features[:-1], target[1:])
+    
+    # 2. Run Advanced Engine (150 Trees)
+    rf_150 = RandomForestRegressor(n_estimators=150, random_state=42)
+    rf_150.fit(features[:-1], target[1:])
+    score_150 = rf_150.score(features[:-1], target[1:])
+    
+    # Loop over frame arrays to create a stable metric column matching index length
+    for idx in range(len(df_predict)):
+        # Preferences value tracking from the 150-tree model if it exceeds baseline performance
+        if score_150 > score_100:
+            pred_val = rf_150.predict(features[idx].reshape(1, -1))[0]
+            chosen_tree_count.append(150)
+        else:
+            pred_val = rf_100.predict(features[idx].reshape(1, -1))[0]
+            chosen_tree_count.append(100)
+        optimal_ml_score.append(pred_val)
+else:
+    optimal_ml_score = list(target)
+    chosen_tree_count = [100] * len(df_predict)
+
+df_predict['ML_Optimal_Target'] = optimal_ml_score
+df_predict['Engine_Trees_Used'] = chosen_tree_count
+
+# Standard Probability and Direction logic based on fast/slow crossover
 prob_up, prob_down = [], []
 signal_log = []
 bar_status = []
 
-# Crossover divergence engine with standard deviations mapping
 divergence = fast_kf - slow_kf
 rolling_div_std = pd.Series(divergence).rolling(window=10, min_periods=1).std().fillna(1e-6).to_numpy()
 
-for i in range(len(ham_vals)):
-    div = divergence[i]
-    std_val = rolling_div_std[i] if rolling_div_std[i] > 0 else 1e-6
+for i in range(len(df_predict)):
+    div = divergence[i] if i < len(divergence) else 0.0
+    std_val = rolling_div_std[i] if i < len(rolling_div_std) and rolling_div_std[i] > 0 else 1e-6
     
     z_score = div / std_val
     p_up = norm.cdf(z_score)
@@ -148,12 +191,12 @@ for i in range(len(ham_vals)):
     prob_up.append(round(p_up, 2))
     prob_down.append(round(1.0 - p_up, 2))
     
-    if fast_kf[i] > slow_kf[i]:
-        signal_log.append("🟢 BUY (Bullish Cross)")
+    if i < len(fast_kf) and fast_kf[i] > slow_kf[i]:
+        signal_log.append("🟢 BUY (Bullish)")
     else:
-        signal_log.append("🔴 SELL (Bearish Cross)")
+        signal_log.append("🔴 SELL (Bearish)")
         
-    if i == len(ham_vals) - 1 and is_live_candle_running:
+    if i == len(df_predict) - 1 and is_live_candle_running:
         bar_status.append("🔄 LIVE ACTIVE")
     else:
         bar_status.append("🔒 FROZEN")
@@ -177,23 +220,31 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric(label="BTC Range Close (USD)", value=f"${latest_row['Close']:.2f}", delta=delta_close)
 with col2:
-    st.metric(label="Kalman Cross State", value=f"{latest_row['Signal']}")
+    st.metric(label="Interaction Corr to HAM", value=f"{latest_row['HAM_Interaction_Corr']:.4f}")
 with col3:
-    st.metric(label="Crossover Prob Up", value=f"{latest_row['Prob_Up']*100:.0f}%", delta="Momentum Expanding" if latest_row['Prob_Up'] > 0.5 else "Momentum Contracting")
+    st.metric(label="ML Optimised Projector", value=f"{latest_row['ML_Optimal_Target']:.4f}", delta=f"Preferred Engine: {latest_row['Engine_Trees_Used']} Trees")
 with col4:
-    st.metric(label="Original HAM Value", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}", help="Your precise original HAM output.")
+    st.metric(label="Triple Vector Product", value=f"{latest_row['HAM_Triple_Product']:.6f}")
 
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow', 'Signal', 'Prob_Up', 'Prob_Down', 'Bar_Status']
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'HAM_Triple_Product', 'HAM_Interaction_Corr', 'ML_Optimal_Target', 'Engine_Trees_Used', 'Signal', 'Bar_Status']
 display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'BTC Close', 'Hurst_Amp_Momentum': 'Raw HAM', 'Kalman_HAM_Fast': 'Fast Kalman (HAM)', 'Kalman_HAM_Slow': 'Slow Kalman (HAM)'}, inplace=True)
+display_df.rename(columns={
+    'Close': 'BTC Close', 
+    'Hurst_Amp_Momentum': 'Raw HAM', 
+    'HAM_Triple_Product': 'Triple Product', 
+    'HAM_Interaction_Corr': 'Value Correlation',
+    'ML_Optimal_Target': 'ML Target Value',
+    'Engine_Trees_Used': 'Optimized Trees'
+}, inplace=True)
 
 display_df['BTC Close'] = display_df['BTC Close'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
-display_df['Fast Kalman (HAM)'] = display_df['Fast Kalman (HAM)'].round(4)
-display_df['Slow Kalman (HAM)'] = display_df['Slow Kalman (HAM)'].round(4)
+display_df['Triple Product'] = display_df['Triple Product'].round(6)
+display_df['Value Correlation'] = display_df['Value Correlation'].round(4)
+display_df['ML Target Value'] = display_df['ML Target Value'].round(4)
 
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Dual Kalman Crossover Matrix (Original Baseline Preserved)")
+st.subheader("📋 Machine Learning Kalman Interaction Matrix")
 st.dataframe(display_df_inverted, use_container_width=True, height=750)
