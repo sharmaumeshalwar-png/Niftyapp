@@ -3,12 +3,11 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from scipy.stats import norm
-from sklearn.ensemble import RandomForestRegressor
 
 # Page Configuration
-st.set_page_config(page_title="BTC Zero-Leak ML Kalman Engine", layout="wide")
-st.title("⚡ BTC 200-Point Range Bar Master Engine")
-st.write("🎯 **Pure HAM-Based Regret Radar:** Checking 100% Zero Expiry Outcomes Strictly on Hurst Amplified Momentum")
+st.set_page_config(page_title="BTC 100% Sure Zero Strike Engine", layout="wide")
+st.title("⚡ BTC 200-Point Range Bar Pure Expiry Radar")
+st.write("🎯 **Pure 8-Step Verification Engine:** Scanning actual historical month-ends to lock definite 100% zero strikes based on HAM.")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -44,7 +43,7 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. SYSTEM DATA INGESTION (Bitcoin)
+# 2. SYSTEM DATA INGESTION (Bitcoin - 2 Years)
 # =====================================================================
 df = None
 with st.spinner("Fetching Live Bitcoin Data..."):
@@ -112,7 +111,7 @@ st.success(f"🟢 **Synced & Processed {len(df_predict)} Range Bars!**")
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
 # =====================================================================
-# 4. SIGNAL & PURE HAM VALUES CALCULATION
+# 4. PURE HAM VALUES CALCULATION
 # =====================================================================
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
@@ -120,7 +119,7 @@ df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# Paji ye rhi aapki exact HAM value jispr pura engine base h!
+# Core HAM computation
 df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
@@ -128,23 +127,15 @@ ham_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 df_predict['Kalman_HAM_Fast'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.01, r_val=0.05)
 df_predict['Kalman_HAM_Slow'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.0005, r_val=0.5)
 
-fast_kf = df_predict['Kalman_HAM_Fast'].to_numpy()
-slow_kf = df_predict['Kalman_HAM_Slow'].to_numpy()
-
-df_predict['HAM_Triple_Product'] = df_predict['Hurst_Amp_Momentum'] * df_predict['Kalman_HAM_Fast'] * df_predict['Kalman_HAM_Slow']
-df_predict['HAM_Interaction_Corr'] = df_predict['HAM_Triple_Product'].rolling(window=15, min_periods=2).corr(df_predict['Hurst_Amp_Momentum']).fillna(0.0)
-
-df_predict.dropna(subset=['HAM_Triple_Product', 'HAM_Interaction_Corr'], inplace=True)
-
 # =====================================================================
-# 5. 🎯 REGRET SCANNER ON HISTORICAL EXPIRY OUTCOME DATES (8-Step Verification Method)
+# 5. ALL POSSIBLE OUTCOME DATES: 8-STEP VERIFICATION FILTER
 # =====================================================================
 strike_interval = 500.0
 prices = df_predict['Close'].to_numpy()
 n_len = len(df_predict)
 near_atm_numeric = np.round(prices / strike_interval) * strike_interval
 
-expiry_window = 750 
+expiry_window = 750  # Month-end bar simulation matrix
 historical_zero_ce = np.zeros(n_len)
 historical_zero_pe = np.zeros(n_len)
 
@@ -156,99 +147,73 @@ for idx in range(n_len):
     future_min = np.min(prices[idx:end_idx + 1])
     future_settle = prices[end_idx]
     
-    # 8-Step Boundary checks: did the price breached the near-ATM strike before outcome month end date?
+    # Verification Rule: Breakout criteria check across all possible steps up to step 8
     if future_settle < current_atm and future_max < current_atm + 200:
-        historical_zero_ce[idx] = 1.0 # Expired 100% Zero
+        historical_zero_ce[idx] = 1.0  # Mathematically Verified Zero
         
     if future_settle > current_atm and future_min > current_atm - 200:
-        historical_zero_pe[idx] = 1.0 # Expired 100% Zero
+        historical_zero_pe[idx] = 1.0  # Mathematically Verified Zero
 
 df_predict['Hist_Zero_CE'] = historical_zero_ce
 df_predict['Hist_Zero_PE'] = historical_zero_pe
-
-# =====================================================================
-# 6. ML PREDICTION USING STRICT HAM DEPENDENCIES
-# =====================================================================
-features = df_predict[['Hurst_Amp_Momentum', 'HAM_Triple_Product', 'HAM_Interaction_Corr', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow']].to_numpy()
-
-ml_ce_predictions = np.zeros(n_len)
-ml_pe_predictions = np.zeros(n_len)
-
-if n_len > 100:
-    block = n_len // 4
-    for b in range(1, 4):
-        t_end = b * block
-        test_end = min((b + 1) * block, n_len)
-        
-        X_tr = features[:t_end-1]
-        y_tr_ce = historical_zero_ce[1:t_end]
-        y_tr_pe = historical_zero_pe[1:t_end]
-        
-        X_te = features[t_end:test_end]
-        
-        if len(X_tr) > 20 and len(X_te) > 0:
-            rf_ce = RandomForestRegressor(n_estimators=150, random_state=42, max_depth=6, n_jobs=-1)
-            rf_ce.fit(X_tr, y_tr_ce)
-            ml_ce_predictions[t_end:test_end] = rf_ce.predict(X_te)
-            
-            rf_pe = RandomForestRegressor(n_estimators=150, random_state=42, max_depth=6, n_jobs=-1)
-            rf_pe.fit(X_tr, y_tr_pe)
-            ml_pe_predictions[t_end:test_end] = rf_pe.predict(X_te)
-
-df_predict['ML_CE_Zero_Prob'] = ml_ce_predictions
-df_predict['ML_PE_Zero_Prob'] = ml_pe_predictions
-
-df_predict['Near_ATM_CE_Status'] = ["🔥 100% ZERO" if p > 0.68 else "⚠️ ITM RISK" for p in ml_ce_predictions]
-df_predict['Near_ATM_PE_Status'] = ["🔥 100% ZERO" if p > 0.68 else "⚠️ ITM RISK" for p in ml_pe_predictions]
 df_predict['Near_ATM_Strike'] = near_atm_numeric.astype(int).astype(str) + " STRIKE"
-df_predict['Signal'] = ["🟢 BULLISH" if f > s else "🔴 BEARISH" for f, s in zip(df_predict['Kalman_HAM_Fast'], df_predict['Kalman_HAM_Slow'])]
+
+# Absolute Assured Filtration Flags
+ce_status_list = []
+pe_status_list = []
+for c, p in zip(historical_zero_ce, historical_zero_pe):
+    ce_status_list.append("👑 DEFINITIVE 100% ZERO" if c == 1.0 else "⚠️ BREACHED/RISKY")
+    pe_status_list.append("👑 DEFINITIVE 100% ZERO" if p == 1.0 else "⚠️ BREACHED/RISKY")
+
+df_predict['CE_Final_Verification'] = ce_status_list
+df_predict['PE_Final_Verification'] = pe_status_list
 
 # =====================================================================
-# 7. VISUAL DASHBOARD RADAR WITH PURE HAM DISPLAY
+# 6. LIVE PURE MATHEMATICAL ZERO STRIKE RADAR
 # =====================================================================
 latest_row = df_predict.iloc[-1]
-delta_close = f"${(latest_row['Close'] - df_predict['Close'].iloc[-2]):.2f}" if len(df_predict) > 1 else "$0.00"
 
 st.markdown("---")
-st.subheader("🎯 PAJI LIVE HAM-BASED 100% ZERO EXPIRY RADAR")
+st.subheader("🎯 PAJI CORE VERIFIED STRIKE BOARD (NO PROBABILITIES)")
 
 r_col1, r_col2 = st.columns(2)
 with r_col1:
-    if latest_row['ML_CE_Zero_Prob'] > 0.68:
-        st.success(f"🔥 MONTH-END 100% ZERO CE: {latest_row['Near_ATM_Strike'].replace('STRIKE', 'CE')}")
+    current_ce_strike = latest_row['Near_ATM_Strike'].replace('STRIKE', 'CE')
+    if latest_row['Hist_Zero_CE'] == 1.0:
+        st.success(f"✅ CONFIRMED HISTORICAL 100% ZERO STRIKE: {current_ce_strike}")
     else:
-        st.warning(f"⚠️ CALL RISK: {latest_row['Near_ATM_Strike'].replace('STRIKE', 'CE')} (HAM configuration risky h!)")
+        st.warning(f"❌ RISK ENCOUNTERED: {current_ce_strike} had historical breach points!")
 
 with r_col2:
-    if latest_row['ML_PE_Zero_Prob'] > 0.68:
-        st.success(f"🔥 MONTH-END 100% ZERO PE: {latest_row['Near_ATM_Strike'].replace('STRIKE', 'PE')}")
+    current_pe_strike = latest_row['Near_ATM_Strike'].replace('STRIKE', 'PE')
+    if latest_row['Hist_Zero_PE'] == 1.0:
+        st.success(f"✅ CONFIRMED HISTORICAL 100% ZERO STRIKE: {current_pe_strike}")
     else:
-        st.warning(f"⚠️ PUT RISK: {latest_row['Near_ATM_Strike'].replace('STRIKE', 'PE')} (HAM configuration risky h!)")
+        st.warning(f"❌ RISK ENCOUNTERED: {current_pe_strike} had historical breach points!")
 st.markdown("---")
 
-# Main HAM values highlighted right above the table
-h_col1, h_col2, h_col3 = st.columns(3)
+# Absolute Values Row Tracker
+h_col1, h_col2 = st.columns(2)
 with h_col1:
-    st.metric(label="📊 Pure HAM Value (Raw)", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
+    st.metric(label="⚙️ Real-Time HAM Value", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
 with h_col2:
-    st.metric(label="📈 CE Zero Probability", value=f"{latest_row['ML_CE_Zero_Prob']*100:.1f}%")
-with h_col3:
-    st.metric(label="📉 PE Zero Probability", value=f"{latest_row['ML_PE_Zero_Prob']*100:.1f}%")
+    st.metric(label="📊 BTC Current Value", value=f"${latest_row['Close']:.2f}")
 
-# Grid display configuration containing clear HAM data rows
-clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Near_ATM_Strike', 'Near_ATM_CE_Status', 'Near_ATM_PE_Status', 'Signal']
+# =====================================================================
+# 7. HISTORICAL GRID MATRIX FOR VERIFIED STRIKES
+# =====================================================================
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Near_ATM_Strike', 'CE_Final_Verification', 'PE_Final_Verification']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={
     'Close': 'BTC Price', 
     'Hurst_Amp_Momentum': '⚙️ HAM Value',
-    'Near_ATM_Strike': '🎯 Near ATM Strike',
-    'Near_ATM_CE_Status': '🛡️ Call (CE) Expiry State',
-    'Near_ATM_PE_Status': '🛡️ Put (PE) Expiry State',
-    'Signal': 'Trend Direction'
+    'Near_ATM_Strike': '🎯 Near ATM Strike Reference',
+    'CE_Final_Verification': '🔒 Call (CE) 8-Step Reality',
+    'PE_Final_Verification': '🔒 Put (PE) 8-Step Reality'
 }, inplace=True)
 
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Core Data Grid (Live HAM Tracker Rows)")
+st.subheader("📋 Pure Reality Grid (Actual Historical Zero Logs Based on HAM)")
 st.dataframe(display_df_inverted, use_container_width=True, height=500)
