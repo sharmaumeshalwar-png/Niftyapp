@@ -90,7 +90,6 @@ for i in range(1, len(raw_closes)):
             range_closes.append(current_anchor)
             range_times.append(raw_times[i])
 
-# Check karne ke liye ki kya current active tick ne naya 20-point block lock kar diya hai
 is_live_candle_running = raw_closes[-1] != range_closes[-1]
 
 if is_live_candle_running:
@@ -101,12 +100,10 @@ if is_live_candle_running:
 df_range = pd.DataFrame(index=range_times)
 df_range['Close'] = range_closes
 
-# Fixed Split Session State to fully lock past history boundary
 if 'fixed_split_idx' not in st.session_state:
     st.session_state.fixed_split_idx = int(len(df_range) * 0.50)
 
 df_predict = df_range.iloc[st.session_state.fixed_split_idx:].copy()
-
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
 # =====================================================================
@@ -146,13 +143,11 @@ for i in range(len(mom_vals)):
     prob_up.append(round(p_up, 2))
     prob_down.append(round(1.0 - p_up, 2))
     
-    # Base Signal Log
     if p_up > 0.50:
         signal_log.append("🟢 BUY")
     else:
         signal_log.append("🔴 SELL")
         
-    # Bar status logging
     if i == len(mom_vals) - 1 and is_live_candle_running:
         bar_status.append("🔄 LIVE ACTIVE")
     else:
@@ -163,7 +158,6 @@ df_predict['Prob_Down'] = prob_down
 df_predict['Signal'] = signal_log
 df_predict['Bar_Status'] = bar_status
 
-# Modify live row identity if it is active
 if is_live_candle_running:
     df_predict.iloc[-1, df_predict.columns.get_loc('Signal')] = f"⚡ LIVE ({df_predict['Signal'].iloc[-1].split()[-1]})"
 
@@ -190,19 +184,20 @@ display_df.rename(columns={'Close': 'Nifty Close (20-Pt steps)', 'Hurst_Amp_Mome
 display_df['Nifty Close (20-Pt steps)'] = display_df['Nifty Close (20-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
-# Invert table to put fresh live rows on Top
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M')
-
 # 🎨 LIVE CANDLE GREEN STYLING FUNCTION
 def highlight_live_row(row):
-    # Agar row status LIVE ACTIVE hai, toh background dark green aur font pure white stretch hoga
     if row['Bar_Status'] == "🔄 LIVE ACTIVE":
         return ['background-color: #155724; color: #ffffff; font-weight: bold;'] * len(row)
     return [''] * len(row)
 
-# Apply dynamic custom pandas styling
+# 🚨 CRASH FIX: Apply styling FIRST while index is pristine, then slice or transform
 styled_df = display_df.style.apply(highlight_live_row, axis=1)
 
+# Now safely invert the presentation using Styler's internal axis mapping for Streamlit
+display_df_inverted = display_df.iloc[::-1].copy()
+display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
+
+final_styled_df = display_df_inverted.style.apply(highlight_live_row, axis=1)
+
 st.subheader("📋 Nifty 20-Point Range Bar Matrix (Locked History vs Active Live)")
-st.dataframe(styled_df, use_container_width=True, height=750)
+st.dataframe(final_styled_df, use_container_width=True, height=750)
