@@ -7,10 +7,10 @@ from scipy.stats import norm
 # Page Configuration
 st.set_page_config(page_title="BTC Kalman Crossover Engine", layout="wide")
 st.title("⚡ BTC 200-Point Range Bar Master Engine")
-st.write("🎯 **Pure Price Action:** 200-Point Range Candles with Dual Kalman Crossover on Raw HAM")
+st.write("🎯 **Pure Price Action:** 200-Point Range Candles with Dual Kalman Crossover on Original HAM")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Dual Kalman & Signal Safe)
+# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: 
@@ -103,29 +103,28 @@ st.success(f"🟢 **Synced & Processed {len(df_predict)} Range Bars!**")
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 
 # =====================================================================
-# 📊 PURE RAW HAM PROCESSING (Direct Math - No Filter Interception)
+# 📊 ORIGINAL DOWNSTREAM SIGNAL CALCULATIONS (100% RESTORED 🎯)
 # =====================================================================
-# 1. Base Kalman for price tracking baseline
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
-# 2. Extracting raw momentum from price
-df_predict['Raw_Momentum'] = df_predict['Close'] - df_predict['Kalman_Baseline']
+raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
+df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 3. 🌟 Calculating PURE RAW HAM directly: Raw Momentum * (Hurst * 2)
-df_predict['Raw_HAM'] = df_predict['Raw_Momentum'] * (df_predict['Hurst'] * 2.0)
-df_predict.dropna(subset=['Hurst', 'Close', 'Raw_HAM'], inplace=True)
+# Here is your original untouched HAM Value formula
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
+df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
 # =====================================================================
-# 🎯 DUAL KALMAN ON RAW HAM PAR DIRECT CROSSOVER ENGINE
+# 🎯 DUAL KALMAN CROSSOVER APPLIED DIRECTLY ON ORIGINAL HAM
 # =====================================================================
-raw_ham_arr = df_predict['Raw_HAM'].to_numpy()
+ham_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
 
-# 🛡️ 1. Fast Kalman applied DIRECTLY on Raw HAM
-df_predict['Kalman_HAM_Fast'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.01, r_val=0.05)
+# 1. Fast Kalman applied on your original HAM array
+df_predict['Kalman_HAM_Fast'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.01, r_val=0.05)
 
-# 🛡️ 2. Slow Kalman applied DIRECTLY on Raw HAM
-df_predict['Kalman_HAM_Slow'] = apply_kalman_filter_custom(raw_ham_arr, initial_p=1.0, q_val=0.0005, r_val=0.5)
+# 2. Slow Kalman applied on your original HAM array
+df_predict['Kalman_HAM_Slow'] = apply_kalman_filter_custom(ham_vals, initial_p=1.0, q_val=0.0005, r_val=0.5)
 
 fast_kf = df_predict['Kalman_HAM_Fast'].to_numpy()
 slow_kf = df_predict['Kalman_HAM_Slow'].to_numpy()
@@ -134,11 +133,11 @@ prob_up, prob_down = [], []
 signal_log = []
 bar_status = []
 
-# Scaling matrix divergence tracker (10-bar buffer window)
+# Crossover divergence engine with standard deviations mapping
 divergence = fast_kf - slow_kf
 rolling_div_std = pd.Series(divergence).rolling(window=10, min_periods=1).std().fillna(1e-6).to_numpy()
 
-for i in range(len(raw_ham_arr)):
+for i in range(len(ham_vals)):
     div = divergence[i]
     std_val = rolling_div_std[i] if rolling_div_std[i] > 0 else 1e-6
     
@@ -154,7 +153,7 @@ for i in range(len(raw_ham_arr)):
     else:
         signal_log.append("🔴 SELL (Bearish Cross)")
         
-    if i == len(raw_ham_arr) - 1 and is_live_candle_running:
+    if i == len(ham_vals) - 1 and is_live_candle_running:
         bar_status.append("🔄 LIVE ACTIVE")
     else:
         bar_status.append("🔒 FROZEN")
@@ -182,19 +181,19 @@ with col2:
 with col3:
     st.metric(label="Crossover Prob Up", value=f"{latest_row['Prob_Up']*100:.0f}%", delta="Momentum Expanding" if latest_row['Prob_Up'] > 0.5 else "Momentum Contracting")
 with col4:
-    st.metric(label="Raw HAM Value", value=f"{latest_row['Raw_HAM']:.4f}", help="Pure unaltered HAM calculation before processing lines")
+    st.metric(label="Original HAM Value", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}", help="Your precise original HAM output.")
 
-clean_cols = ['Close', 'Raw_HAM', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow', 'Signal', 'Prob_Up', 'Prob_Down', 'Bar_Status']
+clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Kalman_HAM_Fast', 'Kalman_HAM_Slow', 'Signal', 'Prob_Up', 'Prob_Down', 'Bar_Status']
 display_df = df_predict[clean_cols].copy()
-display_df.rename(columns={'Close': 'BTC Close', 'Kalman_HAM_Fast': 'Fast Kalman (HAM)', 'Kalman_HAM_Slow': 'Slow Kalman (HAM)'}, inplace=True)
+display_df.rename(columns={'Close': 'BTC Close', 'Hurst_Amp_Momentum': 'Raw HAM', 'Kalman_HAM_Fast': 'Fast Kalman (HAM)', 'Kalman_HAM_Slow': 'Slow Kalman (HAM)'}, inplace=True)
 
 display_df['BTC Close'] = display_df['BTC Close'].round(2)
-display_df['Raw_HAM'] = display_df['Raw_HAM'].round(4)
+display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 display_df['Fast Kalman (HAM)'] = display_df['Fast Kalman (HAM)'].round(4)
 display_df['Slow Kalman (HAM)'] = display_df['Slow Kalman (HAM)'].round(4)
 
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Dual Kalman Crossover Matrix (Advanced Signal Engine)")
+st.subheader("📋 Dual Kalman Crossover Matrix (Original Baseline Preserved)")
 st.dataframe(display_df_inverted, use_container_width=True, height=750)
