@@ -184,20 +184,15 @@ display_df.rename(columns={'Close': 'Nifty Close (20-Pt steps)', 'Hurst_Amp_Mome
 display_df['Nifty Close (20-Pt steps)'] = display_df['Nifty Close (20-Pt steps)'].round(2)
 display_df['Raw HAM'] = display_df['Raw HAM'].round(4)
 
-# 🎨 LIVE CANDLE GREEN STYLING FUNCTION
-def highlight_live_row(row):
-    if row['Bar_Status'] == "🔄 LIVE ACTIVE":
-        return ['background-color: #155724; color: #ffffff; font-weight: bold;'] * len(row)
-    return [''] * len(row)
-
-# 🚨 CRASH FIX: Apply styling FIRST while index is pristine, then slice or transform
-styled_df = display_df.style.apply(highlight_live_row, axis=1)
-
-# Now safely invert the presentation using Styler's internal axis mapping for Streamlit
+# Safely invert and change index format
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-final_styled_df = display_df_inverted.style.apply(highlight_live_row, axis=1)
-
 st.subheader("📋 Nifty 20-Point Range Bar Matrix (Locked History vs Active Live)")
-st.dataframe(final_styled_df, use_container_width=True, height=750)
+
+# 🚨 SAFETY CRASH CONTROL: Instead of complex Pandas stylers that crash on different python/pandas environments,
+# we use standard reliable display with a separate visual banner for the live running state.
+if is_live_candle_running:
+    st.info(f"🟢 **Active Candle Tracker Running:** Nifty current price is swinging live at **{latest_row['Close']:.2f}** with **{latest_row['Prob_Up']*100:.0f}% Bullish Momentum**.")
+
+st.dataframe(display_df_inverted, use_container_width=True, height=750)
