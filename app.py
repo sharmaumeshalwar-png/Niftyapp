@@ -4,13 +4,12 @@ import pandas as pd
 import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="BTC 50:50 Pure Split Engine", layout="wide")
-st.title("⚡ BTC 200-Point Pure 50:50 Train Split Engine")
-st.write("🎯 **Pure 8-Step Verification:** 50% Historical Training Split Applied. Hardcoded Memory Matrix enabled to freeze historic rows.")
+st.set_page_config(page_title="BTC 50:50 Visual Split", layout="wide")
+st.title("⚡ BTC 200-Point Visible 50:50 Split Engine")
+st.write("🎯 **Pure 8-Step Verification:** First 50% data is for LEARNING, Second 50% data is for PREDICTION.")
 
-# Session state diary to permanently lock calculations
-if 'rigid_session_diary' not in st.session_state:
-    st.session_state['rigid_session_diary'] = {}
+if 'rigid_split_diary' not in st.session_state:
+    st.session_state['rigid_split_diary'] = {}
 
 # =====================================================================
 # 1. PURE MATHEMATICAL ENGINES
@@ -43,10 +42,9 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. 2-YEAR HISTORICAL DATA INGESTION (1-HOUR CANDLES)
+# 2. DATA INGESTION (2 YEARS - 1 HOUR)
 # =====================================================================
 try:
-    # Strictly fetching 2 years of 1h historical data
     df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
@@ -62,7 +60,6 @@ range_size = 200.0
 range_closes, range_times = [raw_closes[0]], [raw_times[0]]
 current_anchor = raw_closes[0]
 
-# Generating 200-Point Range Bars from 1h source
 for i in range(1, len(raw_closes)):
     price_diff = raw_closes[i] - current_anchor
     if abs(price_diff) >= range_size:
@@ -87,18 +84,18 @@ df_range['HAM'] = (df_range['Close'] - df_range['Kalman']) * (df_range['Hurst'] 
 df_range['Near_ATM'] = np.round(df_range['Close'].to_numpy() / 500.0) * 500.0
 
 # =====================================================================
-# 3. 🛡️ PURE 50:50 PATTERN SPLIT LOGIC
+# 3. 🧠 VISIBLE 50:50 LEARNING VS PREDICTION SPLIT
 # =====================================================================
 n_len = len(df_range)
-# Strict 50% split boundary (First year for training rules, next year out-of-sample prediction)
-split_idx = int(n_len * 0.50)
+split_idx = int(n_len * 0.50) # Strict middle line
+
+# Train Data (Pehle 50% bars jinse model seekhega)
 train_df = df_range.iloc[:split_idx].copy()
 
 if len(train_df) > 50:
     prices_train = train_df['Close'].to_numpy()
     labels_train = np.zeros(len(train_df), dtype=int)
     
-    # 50-step short horizon forward scanner for learning patterns
     for idx in range(len(train_df) - 50):
         fut_settle = prices_train[idx + 50]
         current_atm = train_df['Near_ATM'].iloc[idx]
@@ -107,6 +104,8 @@ if len(train_df) > 50:
         
     clf = DecisionTreeClassifier(max_depth=3, random_state=42)
     clf.fit(train_df[['HAM', 'Near_ATM']].to_numpy(), labels_train)
+    
+    # Predict on entire dataset
     raw_preds = clf.predict(df_range[['HAM', 'Near_ATM']].to_numpy())
 else:
     raw_preds = np.zeros(n_len, dtype=int)
@@ -114,21 +113,28 @@ else:
 state_map = {0: "⚠️ RISK ZONE", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
 
 # =====================================================================
-# 4. TRIPLE DEADBOLT SESSION STORAGE BLOCK
+# 4. TRIPLE DEADBOLT SESSION DIARY WITH VISUAL LABELS
 # =====================================================================
 final_fixed_matrix = []
 
 for i in range(n_len):
     timestamp_key = df_range.index[i].strftime('%Y-%m-%d %H:%M') + f"_idx_{i}"
     
-    # Historical Rows Check
+    # Split Label Tagging
+    if i < split_idx:
+        split_tag = "📚 LEARNING ZONE (TRAIN)"
+    else:
+        split_tag = "🔮 OUT-OF-SAMPLE (TEST)"
+        
+    if i == n_len - 1:
+        split_tag = "🔄 LIVE REAL-TIME"
+
+    # Memory Check for historical rows
     if i < n_len - 1:
-        if timestamp_key in st.session_state['rigid_session_diary']:
-            # Pull static state directly from cache memory
-            saved_row = st.session_state['rigid_session_diary'][timestamp_key]
+        if timestamp_key in st.session_state['rigid_split_diary']:
+            saved_row = st.session_state['rigid_split_diary'][timestamp_key]
             final_fixed_matrix.append(saved_row)
         else:
-            # First-time logging historical data snapshot
             atm_val = int(df_range['Near_ATM'].iloc[i])
             ham_val = float(df_range['HAM'].iloc[i])
             close_val = float(df_range['Close'].iloc[i])
@@ -136,14 +142,15 @@ for i in range(n_len):
             
             row_data = {
                 'Time Stamp': timestamp_key.split('_idx_')[0],
-                'BTC Spot Price': close_val,
-                '⚙️ Dynamic HAM': ham_val,
-                '🔒 Locked Core Reality': f"{atm_val} | {status_text} [🔒 HARD LOCKED]"
+                'Engine Split Type': split_tag,
+                'BTC Price': close_val,
+                'HAM': ham_val,
+                '🔒 Locked Strike Reality': f"{atm_val} | {status_text} [🔒 FIXED]"
             }
-            st.session_state['rigid_session_diary'][timestamp_key] = row_data
+            st.session_state['rigid_split_diary'][timestamp_key] = row_data
             final_fixed_matrix.append(row_data)
     else:
-        # Top Live Active Row Layer
+        # Live active row
         atm_val = int(df_range['Near_ATM'].iloc[i])
         ham_val = float(df_range['HAM'].iloc[i])
         close_val = float(df_range['Close'].iloc[i])
@@ -151,16 +158,17 @@ for i in range(n_len):
         
         live_row_data = {
             'Time Stamp': timestamp_key.split('_idx_')[0],
-            'BTC Spot Price': close_val,
-            '⚙️ Dynamic HAM': ham_val,
-            '🔒 Locked Core Reality': f"{atm_val} | {status_text} [🔄 LIVE TRACK]"
+            'Engine Split Type': split_tag,
+            'BTC Price': close_val,
+            'HAM': ham_val,
+            '🔒 Locked Strike Reality': f"{atm_val} | {status_text} [🔄 LIVE]"
         }
         final_fixed_matrix.append(live_row_data)
 
-# Grid rendering
+# Grid Rendering
 display_df = pd.DataFrame(final_fixed_matrix)
 display_df.set_index('Time Stamp', inplace=True)
 display_df_inverted = display_df.iloc[::-1]
 
-st.subheader("📋 50:50 Out-of-Sample Logs (Second Row & Below Unchangeable)")
-st.dataframe(display_df_inverted, use_container_width=True, height=500)
+st.subheader("📋 50:50 Segregated Audit Logs (Strict Memory Immutability)")
+st.dataframe(display_df_inverted, use_container_width=True, height=600)
