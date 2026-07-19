@@ -3,12 +3,13 @@ import numpy as np
 import pandas as pd
 import requests
 import time
+import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
 st.set_page_config(page_title="BTC Binance 2-Year Rigid Engine", layout="wide")
-st.title("🛡️ BTC Strict 2-Year Binance 200-Point Radar")
-st.write("🎯 **Pure 50:50 Learn-Predict Engine:** Powered by Binance API (No Leakage, Rigid Barfill Swept).")
+st.title("🛡️ BTC Strict 2-Year Multi-Route 200-Point Radar")
+st.write("🎯 **Pure 50:50 Learn-Predict Engine:** Smart Fallback Network Activated (No Leakage, Rigid Barfill Swept).")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -43,82 +44,81 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. BINANCE 2-YEAR HISTORICAL DATA INGESTION (WITH CRASH GUARD)
+# 2. HYBRID DATA INGESTION (BINANCE WITH YFINANCE FALLBACK)
 # =====================================================================
-@st.cache_data(ttl=1800)  # Cache for 30 minutes to reduce heavy API calls
-def load_2_year_binance_data():
-    url = "https://api.binance.com/api/v3/klines"
-    all_candles = []
+@st.cache_data(ttl=1800)
+def load_2_year_hybrid_data():
+    df_out = None
+    data_source = "Binance API"
     
-    # Calculate timestamps for 2 years ago up to now
-    end_time = int(time.time() * 1000)
-    start_time = end_time - (2 * 365 * 24 * 60 * 60 * 1000)  # 2 Years in ms
-    
-    current_start = start_time
-    progress_bar = st.progress(0.0, text="Fetching 2-Year Binance Ledger...")
-    
-    # Max limit per request is 1000. 2 Years of 1H data is ~17,520 candles.
-    total_estimated_chunks = 18
-    chunk_count = 0
-    
-    while current_start < end_time:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "endTime": end_time,
-            "limit": 1000
-        }
-        try:
-            res = requests.get(url, params=params).json()
-            
-            # 🛡️ RIGID ENGINE CRASH GUARD: Check if response is empty or invalid
+    # --- ROUTE A: TRY BINANCE DIRECT FETCH ---
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        all_candles = []
+        end_time = int(time.time() * 1000)
+        start_time = end_time - (2 * 365 * 24 * 60 * 60 * 1000)
+        current_start = start_time
+        
+        chunk_count = 0
+        while current_start < end_time and chunk_count < 18:
+            params = {
+                "symbol": "BTCUSDT",
+                "interval": "1h",
+                "startTime": current_start,
+                "endTime": end_time,
+                "limit": 1000
+            }
+            res = requests.get(url, params=params, timeout=10).json()
             if not res or not isinstance(res, list) or len(res) == 0:
                 break
-                
             all_candles.extend(res)
-            
-            # Move start window to the timestamp of the last received candle + 1ms
             current_start = res[-1][6] + 1
-            
             chunk_count += 1
-            progress_pct = min(chunk_count / total_estimated_chunks, 1.0)
-            progress_bar.progress(progress_pct, text=f"Loaded {len(all_candles)} hourly candles...")
-            
-            # Throttle slightly to respect API rate limits
             time.sleep(0.1)
             
-        except Exception:
-            break
-        
-    progress_bar.empty()
-    
-    if len(all_candles) == 0:
-        st.error("🚨 Zero Candles Retrieved from Binance. Please check internet or deployment logs.")
+        if len(all_candles) > 100:
+            data_matrix = []
+            for candle in all_candles:
+                data_matrix.append([
+                    pd.to_datetime(candle[0], unit='ms'),
+                    float(candle[1]), float(candle[2]), float(candle[3]), float(candle[4])
+                ])
+            df_out = pd.DataFrame(data_matrix, columns=['Time', 'Open', 'High', 'Low', 'Close'])
+            df_out.set_index('Time', inplace=True)
+    except Exception:
+        df_out = None
+
+    # --- ROUTE B: FALLBACK TO YFINANCE IF ROUTE A BLOCKED ---
+    if df_out is None or len(df_out) < 100:
+        data_source = "Yahoo Finance (Rigid Locked Routing)"
+        try:
+            raw_yf = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+            if not raw_yf.empty:
+                df_out = pd.DataFrame(index=raw_yf.index)
+                df_out['Open'] = raw_yf['Open'].values.astype(float)
+                df_out['High'] = raw_yf['High'].values.astype(float)
+                df_out['Low'] = raw_yf['Low'].values.astype(float)
+                df_out['Close'] = raw_yf['Close'].values.astype(float)
+        except Exception as e:
+            st.error(f"🚨 Both Ingestion Nodes Failed: {e}")
+            st.stop()
+            
+    if df_out is None or len(df_out) == 0:
+        st.error("🚨 Ingestion Pipeline Failure: No market data parsed.")
         st.stop()
-    
-    # Structure into clean DataFrame
-    data_matrix = []
-    for candle in all_candles:
-        data_matrix.append([
-            pd.to_datetime(candle[0], unit='ms'),  # Open Time
-            float(candle[1]),  # Open
-            float(candle[2]),  # High
-            float(candle[3]),  # Low
-            float(candle[4])   # Close
-        ])
         
-    df_out = pd.DataFrame(data_matrix, columns=['Time', 'Open', 'High', 'Low', 'Close'])
-    df_out.set_index('Time', inplace=True)
-    
     # --- RIGID CHECK: BARFILL & INTEGRITY SWEEP ---
     df_out = df_out.ffill()
     df_out.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
-    df_out.index = df_out.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
     
-    return df_out
+    # Handle Timezone conversions cleanly
+    if df_out.index.tz is None:
+        df_out.index = df_out.index.tz_localize('UTC')
+    df_out.index = df_out.index.tz_convert('Asia/Kolkata')
+    
+    return df_out, data_source
 
-df = load_2_year_binance_data()
+df, active_source = load_2_year_hybrid_data()
 
 # =====================================================================
 # 3. STRICT 200-POINT ABSOLUTE RANGE LOCKING ENGINE
@@ -167,7 +167,7 @@ df_range['Normalized_Dev_Scaled'] = ((df_range['Close'] - df_range['Kalman_Basel
 df_range.dropna(subset=['Hurst', 'Close', 'Normalized_Dev_Scaled'], inplace=True)
 
 # =====================================================================
-# 5. ML TARGET LABEL GENERATION (ZERO-LEAKAGE LOOK-AHEAD PROTECTION)
+# 5. ML TARGET LABEL GENERATION (ZERO-LEAKAGE PROTECTION)
 # =====================================================================
 n_len = len(df_range)
 target_labels = []
@@ -221,7 +221,7 @@ predict_df['🌲 ML Tree Decision Grid'] = final_display_matrix
 latest_row = predict_df.iloc[-1]
 
 st.markdown("---")
-st.subheader("🌲 MACHINE LEARNING RIGID BINANCE OUTPUT BOARD")
+st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT BOARD")
 
 if "LOCKED UP" in latest_row['🌲 ML Tree Decision Grid']:
     st.success(f"### {latest_row['🌲 ML Tree Decision Grid']}")
@@ -231,21 +231,20 @@ else:
     st.warning(f"### {latest_row['🌲 ML Tree Decision Grid']}")
 
 st.markdown("---")
-st.sidebar.markdown(f"### 🛡️ Binance Integrity Audit")
-st.sidebar.success("✓ Binance API Connected")
-st.sidebar.success("✓ Check Barfill Swept")
+st.sidebar.markdown(f"### 🛡️ Core Network Routing")
+st.sidebar.info(f"Connected Via: {active_source}")
+st.sidebar.success("✓ Dynamic Crash Guard Active")
 st.sidebar.success("✓ Zero-Leakage Active")
 
 st.sidebar.metric(label="📊 Total 2-Yr Base Candles", value=f"{len(df)}")
 st.sidebar.metric(label="📈 Total Generated Locked Bars", value=f"{n_len}")
 st.sidebar.metric(label="🧠 50% Learn Model Rows", value=f"{len(train_df)}")
-st.sidebar.metric(label="🔮 50% Predict Model Rows", value=f"{len(predict_df)}")
 
 r_col1, r_col2 = st.columns(2)
 with r_col1:
     st.metric(label="⚙️ Real-Time Dynamic HAM Log", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
 with r_col2:
-    st.metric(label="📊 Binance Live Anchor Price", value=f"${latest_row['Close']:.2f}")
+    st.metric(label="📊 Live System Anchor Price", value=f"${latest_row['Close']:.2f}")
 
 clean_cols = ['Close', 'Direction_State', 'Hurst_Amp_Momentum', '🌲 ML Tree Decision Grid']
 display_df = predict_df[clean_cols].copy()
