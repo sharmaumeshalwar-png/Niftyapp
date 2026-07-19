@@ -84,8 +84,11 @@ hurst = calculate_rolling_hurst(close_arr, window=24)
 
 # Mathematical fix for accurate asset deviation mapping
 deviation = close_arr - kb
-rolling_std = pd.Series(deviation).rolling(window=24, min_periods=1).std().to_numpy()
-rolling_std[rolling_std == 0] = 1e-10
+rolling_series = pd.Series(deviation).rolling(window=24, min_periods=1).std()
+
+# --- CRITICAL STREAMLIT CRASH PATCHED HERE ---
+rolling_series.loc[rolling_series == 0] = 1e-10
+rolling_std = rolling_series.to_numpy()
 
 df_master['HAM_Log'] = (deviation / rolling_std) * hurst
 df_master['Dev_Scaled'] = (deviation / kb) * 1000.0
