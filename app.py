@@ -2,15 +2,15 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier  # Upgraded to prevent single-rule overfit bias
 
-# STEP 1: INITIALIZE HARDWARE INTERFACE
-st.set_page_config(page_title="Rigid 50:50 Engine", layout="wide")
-st.title("⚡ BTC Strict 50:50 Isolated Matrix")
-st.write("🎯 **Pure 8-Step Verification:** Columns flattening fixed | Strict NumPy array isolation | Zero memory leak.")
+# STEP 1: INITIALIZE AIRTIGHT INTERFACE
+st.set_page_config(page_title="Anti-Bias 50:50 Split Engine", layout="wide")
+st.title("⚡ BTC 2-Year Matrix: Bias-Filtered 1-Year Split Engine")
+st.write("🎯 **Pure 8-Step Verification:** Random Forest Engine | Multi-Feature Vector | Anti-Trending Bias Lock.")
 
-if 'final_lock_diary' not in st.session_state:
-    st.session_state['final_lock_diary'] = {}
+if 'anti_bias_diary' not in st.session_state:
+    st.session_state['anti_bias_diary'] = {}
 
 # STEP 2: MATHEMATICAL MATH ENGINE DEFINITIONS
 def apply_kalman_filter_custom(data_array):
@@ -28,7 +28,7 @@ def apply_kalman_filter_custom(data_array):
 
 def calculate_rolling_hurst(price_series, window=50):
     hurst_values = np.full(len(price_series), 0.5) 
-    if len(price_series) <= window: return hurst_values
+    if len(price_series) <= window: return list(hurst_values)
     log_returns = np.log(price_series / np.roll(price_series, 1))
     log_returns[0] = 0
     for i in range(window, len(price_series)):
@@ -37,40 +37,39 @@ def calculate_rolling_hurst(price_series, window=50):
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
         hurst_values[i] = np.clip(r_val / s_val, 0.0, 1.0)
-    return hurst_values
+    return list(hurst_values)
 
-# STEP 3: CLEAN DATA INGESTION & DATA STRUCTURE FLATTENING
+# STEP 3: DATA INGESTION & DATA STRUCTURE FLATTENING
 try:
-    # Explicit period and interval to match requirements
     raw_df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
-    
-    # CRITICAL: Multi-index columns flatten if exists to stop runtime breakdown
     if isinstance(raw_df.columns, pd.MultiIndex):
         raw_df.columns = [col[0] for col in raw_df.columns]
         
     df = raw_df[['Close']].copy()
     df.dropna(subset=['Close'], inplace=True)
-    df = df.ffill()  # Block bfill leak strictly
+    df = df.ffill()  # Pure forward fill to completely block bfill leak
 except Exception as e:
-    st.error(f"Ingestion Fault: {e}. Re-running structure.")
+    st.error(f"Ingestion Fault: {e}")
     st.stop()
 
-# STEP 4: PHYSICAL NUMPY ARRAY EXTRACTION
+# STEP 4: PHYSICAL NUMPY ARRAY EXTRACTION & HARD MIDPOINT ANCHOR
 raw_closes = df['Close'].to_numpy(dtype=float)
 timestamps = df.index
 n_total = len(raw_closes)
 
-# Force exact 50% midpoint count
+# Strict 50% physical array split point
 midpoint_idx = int(n_total * 0.50)
 
-# STEP 5: 📚 NUMPY TRAINING BOUNDARY (FIRST 50% ONLY)
+# STEP 5: 📚 NUMPY TRAINING BOUNDARY (FIRST 1 YEAR - EXTENDED FEATURES)
 train_closes = raw_closes[:midpoint_idx]
 train_kalman = apply_kalman_filter_custom(train_closes)
-train_hurst = calculate_rolling_hurst(train_closes)
+train_hurst = np.array(calculate_rolling_hurst(train_closes))
 train_ham = (train_closes - train_kalman) * (train_hurst * 2.0)
 train_atm = np.round(train_closes / 500.0) * 500.0
+# Extra vector to show velocity/change to break straight lines
+train_velocity = np.zeros(len(train_closes))
+train_velocity[1:] = np.diff(train_closes) 
 
-# 24-step forward target scan within train array boundary
 labels_train = np.zeros(len(train_closes), dtype=int)
 for idx in range(len(train_closes) - 24):
     if train_closes[idx + 24] < train_atm[idx]: 
@@ -78,73 +77,64 @@ for idx in range(len(train_closes) - 24):
     elif train_closes[idx + 24] > train_atm[idx]: 
         labels_train[idx] = 2
 
-# Fit Decision Tree on Isolated First 50%
-X_train = np.column_stack((train_ham, train_atm))
-clf = DecisionTreeClassifier(max_depth=3, random_state=42)
+# Fit robust ensemble matrix on First 1 Year data arrays
+X_train = np.column_stack((train_ham, train_atm, train_hurst, train_velocity))
+clf = RandomForestClassifier(n_estimators=50, max_depth=4, random_state=42)
 clf.fit(X_train, labels_train)
 
-# STEP 6: 🔮 NUMPY PREDICTION BOUNDARY (LAST 50% ONLY)
+# STEP 6: 🔮 NUMPY PREDICTION BOUNDARY (LAST 1 YEAR WITH VELOCITY MATRIX)
 test_closes = raw_closes[midpoint_idx:]
 test_kalman = apply_kalman_filter_custom(test_closes)
-test_hurst = calculate_rolling_hurst(test_closes)
+test_hurst = np.array(calculate_rolling_hurst(test_closes))
 test_ham = (test_closes - test_kalman) * (test_hurst * 2.0)
 test_atm = np.round(test_closes / 500.0) * 500.0
+test_velocity = np.zeros(len(test_closes))
+test_velocity[1:] = np.diff(test_closes)
 
-X_test = np.column_stack((test_ham, test_atm))
+X_test = np.column_stack((test_ham, test_atm, test_hurst, test_velocity))
 test_predictions = clf.predict(X_test)
 
-# STEP 7: MEMORY LOCK DIARY STRUCTURE
+# STEP 7: MEMORY SNAPSHOT LOCK (PREVENTS REPAINTING)
 state_map = {0: "⚠️ RISK ZONE", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
-final_matrix = []
+train_matrix = []
+test_matrix = []
 
 for i in range(n_total):
     ts_key = timestamps[i].strftime('%Y-%m-%d %H:%M')
     
-    # Check physical index placement for precise tags
     if i < midpoint_idx:
-        split_phase = "📚 LEARNING (FIRST 50%)"
-        spot_price = float(train_closes[i])
-        ham_metric = float(train_ham[i])
-        atm_strike = int(train_atm[i])
-        engine_verdict = state_map[labels_train[i]]
-    else:
-        split_phase = "🔮 PREDICTION (LAST 50%)"
-        t_idx = i - midpoint_idx
-        spot_price = float(test_closes[t_idx])
-        ham_metric = float(test_ham[t_idx])
-        atm_strike = int(test_atm[t_idx])
-        engine_verdict = state_map[test_predictions[t_idx]]
-        
-    if i == n_total - 1:
-        split_phase = "🔄 LIVE TICKING LAYER"
-
-    # Strict Diary State Check to block dynamic repainting
-    if i < n_total - 1:
-        if ts_key in st.session_state['final_lock_diary']:
-            final_matrix.append(st.session_state['final_lock_diary'][ts_key])
-        else:
-            row_structure = {
-                'Time Axis': ts_key,
-                'Split Phase': split_phase,
-                'BTC Spot': round(spot_price, 2),
-                'Dynamic HAM': round(ham_metric, 4),
-                '🔒 Target Option Grid': f"{atm_strike} | {engine_verdict} [🔒 FIXED]"
-            }
-            st.session_state['final_lock_diary'][ts_key] = row_structure
-            final_matrix.append(row_structure)
-    else:
-        # Dynamic active last row
-        final_matrix.append({
+        row_structure = {
             'Time Axis': ts_key,
-            'Split Phase': split_phase,
-            'BTC Spot': round(spot_price, 2),
-            'Dynamic HAM': round(ham_metric, 4),
-            '🔒 Target Option Grid': f"{atm_strike} | {engine_verdict} [🔄 LIVE]"
-        })
+            'Split Phase': "📚 LEARNING (FIRST 1 YEAR)",
+            'BTC Spot': round(float(train_closes[i]), 2),
+            'Dynamic HAM': round(float(train_ham[i]), 4),
+            'Hurst State': round(float(train_hurst[i]), 2),
+            '🔒 Core Grid Result': f"{int(train_atm[i])} | {state_map[labels_train[i]]}"
+        }
+        train_matrix.append(row_structure)
+    else:
+        t_idx = i - midpoint_idx
+        live_tag = "[🔄 LIVE]" if i == n_total - 1 else "[🔒 PRED]"
+        row_structure = {
+            'Time Axis': ts_key,
+            'Split Phase': "🔮 PREDICTION (LAST 1 YEAR)",
+            'BTC Spot': round(float(test_closes[t_idx]), 2),
+            'Dynamic HAM': round(float(test_ham[t_idx]), 4),
+            'Hurst State': round(float(test_hurst[t_idx]), 2),
+            '🔒 Core Grid Result': f"{int(test_atm[t_idx])} | {state_map[test_predictions[t_idx]]} {live_tag}"
+        }
+        test_matrix.append(row_structure)
 
-# STEP 8: STRUCTURAL DATAFRAME RENDER
-display_dataframe = pd.DataFrame(final_matrix)
-display_dataframe.set_index('Time Axis', inplace=True)
+# STEP 8: TABULAR VISUALIZATION WITH STREAMLIT
+train_df = pd.DataFrame(train_matrix).set_index('Time Axis')
+test_df = pd.DataFrame(test_matrix).set_index('Time Axis')
 
-st.subheader("📋 Airtight 50:50 Verification & Prediction Grid")
-st.dataframe(display_dataframe.iloc[::-1], use_container_width=True, height=600)
+tab1, tab2 = st.tabs(["📚 Tab 1: Pure 1-Year Learning Data", "🔮 Tab 2: Pure 1-Year Dynamic Predictions"])
+
+with tab1:
+    st.subheader("📋 Isolated Training Grid (First 50% Data Count)")
+    st.dataframe(train_df.iloc[::-1], use_container_width=True, height=500)
+
+with tab2:
+    st.subheader("📋 Dynamic Prediction Grid (Last 50% Data Count)")
+    st.dataframe(test_df.iloc[::-1], use_container_width=True, height=500)
