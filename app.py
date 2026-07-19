@@ -5,14 +5,14 @@ import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Static 1-Hour Radar", layout="wide")
+st.set_page_config(page_title="BTC Synchronized 1-Hour Radar", layout="wide")
 st.title("🛡️ BTC Absolute 1-Hour Time-Locked Radar")
-st.write("🎯 **Pure 1-Hour Time Frame Engine:** Range bars completely removed. System maps locked historical hours.")
+st.write("🎯 **Dynamic Time-Series Alignment Engine:** Indicators calibrated specifically for standard hourly structural data.")
 
 # =====================================================================
-# 1. FIXED MATHEMATICAL ENGINES
+# 1. TUNED MATHEMATICAL ENGINES (HOURLY SPECIFIC)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+def apply_kalman_filter_custom(data_array, initial_p=10.0, q_val=0.005, r_val=0.05):
     if len(data_array) == 0: 
         return np.array([])
     x, p = data_array[0], initial_p  
@@ -25,7 +25,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values[i] = x
     return filtered_values
 
-def calculate_rolling_hurst(price_series, window=50):
+def calculate_rolling_hurst(price_series, window=24): # Calibrated to 24-hour cycle
     hurst_values = np.full(len(price_series), 0.5) 
     if len(price_series) <= window:
         return hurst_values
@@ -37,8 +37,9 @@ def calculate_rolling_hurst(price_series, window=50):
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
         rs_ratio = r_val / s_val
-        h = np.log(rs_ratio) / np.log(window)
-        hurst_values[i] = np.clip(h, 0.0, 1.0)
+        if rs_ratio > 0:
+            h = np.log(rs_ratio) / np.log(window)
+            hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
 
 # =====================================================================
@@ -46,7 +47,6 @@ def calculate_rolling_hurst(price_series, window=50):
 # =====================================================================
 @st.cache_data(ttl=600)
 def load_strict_hourly_dataset():
-    # Fetching raw hourly historical framework
     raw_data = yf.download(tickers="BTC-USD", period="2y", interval="1h", progress=False)
     if raw_data.empty:
         st.error("🚨 Critical Market Ledger Pipeline drop.")
@@ -69,22 +69,26 @@ def load_strict_hourly_dataset():
 df_confirmed, df_live = load_strict_hourly_dataset()
 
 # =====================================================================
-# 3. DIRECT 1-HOUR MATRIX FORMATTING (NO RANGE BARS MULTIPLIER)
+# 3. DIRECT 1-HOUR MATRIX FORMATTING
 # =====================================================================
 df_master = df_confirmed.copy()
 df_master['Direction_State'] = np.where(df_master['Close'] >= df_master['Close'].shift(1), "UP", "DOWN")
 df_master.iloc[0, df_master.columns.get_loc('Direction_State')] = "INITIAL"
 
 # =====================================================================
-# 4. FIXED INDICES CALCULATION (PATTHAR KI LAQEER)
+# 4. FIXED INDICES CALCULATION (PATTHAR KI LAQEER - REALIGNED)
 # =====================================================================
 close_arr = df_master['Close'].to_numpy(dtype=float)
-kb = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-hurst = calculate_rolling_hurst(close_arr, window=50)
-wm = apply_kalman_filter_custom((close_arr - kb), initial_p=0.50, q_val=0.001, r_val=0.1)
+kb = apply_kalman_filter_custom(close_arr, initial_p=10.0, q_val=0.005, r_val=0.05)
+hurst = calculate_rolling_hurst(close_arr, window=24)
 
-df_master['HAM_Log'] = wm * (hurst * 2.0)
-df_master['Dev_Scaled'] = ((close_arr - kb) / kb) * 1000.0
+# Mathematical fix for accurate asset deviation mapping
+deviation = close_arr - kb
+rolling_std = pd.Series(deviation).rolling(window=24, min_periods=1).std().to_numpy()
+rolling_std[rolling_std == 0] = 1e-10
+
+df_master['HAM_Log'] = (deviation / rolling_std) * hurst
+df_master['Dev_Scaled'] = (deviation / kb) * 1000.0
 df_master.dropna(subset=['HAM_Log', 'Dev_Scaled'], inplace=True)
 
 # =====================================================================
@@ -109,7 +113,7 @@ predict_df = df_master.iloc[mid_point:].copy()
 X_train = train_df[['HAM_Log', 'Dev_Scaled']].to_numpy()
 y_train = train_df['Target_Class'].to_numpy()
 
-tree_model = DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, class_weight='balanced', random_state=42)
+tree_model = DecisionTreeClassifier(max_depth=5, min_samples_leaf=5, class_weight='balanced', random_state=42)
 tree_model.fit(X_train, y_train)
 
 X_pred = predict_df[['HAM_Log', 'Dev_Scaled']].to_numpy()
@@ -133,13 +137,13 @@ live_time = df_live.index[0]
 last_historical_close = float(predict_df['Close'].iloc[-1])
 live_delta = live_price - last_historical_close
 
-# Compute running feature vector for visualization completely out of loop
+# Compute running features isolated exactly with the realigned hourly metrics
 live_kb = float(kb[-1])
 live_hurst = float(hurst[-1])
-live_wm = live_delta / (live_kb + 1e-10)
-calculated_live_ham = float(live_wm * (live_hurst * 2.0))
+live_std = float(rolling_std[-1])
 
-# Standard 1-Hour dynamic directional projection state logic
+calculated_live_ham = float(((live_price - live_kb) / live_std) * live_hurst)
+
 if live_price > last_historical_close:
     live_direction = "TEMPORARY UP"
     live_signal = f"🟢 LIVE PROJECTION -> {state_map[predictions[-1]]}"
@@ -182,9 +186,9 @@ else:
     st.warning(f"### {live_signal}")
 
 st.markdown("---")
-st.sidebar.markdown("### 🛡️ Pure 1-Hour Rigidity Audit")
-st.sidebar.success("✓ Time Frames Hardlocked")
-st.sidebar.success("✓ Dynamic Range Sync Disabled")
+st.sidebar.markdown("### 🛡️ Pure Hourly Re-calibration Audit")
+st.sidebar.success("✓ Math Noise Windows Re-aligned")
+st.sidebar.success("✓ Volatility Scaler Synchronized")
 st.sidebar.metric(label="📊 Frozen Historical Hours", value=f"{len(predict_df)}")
 
 col1, col2 = st.columns(2)
