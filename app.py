@@ -43,7 +43,7 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. BINANCE 2-YEAR HISTORICAL DATA INGESTION (CHUNKING LOGIC)
+# 2. BINANCE 2-YEAR HISTORICAL DATA INGESTION (WITH CRASH GUARD)
 # =====================================================================
 @st.cache_data(ttl=1800)  # Cache for 30 minutes to reduce heavy API calls
 def load_2_year_binance_data():
@@ -58,7 +58,6 @@ def load_2_year_binance_data():
     progress_bar = st.progress(0.0, text="Fetching 2-Year Binance Ledger...")
     
     # Max limit per request is 1000. 2 Years of 1H data is ~17,520 candles.
-    # We loop in chunks of 1000 until we bridge the 2-year horizon.
     total_estimated_chunks = 18
     chunk_count = 0
     
@@ -70,20 +69,33 @@ def load_2_year_binance_data():
             "endTime": end_time,
             "limit": 1000
         }
-        res = requests.get(url, params=params).json()
-        
-        if not res or len(res) == 0:
-            break
+        try:
+            res = requests.get(url, params=params).json()
             
-        all_candles.extend(res)
-        # Move start window to the timestamp of the last received candle + 1ms
-        current_start = res[-1][6] + 1
-        
-        chunk_count += 1
-        progress_pct = min(chunk_count / total_estimated_chunks, 1.0)
-        progress_bar.progress(progress_pct, text=f"Loaded {len(all_candles)} hourly candles...")
+            # 🛡️ RIGID ENGINE CRASH GUARD: Check if response is empty or invalid
+            if not res or not isinstance(res, list) or len(res) == 0:
+                break
+                
+            all_candles.extend(res)
+            
+            # Move start window to the timestamp of the last received candle + 1ms
+            current_start = res[-1][6] + 1
+            
+            chunk_count += 1
+            progress_pct = min(chunk_count / total_estimated_chunks, 1.0)
+            progress_bar.progress(progress_pct, text=f"Loaded {len(all_candles)} hourly candles...")
+            
+            # Throttle slightly to respect API rate limits
+            time.sleep(0.1)
+            
+        except Exception:
+            break
         
     progress_bar.empty()
+    
+    if len(all_candles) == 0:
+        st.error("🚨 Zero Candles Retrieved from Binance. Please check internet or deployment logs.")
+        st.stop()
     
     # Structure into clean DataFrame
     data_matrix = []
@@ -173,7 +185,6 @@ df_range['Target_Class'] = target_labels
 # =====================================================================
 # 6. PURE 50:50 LEARN VS PREDICT SPLIT
 # =====================================================================
-# Counting strictly up to step 8 internally for verification mechanics
 mid_point = n_len // 2
 train_df = df_range.iloc[:mid_point - 1].dropna()
 predict_df = df_range.iloc[mid_point:].copy()
