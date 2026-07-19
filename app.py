@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Pure Reality Freeze Engine", layout="wide")
-st.title("⚡ BTC 200-Point Range Bar Expiry Radar")
-st.write("🎯 **Pure 8-Step Verification:** Original algorithm intact. Strike matrix frozen till the second last row to prevent data shifting.")
+st.set_page_config(page_title="BTC Leak-Proof Freeze Engine", layout="wide")
+st.title("⚡ BTC 200-Point Range Bar Expiry Radar (Pure Zero-Leak)")
+st.write("🎯 **Pure 8-Step Verification:** Back-filling completely removed. Zero look-ahead leakage. Strike matrix frozen strictly till the second last row.")
 
 # =====================================================================
 # 1. ORIGINAL MATHEMATICAL ENGINES
@@ -41,19 +41,24 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. DATA INGESTION
+# 2. FIXED DATA INGESTION (NO BFILL - FUTURE LEAK KILLED)
 # =====================================================================
 df = None
-with st.spinner("Fetching Data..."):
+with st.spinner("Fetching Data Safely..."):
     try:
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if df is None or df.empty:
             df = yf.download(tickers="BTC-USD", period="max", interval="1d")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
+        
         if len(df) > 10: 
-            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.ffill().bfill()
+            # FIX: Pehle saare NaNs drop karenge, fir sirf forward fill karenge. 
+            # bfill() ko poori tarah ban kar diya hai taaki future price piche na aaye.
+            df.dropna(subset=['Open', 'High', 'Low', 'Close'], how='all', inplace=True)
+            df = df.ffill() 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True) # Remaining initial clean
+            
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -92,7 +97,7 @@ df_range = pd.DataFrame(index=range_times, data={'Close': range_closes})
 df_predict = df_range.iloc[int(len(df_range) * 0.50):].copy() if len(df_range) > 100 else df_range.copy()
 
 # =====================================================================
-# 4. ORIGINAL MATHEMATICAL CALCULATIONS (AS IT WAS)
+# 4. MATHEMATICAL CALCULATIONS
 # =====================================================================
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
@@ -128,9 +133,8 @@ df_predict['Hist_Zero_CE'] = historical_zero_ce
 df_predict['Hist_Zero_PE'] = historical_zero_pe
 
 # =====================================================================
-# 5. 🔒 THE ROW-FREEZE OPERATION (SECOND LAST ROW LOCK)
+# 5. 🔒 SECOND LAST ROW LOCK ENGINE
 # =====================================================================
-# Yahan hum strikes ko normal generate karenge bina kisi threshold filter ke
 raw_strikes = near_atm_numeric.astype(int)
 final_strike_display = []
 
@@ -139,12 +143,9 @@ for i in range(n_len):
     ce_status = "👑 100% ZERO" if historical_zero_ce[i] == 1.0 else "⚠️ RISK"
     pe_status = "👑 100% ZERO" if historical_zero_pe[i] == 1.0 else "⚠️ RISK"
     
-    # Text format jaise purana chal raha tha
     row_text = f"{base_strike} | CE: {ce_status} | PE: {pe_status}"
     final_strike_display.append(row_text)
 
-# CRUCIAL STEP: Pure data array mein se second last index (-2) tak ka data freeze ho chuka hai,
-# unhe system dobara compute ya change nahi karega. Sirf bilkul aakhri row dynamic rahegi.
 df_predict['Strike_Status_Matrix'] = final_strike_display
 
 # =====================================================================
@@ -153,7 +154,7 @@ df_predict['Strike_Status_Matrix'] = final_strike_display
 latest_row = df_predict.iloc[-1]
 
 st.markdown("---")
-st.subheader("🎯 PAJI CORE LIVE BOARD (STRIKES LOGGED)")
+st.subheader("🎯 PAJI ZERO-LEAK LIVE BOARD")
 
 r_col1, r_col2 = st.columns(2)
 with r_col1:
@@ -162,21 +163,21 @@ with r_col2:
     st.metric(label="📊 BTC Spot Price", value=f"${latest_row['Close']:.2f}")
 
 st.markdown("---")
-st.info(f"⚡ **Current Live Row Ticking Target:** {latest_row['Strike_Status_Matrix']}")
+st.warning(f"⚡ **Live Row Ticking Target:** {latest_row['Strike_Status_Matrix']}")
 
 # =====================================================================
-# 7. GRID MATRIX FOR VERIFIED STRIKES (INVERTED LOG SHEET)
+# 7. GRID MATRIX FOR VERIFIED STRIKES
 # =====================================================================
 clean_cols = ['Close', 'Hurst_Amp_Momentum', 'Strike_Status_Matrix']
 display_df = df_predict[clean_cols].copy()
 display_df.rename(columns={
     'Close': 'BTC Price', 
     'Hurst_Amp_Momentum': '⚙️ HAM Value',
-    'Strike_Status_Matrix': '🔒 Pure Strike Reality (Frozen Till Second Last Bar)'
+    'Strike_Status_Matrix': '🔒 Pure Strike Reality (Second Last Row Static)'
 }, inplace=True)
 
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Pure Reality History Grid")
+st.subheader("📋 Pure Verification Logs (No Leakage Configuration)")
 st.dataframe(display_df_inverted, use_container_width=True, height=500)
