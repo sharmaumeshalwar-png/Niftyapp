@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Sealed Absolute Radar", layout="wide")
-st.title("🛡️ BTC Absolute State-Lock Immutable Radar")
-st.write("🎯 **Strict Vector Isolation:** Data, features, and model matrices are permanently sealed from live runtime leaks.")
+st.set_page_config(page_title="BTC Static 1-Hour Radar", layout="wide")
+st.title("🛡️ BTC Absolute 1-Hour Time-Locked Radar")
+st.write("🎯 **Pure 1-Hour Time Frame Engine:** Range bars completely removed. System maps locked historical hours.")
 
 # =====================================================================
 # 1. FIXED MATHEMATICAL ENGINES
@@ -42,13 +42,14 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. IMMUTABLE HISTORICAL DATA INGESTION
+# 2. IMMUTABLE 1-HOUR HISTORICAL INGESTION (STRICT CLOSED BARS)
 # =====================================================================
 @st.cache_data(ttl=600)
-def load_strict_sealed_dataset():
+def load_strict_hourly_dataset():
+    # Fetching raw hourly historical framework
     raw_data = yf.download(tickers="BTC-USD", period="2y", interval="1h", progress=False)
     if raw_data.empty:
-        st.error("🚨 Critical Ledger Pipeline Failure.")
+        st.error("🚨 Critical Market Ledger Pipeline drop.")
         st.stop()
         
     df_out = pd.DataFrame(index=raw_data.index)
@@ -59,41 +60,20 @@ def load_strict_sealed_dataset():
         df_out.index = df_out.index.tz_localize('UTC')
     df_out.index = df_out.index.tz_convert('Asia/Kolkata')
     
-    # Isolate history completely away from the running clock candle
+    # --- ABSOLUTE SHIELD: Slice out the active running hour ---
     df_historical_confirmed = df_out.iloc[:-1].copy()
     live_floating_candle = df_out.iloc[-1:].copy()
     
     return df_historical_confirmed, live_floating_candle
 
-df_confirmed, df_live = load_strict_sealed_dataset()
+df_confirmed, df_live = load_strict_hourly_dataset()
 
 # =====================================================================
-# 3. CONFIRMED HISTORICAL RANGE MATRIX RENDER
+# 3. DIRECT 1-HOUR MATRIX FORMATTING (NO RANGE BARS MULTIPLIER)
 # =====================================================================
-confirmed_closes = df_confirmed['Close'].to_numpy(dtype=float)
-confirmed_times = df_confirmed.index
-range_size = 200.0
-
-range_closes = [confirmed_closes[0]]
-range_times = [confirmed_times[0]]
-range_directions = ["INITIAL"]
-current_anchor = confirmed_closes[0]
-
-for i in range(1, len(confirmed_closes)):
-    price_diff = confirmed_closes[i] - current_anchor
-    if abs(price_diff) >= range_size:
-        num_bars = int(abs(price_diff) // range_size)
-        direction = np.sign(price_diff)
-        for _ in range(num_bars):
-            current_anchor += direction * range_size
-            range_closes.append(current_anchor)
-            range_times.append(confirmed_times[i])
-            range_directions.append("UP" if direction > 0 else "DOWN")
-
-df_master = pd.DataFrame(index=range_times, data={
-    'Close': range_closes,
-    'Direction_State': range_directions
-})
+df_master = df_confirmed.copy()
+df_master['Direction_State'] = np.where(df_master['Close'] >= df_master['Close'].shift(1), "UP", "DOWN")
+df_master.iloc[0, df_master.columns.get_loc('Direction_State')] = "INITIAL"
 
 # =====================================================================
 # 4. FIXED INDICES CALCULATION (PATTHAR KI LAQEER)
@@ -108,7 +88,7 @@ df_master['Dev_Scaled'] = ((close_arr - kb) / kb) * 1000.0
 df_master.dropna(subset=['HAM_Log', 'Dev_Scaled'], inplace=True)
 
 # =====================================================================
-# 5. ML ENGINE 50:50 SPLIT VALIDATION
+# 5. ML ENGINE 50:50 SPLIT BLOCK
 # =====================================================================
 n_len = len(df_master)
 target_labels = []
@@ -145,39 +125,39 @@ for i in range(predict_len):
 predict_df['ML Signal Grid'] = final_display_matrix
 
 # =====================================================================
-# 6. PURE UNLINKED LIVE RENDER BOARD (NO INDEX REPAINT)
+# 6. PURE UNLINKED LIVE 1-HOUR RENDER GATEWAY
 # =====================================================================
 live_price = float(df_live['Close'].iloc[0])
 live_time = df_live.index[0]
 
-# Isolated live delta checks
-last_historical_anchor = float(predict_df['Close'].iloc[-1])
-live_delta = live_price - last_historical_anchor
+last_historical_close = float(predict_df['Close'].iloc[-1])
+live_delta = live_price - last_historical_close
 
-# Mathematical isolated calculations for the live row only
+# Compute running feature vector for visualization completely out of loop
 live_kb = float(kb[-1])
 live_hurst = float(hurst[-1])
 live_wm = live_delta / (live_kb + 1e-10)
-
 calculated_live_ham = float(live_wm * (live_hurst * 2.0))
-calculated_live_dev = float((live_delta / (last_historical_anchor + 1e-10)) * 1000.0)
 
-if abs(live_delta) >= range_size:
-    live_direction = "UP" if live_delta > 0 else "DOWN"
+# Standard 1-Hour dynamic directional projection state logic
+if live_price > last_historical_close:
+    live_direction = "TEMPORARY UP"
     live_signal = f"🟢 LIVE PROJECTION -> {state_map[predictions[-1]]}"
+elif live_price < last_historical_close:
+    live_direction = "TEMPORARY DOWN"
+    live_signal = f"🔴 LIVE PROJECTION -> {state_map[predictions[-1]]}"
 else:
-    live_direction = "CONSOLIDATION"
-    live_signal = "⏳ LIVE RUNNING -> MATCHING RANGE"
+    live_direction = "UNCHANGED"
+    live_signal = "⏳ LIVE RUNNING -> HORIZON MATCH"
 
-# Structure inversion formatting safely
+# Clean table structural rendering
 clean_cols = ['Close', 'Direction_State', 'HAM_Log', 'ML Signal Grid']
 display_df = predict_df[clean_cols].copy()
-display_df.rename(columns={'Close': 'Locked Anchor Price', 'Direction_State': 'Current Bar State', 'HAM_Log': 'Dynamic HAM Log'}, inplace=True)
+display_df.rename(columns={'Close': 'Locked Close Price', 'Direction_State': 'Historical Close State', 'HAM_Log': 'Dynamic HAM Log'}, inplace=True)
 
-# Generate isolated running vector
 live_row = pd.DataFrame(index=[live_time], data={
-    'Locked Anchor Price': round(live_price, 2),
-    'Current Bar State': live_direction,
+    'Locked Close Price': round(live_price, 2),
+    'Historical Close State': live_direction,
     'Dynamic HAM Log': round(calculated_live_ham, 4),
     'ML Signal Grid': live_signal
 })
@@ -202,16 +182,16 @@ else:
     st.warning(f"### {live_signal}")
 
 st.markdown("---")
-st.sidebar.markdown("### 🛡️ Pure Matrix Lock Audit")
-st.sidebar.success("✓ Linear Pipeline Leak Blocked")
-st.sidebar.success("✓ Dynamic Feature Shift Checked")
-st.sidebar.metric(label="📊 Frozen Database Count", value=f"{len(predict_df)}")
+st.sidebar.markdown("### 🛡️ Pure 1-Hour Rigidity Audit")
+st.sidebar.success("✓ Time Frames Hardlocked")
+st.sidebar.success("✓ Dynamic Range Sync Disabled")
+st.sidebar.metric(label="📊 Frozen Historical Hours", value=f"{len(predict_df)}")
 
 col1, col2 = st.columns(2)
 with col1:
     st.metric(label="⚙️ Real-Time Isolated HAM Log", value=f"{calculated_live_ham:.4f}")
 with col2:
-    st.metric(label="📊 Live Ingested Market Quote", value=f"${live_price:.2f}")
+    st.metric(label="📊 Live Hourly Price Quote", value=f"${live_price:.2f}")
 
 st.subheader("📋 Pure Immutable Locked History Logs")
 st.dataframe(final_render_board, use_container_width=True, height=500)
