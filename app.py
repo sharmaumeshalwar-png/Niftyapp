@@ -4,15 +4,16 @@ import pandas as pd
 import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="BTC Rigid 50:50 Engine", layout="wide")
-st.title("⚡ BTC 200-Point Segregated 50:50 Split Radar")
-st.write("🎯 **Pure 8-Step Verification:** Strict data separation. First 50% data is exclusive for learning, remaining 50% is exclusive for predictions.")
+st.set_page_config(page_title="BTC 1H Zero-Leak Radar", layout="wide")
+st.title("⚡ BTC Standard 1-Hour Airtight Matrix")
+st.write("🎯 **Pure 8-Step Verification:** 50:50 Data Split | 1H Rigid Candles | Zero Leak Dynamic Blocking.")
 
-if 'final_segregated_diary' not in st.session_state:
-    st.session_state['final_segregated_diary'] = {}
+# Session Memory Block to store calculated and frozen historical states
+if 'airtight_1h_diary' not in st.session_state:
+    st.session_state['airtight_1h_diary'] = {}
 
 # =====================================================================
-# 1. PURE MATHEMATICAL ENGINES
+# STEP 1 & 2: PURE MATHEMATICAL FEATURE ENGINES (ZERO LEAK FORWARD LOOK)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
@@ -42,55 +43,37 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. DATA INGESTION (2 YEARS - 1 HOUR)
+# STEP 3 & 4: 2-YEAR HISTORICAL 1-HOUR INGESTION WITH NO REPAINT LABELS
 # =====================================================================
 try:
     df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     df.dropna(subset=['Close'], inplace=True)
+    
+    # CRITICAL: STRICT FORWARD FILLING ONLY - NO BACKFILL ALLOWED TO PREVENT LEAK
     df = df.ffill()
 except Exception as e:
-    st.error(f"Ingestion Error: {e}")
+    st.error(f"Ingestion System Malfunction: {e}")
     st.stop()
 
-raw_closes = df['Close'].to_numpy(dtype=float)
-raw_times = df.index
-range_size = 200.0
-range_closes, range_times = [raw_closes[0]], [raw_times[0]]
-current_anchor = raw_closes[0]
+# Feature Calculations
+close_arr = df['Close'].to_numpy(dtype=float)
+df['Kalman'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+df['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
+df['HAM'] = (df['Close'] - df['Kalman']) * (df['Hurst'] * 2.0)
 
-for i in range(1, len(raw_closes)):
-    price_diff = raw_closes[i] - current_anchor
-    if abs(price_diff) >= range_size:
-        num_bars = int(abs(price_diff) // range_size)
-        direction = np.sign(price_diff)
-        for _ in range(num_bars):
-            current_anchor += direction * range_size
-            range_closes.append(current_anchor)
-            range_times.append(raw_times[i])
-
-if raw_closes[-1] != range_closes[-1]:
-    range_closes.append(raw_closes[-1])
-    range_times.append(raw_times[-1])
-
-df_range = pd.DataFrame(index=range_times, data={'Close': range_closes})
-
-# Features
-close_arr = df_range['Close'].to_numpy(dtype=float)
-df_range['Kalman'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-df_range['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
-df_range['HAM'] = (df_range['Close'] - df_range['Kalman']) * (df_range['Hurst'] * 2.0)
-df_range['Near_ATM'] = np.round(df_range['Close'].to_numpy() / 500.0) * 500.0
+# STEP 5: PROPER 500-MULTIPLE STRIKE ENGINE
+df['Near_ATM'] = np.round(df['Close'].to_numpy() / 500.0) * 500.0
 
 # =====================================================================
-# 3. 🛡️ ABSOLUTE SEGREGATED MATH SPLIT
+# STEP 6: PURE 50:50 SEGREGATED PATTERN BOUNDARY
 # =====================================================================
-n_len = len(df_range)
-split_idx = int(n_len * 0.50)
+n_len = len(df)
+split_idx = int(n_len * 0.50) # Absolute midpoint anchor
 
-train_df = df_range.iloc[:split_idx].copy()
-test_df = df_range.iloc[split_idx:].copy()
+train_df = df.iloc[:split_idx].copy()
+test_df = df.iloc[split_idx:].copy()
 
 state_map = {0: "⚠️ RISK ZONE", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
 final_outputs = ["⚠️ RISK ZONE"] * n_len
@@ -99,80 +82,82 @@ if len(train_df) > 50:
     prices_train = train_df['Close'].to_numpy()
     labels_train = np.zeros(len(train_df), dtype=int)
     
-    # Generate ground truth for training set
-    for idx in range(len(train_df) - 50):
-        fut_settle = prices_train[idx + 50]
+    # 24-step forward look ahead only inside historical boundaries for validation rules
+    for idx in range(len(train_df) - 24):
+        fut_settle = prices_train[idx + 24]
         current_atm = train_df['Near_ATM'].iloc[idx]
         if fut_settle < current_atm: labels_train[idx] = 1
         elif fut_settle > current_atm: labels_train[idx] = 2
         
-    # Map Training Zone strictly to their actual historic properties
+    # Learning Matrix Mapping
     for idx in range(split_idx):
         final_outputs[idx] = state_map[labels_train[idx]]
         
-    # Train model ONLY on first 50%
+    # Model Learning Phase (Only uses first 50% variables)
     clf = DecisionTreeClassifier(max_depth=3, random_state=42)
     clf.fit(train_df[['HAM', 'Near_ATM']].to_numpy(), labels_train)
     
-    # Predict ONLY on the remaining out-of-sample data
+    # Prediction Matrix Phase (Runs on last 50% out-of-sample data)
     test_preds = clf.predict(test_df[['HAM', 'Near_ATM']].to_numpy())
     for idx in range(len(test_df)):
         final_outputs[split_idx + idx] = state_map[test_preds[idx]]
 
 # =====================================================================
-# 4. SESSION STATE DIARY LOCK FOR IMMUTABILITY
+# STEP 7: SESSION STORAGE OVERRIDE LAYER (NO BACK DATA RETRACTION)
 # =====================================================================
 final_fixed_matrix = []
 
 for i in range(n_len):
-    timestamp_key = df_range.index[i].strftime('%Y-%m-%d %H:%M') + f"_bar_{i}"
+    timestamp_key = df.index[i].strftime('%Y-%m-%d %H:%M')
     
     if i < split_idx:
-        split_tag = "📚 LEARNING ZONE (FIRST 50%)"
+        split_tag = "📚 LEARNING (FIRST 50%)"
     else:
-        split_tag = "🔮 PREDICTION OUT-OF-SAMPLE (LAST 50%)"
+        split_tag = "🔮 PREDICTION (LAST 50%)"
         
     if i == n_len - 1:
-        split_tag = "🔄 LIVE REAL-TIME LAYER"
+        split_tag = "🔄 LIVE TICKING ZONE"
 
-    # Historic lock configuration
+    # Static snapshot validation check
     if i < n_len - 1:
-        if timestamp_key in st.session_state['final_segregated_diary']:
-            saved_row = st.session_state['final_segregated_diary'][timestamp_key]
+        if timestamp_key in st.session_state['airtight_1h_diary']:
+            saved_row = st.session_state['airtight_1h_diary'][timestamp_key]
             final_fixed_matrix.append(saved_row)
         else:
-            atm_val = int(df_range['Near_ATM'].iloc[i])
-            ham_val = float(df_range['HAM'].iloc[i])
-            close_val = float(df_range['Close'].iloc[i])
+            atm_val = int(df['Near_ATM'].iloc[i])
+            ham_val = float(df['HAM'].iloc[i])
+            close_val = float(df['Close'].iloc[i])
             
             row_data = {
-                'Time Stamp': timestamp_key.split('_bar_')[0],
-                'Engine Split Type': split_tag,
-                'BTC Price': close_val,
-                'HAM Value': ham_val,
-                '🔒 Locked Strike Reality': f"{atm_val} | {final_outputs[i]} [🔒 FIXED]"
+                'Time Axis': timestamp_key,
+                'Split Phase': split_tag,
+                'BTC Spot': close_val,
+                'Dynamic HAM': ham_val,
+                '🔒 Target Option Grid': f"{atm_val} | {final_outputs[i]} [🔒 RECORDED]"
             }
-            st.session_state['final_segregated_diary'][timestamp_key] = row_data
+            st.session_state['airtight_1h_diary'][timestamp_key] = row_data
             final_fixed_matrix.append(row_data)
     else:
-        # Live processing row
-        atm_val = int(df_range['Near_ATM'].iloc[i])
-        ham_val = float(df_range['HAM'].iloc[i])
-        close_val = float(df_range['Close'].iloc[i])
+        # Live processing bar
+        atm_val = int(df['Near_ATM'].iloc[i])
+        ham_val = float(df['HAM'].iloc[i])
+        close_val = float(df['Close'].iloc[i])
         
         live_row_data = {
-            'Time Stamp': timestamp_key.split('_bar_')[0],
-            'Engine Split Type': split_tag,
-            'BTC Price': close_val,
-            'HAM Value': ham_val,
-            '🔒 Locked Strike Reality': f"{atm_val} | {final_outputs[i]} [🔄 LIVE]"
+            'Time Axis': timestamp_key,
+            'Split Phase': split_tag,
+            'BTC Spot': close_val,
+            'Dynamic HAM': ham_val,
+            '🔒 Target Option Grid': f"{atm_val} | {final_outputs[i]} [🔄 ACTIVE]"
         }
         final_fixed_matrix.append(live_row_data)
 
-# Inverse display grid
+# =====================================================================
+# STEP 8: INVERTED AUDIT LOG DISPLAY GRID
+# =====================================================================
 display_df = pd.DataFrame(final_fixed_matrix)
-display_df.set_index('Time Stamp', inplace=True)
+display_df.set_index('Time Axis', inplace=True)
 display_df_inverted = display_df.iloc[::-1]
 
-st.subheader("📋 Strict Historical Matrix Check (8-Step Segregation Complete)")
+st.subheader("📋 Strict Mathematical Split & Execution Logs")
 st.dataframe(display_df_inverted, use_container_width=True, height=600)
