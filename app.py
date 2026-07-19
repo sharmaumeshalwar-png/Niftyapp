@@ -29,14 +29,18 @@ def calculate_rolling_hurst(price_series, window=50):
     hurst_values = np.full(len(price_series), 0.5) 
     if len(price_series) <= window:
         return hurst_values
+    
     log_returns = np.log(price_series / np.roll(price_series, 1))
     log_returns[0] = 0
+    
     for i in range(window, len(price_series)):
         window_data = log_returns[i-window+1:i+1]
         cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
-        rs_ratio = r_val / s_val
+        
+        # Zero protection for flat markets
+        rs_ratio = max(r_val / s_val, 1e-12)
         h = np.log(rs_ratio) / np.log(window)
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
@@ -52,8 +56,9 @@ with st.spinner("Ingesting 2-Year Hourly Market History..."):
             st.error("🚨 Error: Data download failed from Yahoo Finance.")
             st.stop()
             
+        # Resilient column flattening for modern yfinance output
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
+            df.columns = df.columns.get_level_values(0)
         
         # Ingestion Verification & Strict Barfill
         df.dropna(subset=['Open', 'High', 'Low', 'Close'], how='all', inplace=True)
@@ -93,7 +98,7 @@ for i in range(1, len(raw_closes)):
         num_bars = int(abs(price_diff) // range_size)
         direction = np.sign(price_diff)
         
-        # Multi-bar structural expansion (600pt surge = 3 clean immutable bars)
+        # Multi-bar structural expansion
         for _ in range(num_bars):
             current_anchor += direction * range_size
             range_closes.append(current_anchor)
@@ -106,15 +111,19 @@ df_range = pd.DataFrame(index=range_times, data={
 })
 
 # =====================================================================
-# 4. IMMUTABLE FEATURE EXTRACTION & SCALING
+# 4. FIXED IMMUTABLE FEATURE EXTRACTION & SCALING (LAG REMOVED)
 # =====================================================================
 close_arr = df_range['Close'].to_numpy(dtype=float)
+
+# Core baseline creation
 df_range['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 df_range['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
-raw_weighted_momentum = df_range['Close'] - df_range['Kalman_Baseline']
-df_range['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
+# FIXED: Removed the secondary Kalman layer that caused double-smoothing lag.
+# Direct distribution retention preserves true directional alpha variance.
+df_range['Weighted_Momentum'] = df_range['Close'] - df_range['Kalman_Baseline']
 
+# Final Feature Multipliers
 df_range['Hurst_Amp_Momentum'] = df_range['Weighted_Momentum'] * (df_range['Hurst'] * 2.0)
 df_range['Normalized_Dev_Scaled'] = ((df_range['Close'] - df_range['Kalman_Baseline']) / df_range['Kalman_Baseline']) * 1000.0
 
@@ -148,7 +157,6 @@ df_range['Target_Class'] = target_labels
 mid_point = n_len // 2
 
 # [INTEGRITY CHECK 2: LEAKAGE BOUNDARY SAFEGUARDS]
-# Train data limits stop exactly 1 point BEFORE mid_point so it can never see the target or values of predict rows.
 train_df = df_range.iloc[:mid_point - 1].dropna()
 predict_df = df_range.iloc[mid_point:].copy()
 
