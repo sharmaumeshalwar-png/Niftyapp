@@ -7,7 +7,7 @@ from sklearn.tree import DecisionTreeClassifier
 # Page Configuration
 st.set_page_config(page_title="BTC ML Decision Tree Engine", layout="wide")
 st.title("⚡ BTC 200-Point ML Pattern Learning Radar")
-st.write("🎯 **Decision Tree Engine:** Pure 50:50 Learning vs Out-of-Sample Prediction Matrix Split.")
+st.write("🎯 **Decision Tree Engine:** 50:50 Optimized Sensitivity Matrix Split.")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -97,7 +97,7 @@ df_range = pd.DataFrame(index=range_times, data={'Close': range_closes})
 df_predict = df_range.copy()
 
 # =====================================================================
-# 4. FEATURE EXTRACTION
+# 4. FEATURE EXTRACTION & SCALING
 # =====================================================================
 close_arr = df_predict['Close'].to_numpy(dtype=float)
 df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
@@ -105,10 +105,12 @@ df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
 raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
 df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
-df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
 
-df_predict['Normalized_Dev_Pct'] = (df_predict['Close'] - df_predict['Kalman_Baseline']) / df_predict['Kalman_Baseline']
-df_predict.dropna(subset=['Hurst', 'Close', 'Normalized_Dev_Pct'], inplace=True)
+# Amplified metrics for better Decision Tree sensitivity splits
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
+df_predict['Normalized_Dev_Scaled'] = ((df_predict['Close'] - df_predict['Kalman_Baseline']) / df_predict['Kalman_Baseline']) * 1000.0
+
+df_predict.dropna(subset=['Hurst', 'Close', 'Normalized_Dev_Scaled'], inplace=True)
 
 strike_interval = 500.0
 prices = df_predict['Close'].to_numpy()
@@ -117,9 +119,10 @@ near_atm_numeric = np.round(prices / strike_interval) * strike_interval
 df_predict['Near_ATM'] = near_atm_numeric
 
 # =====================================================================
-# 5. ML TARGET LABEL GENERATION (EXPIRY RETROSPECT)
+# 5. ML TARGET LABEL GENERATION (OPTIMIZED EXPIRY WINDOW)
 # =====================================================================
-expiry_window = 750
+# Reduced to 48 bars (realistic intraday/swing loop resolution)
+expiry_window = 48 
 target_labels = []
 
 for idx in range(n_len):
@@ -139,45 +142,37 @@ for idx in range(n_len):
 df_predict['Target_Class'] = target_labels
 
 # =====================================================================
-# 6. PURE 50:50 LEARN VS PREDICT ENGINE
+# 6. PURE 50:50 LEARN VS PREDICT ENGINE (SENSITIVE)
 # =====================================================================
-# Pure mid-point matrix split calculated dynamically
 mid_point = n_len // 2
 
-# First 50%: Pure Training Set (with expiration window protection gap)
 train_limit = max(10, mid_point - expiry_window)
 train_df = df_predict.iloc[:train_limit].dropna()
-
-# Last 50%: Pure Out-Of-Sample Prediction Show Matrix
 predict_df = df_predict.iloc[mid_point:].copy()
 
 if len(train_df) > 10 and len(predict_df) > 0:
-    X_train = train_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Pct']].to_numpy()
+    X_train = train_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Scaled']].to_numpy()
     y_train = train_df['Target_Class'].to_numpy()
     
-    # Model configuration
-    tree_model = DecisionTreeClassifier(max_depth=5, min_samples_leaf=10, random_state=42)
+    # Tuned hyperparameters for immediate trend classification
+    tree_model = DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, class_weight='balanced', random_state=42)
     tree_model.fit(X_train, y_train)
     
-    # Run prediction EXCLUSIVELY on the last 50% unseen data
-    X_predict = predict_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Pct']].to_numpy()
+    X_predict = predict_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Scaled']].to_numpy()
     predictions_out = tree_model.predict(X_predict)
 else:
     predictions_out = np.zeros(len(predict_df))
 
 state_map = {0: "⚠️ VOLATILE / BREACH EXPECTED", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
 
-# Building display matrix strictly for the prediction half
 final_display_matrix = []
 predict_len = len(predict_df)
-prices_predict = predict_df['Close'].to_numpy()
 near_atm_predict = predict_df['Near_ATM'].to_numpy()
 
 for i in range(predict_len):
     atm_str = str(int(near_atm_predict[i]))
     base_state = state_map[predictions_out[i]]
     
-    # Dynamic live-edge flagging within the prediction sector
     if (mid_point + i) >= (n_len - expiry_window):
         final_display_matrix.append(f"Strike Ref: {atm_str} | 🟢 LIVE PROJECTION: {base_state.split(' ')[-1] if ' ' in base_state else base_state}")
     else:
@@ -206,13 +201,19 @@ st.sidebar.metric(label="📈 Total Generated Bars", value=f"{n_len}")
 st.sidebar.metric(label="🧠 50% Learn Model Rows", value=f"{mid_point}")
 st.sidebar.metric(label="👁️ 50% Show Predict Rows", value=f"{predict_len}")
 
+# Count of unique hints shown to track performance
+unique_states = predict_df['🔒 Frozen Tree Decision'].value_counts()
+st.sidebar.markdown("### 🎯 Grid Signal Breakdown")
+for state_name, count in unique_states.items():
+    st.sidebar.text(f"{state_name.split('|')[-1].strip()}: {count}")
+
 r_col1, r_col2 = st.columns(2)
 with r_col1:
     st.metric(label="⚙️ Real-Time Dynamic HAM", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
 with r_col2:
     st.metric(label="📊 BTC Spot Valuation", value=f"${latest_row['Close']:.2f}")
 
-# Grid Matrix Visual for the Prediction Half
+# Grid Matrix Visual
 clean_cols = ['Close', 'Hurst_Amp_Momentum', '🔒 Frozen Tree Decision']
 display_df = predict_df[clean_cols].copy()
 display_df.rename(columns={
