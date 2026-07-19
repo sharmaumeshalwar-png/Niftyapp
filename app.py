@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import requests
 import time
+import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
@@ -50,32 +51,61 @@ if 'frozen_matrix' not in st.session_state:
         'Locked Anchor Price', 'Current Bar State', 'Dynamic HAM Log', 
         'Normalized_Dev_Scaled', 'ML Signal Grid'
     ])
-if 'last_processed_time' not in st.session_state:
-    st.session_state.last_processed_time = None
 
 # =====================================================================
-# 3. BINANCE LEDGER FETCH (RESTRICTED DIRECT INGESTION)
+# 3. HYBRID LEDGER INGESTION ENGINE WITH AUTOMATIC RETRIES
 # =====================================================================
-url = "https://api.binance.com/api/v3/klines"
-params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 600}
-
-try:
-    res = requests.get(url, params=params, timeout=10).json()
-    if not res or not isinstance(res, list) or len(res) == 0:
-        st.error("🚨 Binance Ledger connection dropped. Refreshing...")
+@st.cache_data(ttl=600)
+def load_rigid_market_data():
+    url = "https://api.binance.com/api/v3/klines"
+    params = {"symbol": "BTCUSDT", "interval": "1h", "limit": 600}
+    df_raw = None
+    data_route = "Binance Native API"
+    
+    # Retry mechanism for connection drops
+    for attempt in range(3):
+        try:
+            res = requests.get(url, params=params, timeout=8)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, list) and len(data) > 0:
+                    data_matrix = []
+                    for candle in data:
+                        data_matrix.append([
+                            pd.to_datetime(candle[0], unit='ms'),
+                            float(candle[4])  # Close Price
+                        ])
+                    df_raw = pd.DataFrame(data_matrix, columns=['Time', 'Close']).set_index('Time')
+                    break
+        except Exception:
+            time.sleep(1)
+            continue
+            
+    # Automated Fallback Routing if connection remains dropped
+    if df_raw is None:
+        data_route = "Yahoo Ledger Fallback Node (Data Locked)"
+        try:
+            raw_yf = yf.download(tickers="BTC-USD", period="1mo", interval="1h", progress=False)
+            if not raw_yf.empty:
+                df_raw = pd.DataFrame(index=raw_yf.index)
+                df_raw['Close'] = raw_yf['Close'].values.astype(float)
+        except Exception as e:
+            st.error(f"🚨 Critical Infrastructure Block: {e}")
+            st.stop()
+            
+    if df_raw is None or len(df_raw) == 0:
+        st.error("🚨 Connection Engine Timed Out. Please manual refresh.")
         st.stop()
         
-    data_matrix = []
-    for candle in res:
-        data_matrix.append([
-            pd.to_datetime(candle[0], unit='ms'),
-            float(candle[4])  # Close Price
-        ])
-    df_raw = pd.DataFrame(data_matrix, columns=['Time', 'Close']).set_index('Time')
-    df_raw.index = df_raw.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-except Exception as e:
-    st.error(f"🚨 Network Node Blocked: {e}")
-    st.stop()
+    df_raw = df_raw.ffill()
+    df_raw.dropna(subset=['Close'], inplace=True)
+    if df_raw.index.tz is None:
+        df_raw.index = df_raw.index.tz_localize('UTC')
+    df_raw.index = df_raw.index.tz_convert('Asia/Kolkata')
+    
+    return df_raw, data_route
+
+df_raw, active_route = load_rigid_market_data()
 
 # =====================================================================
 # 4. RIGID BREAKOUT & IMMUTABLE FEATURE BLOCKING
@@ -89,7 +119,6 @@ range_times = [raw_times[0]]
 range_directions = ["INITIAL"]
 current_anchor = raw_closes[0]
 
-# Generate base ranges sequentially
 for i in range(1, len(raw_closes)):
     price_diff = raw_closes[i] - current_anchor
     if abs(price_diff) >= range_size:
@@ -101,13 +130,11 @@ for i in range(1, len(raw_closes)):
             range_times.append(raw_times[i])
             range_directions.append("UP" if direction > 0 else "DOWN")
 
-# Process Master Data Frame
 df_master = pd.DataFrame(index=range_times, data={
     'Close': range_closes,
     'Direction_State': range_directions
 })
 
-# Calculate Engine Analytics globally for historic tracking
 close_arr = df_master['Close'].to_numpy(dtype=float)
 kb = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
 hurst = calculate_rolling_hurst(close_arr, window=50)
@@ -139,7 +166,6 @@ y_train = train_df['Target'].to_numpy()
 tree_model = DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, class_weight='balanced', random_state=42)
 tree_model.fit(X_train, y_train)
 
-# Predict Out-of-Sample blocks
 X_pred = predict_df[['HAM_Log', 'Dev_Scaled']].to_numpy()
 predictions = tree_model.predict(X_pred)
 
@@ -167,20 +193,13 @@ for idx in range(len(predict_df)):
 
 df_fresh = pd.DataFrame(fresh_records).set_index('Time')
 
-# Build memory: Keep old calculations intact, update or append new blocks only
 if st.session_state.frozen_matrix.empty:
     st.session_state.frozen_matrix = df_fresh
 else:
-    # Retain all historical closed rows exactly as they were captured in previous sessions
     historical_static = st.session_state.frozen_matrix.iloc[:-1]
-    
-    # Identify new rows that have entered the database pipeline
     new_incoming = df_fresh.loc[~df_fresh.index.isin(historical_static.index)]
-    
-    # Merge and commit to local state storage
     st.session_state.frozen_matrix = pd.concat([historical_static, new_incoming])
 
-# Ensure full tracking display order
 display_final = st.session_state.frozen_matrix.iloc[::-1]
 
 # =====================================================================
@@ -199,9 +218,10 @@ else:
     st.warning(f"### {latest_row['ML Signal Grid']}")
 
 st.markdown("---")
-st.sidebar.markdown("### 🛡️ State Memory Audit")
+st.sidebar.markdown("### 🛡️ Core Infrastructure Security")
+st.sidebar.info(f"Route Pipeline: {active_route}")
 st.sidebar.success("✓ Database Append-Only Active")
-st.sidebar.success("✓ Yahoo Route Bypassed")
+st.sidebar.success("✓ Drop Protection Online")
 st.sidebar.metric(label="📊 Frozen Rows Count", value=f"{len(st.session_state.frozen_matrix)}")
 
 col1, col2 = st.columns(2)
