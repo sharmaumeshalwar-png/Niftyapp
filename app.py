@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC HA 1HR Anti-Leakage Engine", layout="wide")
-st.title("🛡️ BTC Strict Anti-Leakage 1-Hour HA Radar")
-st.write("🎯 **Pure 50:50 Train/Predict Split:** 1-Hour Heikin-Ashi Candles (Zero Feature Leakage).")
+st.set_page_config(page_title="BTC Raw 1HR Anti-Leakage Engine", layout="wide")
+st.title("🛡️ BTC Strict Anti-Leakage 1-Hour Raw Radar")
+st.write("🎯 **Pure 50:50 Train/Predict Split:** 1-Hour Normal Candles (Zero Feature Leakage).")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -45,7 +45,7 @@ def calculate_rolling_hurst(price_series, window=50):
     return hurst_values
 
 # =====================================================================
-# 2. DATA INGESTION, BARFILL & HEIKIN-ASHI TRANSFORMATION
+# 2. DATA INGESTION & BARFILL INTEGRITY CHECK
 # =====================================================================
 df = None
 with st.spinner("Ingesting 2-Year Hourly Market History..."):
@@ -68,27 +68,14 @@ with st.spinner("Ingesting 2-Year Hourly Market History..."):
         else:
             df.index = df.index.tz_convert('Asia/Kolkata')
             
-        # --- HEIKIN-ASHI CONVERSION ---
-        ha_close = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4.0
-        
-        ha_open = np.zeros(len(df))
-        ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2.0
-        for i in range(1, len(df)):
-            ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2.0
-            
-        df['HA_Close'] = ha_close
-        df['HA_Open'] = ha_open
-        
     except Exception as e:
         st.error(f"🚨 Ingestion Failure: {e}")
         st.stop()
 
 # =====================================================================
-# 3. IMMUTABLE FEATURE EXTRACTION & SCALING (1-HR CANDLES)
+# 3. IMMUTABLE FEATURE EXTRACTION & SCALING (RAW 1-HR CANDLES)
 # =====================================================================
-# Hum calculation normal close aur smooth Heikin-Ashi matrices dono ke base par dynamic rakhenge
 close_arr = df['Close'].to_numpy(dtype=float)
-ha_close_arr = df['HA_Close'].to_numpy(dtype=float)
 
 # Core Baseline & Hurst Calculators
 df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
@@ -103,23 +90,23 @@ df['Normalized_Dev_Scaled'] = ((df['Close'] - df['Kalman_Baseline']) / df['Kalma
 df.dropna(subset=['Hurst', 'Kalman_Baseline', 'Hurst_Amp_Momentum'], inplace=True)
 
 # =====================================================================
-# 4. ML TARGET LABEL GENERATION (NEXT-BAR HA DIRECTION)
+# 4. ML TARGET LABEL GENERATION (NEXT-BAR NORMAL DIRECTION)
 # =====================================================================
 n_len = len(df)
 target_labels = []
-ha_open_arr = df['HA_Open'].to_numpy()
-ha_close_arr = df['HA_Close'].to_numpy()
+open_arr = df['Open'].to_numpy()
+close_arr = df['Close'].to_numpy()
 
 for idx in range(n_len):
     if idx < n_len - 1:
-        next_ha_close = ha_close_arr[idx + 1]
-        next_ha_open = ha_open_arr[idx + 1]
+        next_close = close_arr[idx + 1]
+        next_open = open_arr[idx + 1]
         
-        # Target based on strict Heikin-Ashi body directional breakdown
-        if next_ha_close > next_ha_open:
-            target_labels.append(1)  # Bullish HA Candle
+        # Target based on strict raw candle direction
+        if next_close > next_open:
+            target_labels.append(1)  # Bullish Raw Candle
         else:
-            target_labels.append(2)  # Bearish HA Candle
+            target_labels.append(2)  # Bearish Raw Candle
     else:
         target_labels.append(0) 
 
@@ -151,7 +138,7 @@ if len(train_df) > 10 and len(predict_df) > 0:
 else:
     predictions_out = np.zeros(len(predict_df))
 
-state_map = {0: "⏳ SCANNING MATRIX", 1: "📈 HA CANDLE: GREEN (UP)", 2: "📉 HA CANDLE: RED (DOWN)"}
+state_map = {0: "⏳ SCANNING MATRIX", 1: "📈 CANDLE: GREEN (UP)", 2: "📉 CANDLE: RED (DOWN)"}
 
 final_display_matrix = []
 predict_len = len(predict_df)
@@ -171,7 +158,7 @@ predict_df['ML Signal Grid'] = final_display_matrix
 latest_row = predict_df.iloc[-1]
 
 st.markdown("---")
-st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT (1-HOUR HA MODE)")
+st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT (1-HOUR RAW MODE)")
 
 if "GREEN" in latest_row['ML Signal Grid']:
     st.success(f"### {latest_row['ML Signal Grid']}")
@@ -183,7 +170,7 @@ else:
 st.markdown("---")
 st.sidebar.markdown(f"### 🛡️ Pipeline Integrity Audit")
 st.sidebar.success("✓ 1hr Raw Stream Bound")
-st.sidebar.success("✓ Heikin-Ashi Conversion Engine")
+st.sidebar.success("✓ Pure Candles (No HA Smoothing)")
 st.sidebar.success("✓ 50:50 Temporal Shield Active")
 
 st.sidebar.markdown(f"### 📊 Data Split Analytics")
@@ -215,5 +202,5 @@ display_df.rename(columns={
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Out-of-Sample Prediction Logs (Strict Columns Target)")
+st.subheader("📋 Out-of-Sample Prediction Logs (Strict Raw Columns)")
 st.dataframe(display_df_inverted, use_container_width=True, height=500)
