@@ -4,19 +4,19 @@ import pandas as pd
 import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="Pure 50:50 Mathematical Split", layout="wide")
-st.title("⚡ BTC Pure 50:50 Train-Predict Segregated Engine")
-st.write("🎯 **Pure 8-Step Verification:** Mathematical boundary wall enabled. Zero interaction between train and test arrays.")
+# STEP 1: INITIALIZE HARD WAREHOUSE ARCHITECTURE
+st.set_page_config(page_title="Rigid 50:50 Verification Engine", layout="wide")
+st.title("⚡ BTC Strict 50:50 Structural Split Matrix")
+st.write("🎯 **Pure 8-Step Verification:** 1H Fixed Indexing | Zero-Leak Array Boundaries | Isolated Prediction Grid.")
 
-if 'absolute_split_diary' not in st.session_state:
-    st.session_state['absolute_split_diary'] = {}
+if 'absolute_frozen_diary' not in st.session_state:
+    st.session_state['absolute_frozen_diary'] = {}
 
-# =====================================================================
-# 1. PURE MATHEMATICAL ENGINES (ZERO LEAK FORWARD LOOK)
-# =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0: return []
-    x, p = data_array[0], initial_p  
+# STEP 2: MATHEMATICAL MATH ENGINE DEFINITIONS
+def apply_kalman_filter_custom(data_array):
+    if len(data_array) == 0: return np.array([])
+    x, p = data_array[0], 50.0  
+    q_val, r_val = 0.0005, 0.2
     filtered_values = np.zeros(len(data_array))
     for i, z in enumerate(data_array):
         p = p + q_val
@@ -36,123 +36,109 @@ def calculate_rolling_hurst(price_series, window=50):
         cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
-        rs_ratio = r_val / s_val
-        h = np.log(rs_ratio) / np.log(window)
-        hurst_values[i] = np.clip(h, 0.0, 1.0)
+        hurst_values[i] = np.clip(r_val / s_val, 0.0, 1.0)
     return hurst_values
 
-# =====================================================================
-# 2. DATA INGESTION & STRICT ZERO-BFILL POLICY
-# =====================================================================
+# STEP 3: DATA INGESTION (2-YEAR FIXED 1-HOUR TIMESTAMPS)
 try:
     df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     df.dropna(subset=['Close'], inplace=True)
-    df = df.ffill()  # Strictly forward fill, blocking bfill leak
+    df = df.ffill()  # Pure forward fill to block bfill leakage
 except Exception as e:
-    st.error(f"Data Fetch Error: {e}")
+    st.error(f"Ingestion Fault: {e}")
     st.stop()
 
-# Array Conversion
-close_arr = df['Close'].to_numpy(dtype=float)
-time_arr = df.index
+# STEP 4: STRICT ARRAY BOUNDARY EXTRACTION
+raw_closes = df['Close'].to_numpy(dtype=float)
+timestamps = df.index
+n_total = len(raw_closes)
 
-# Total Data Length & Strict Midpoint Split
-n_total = len(close_arr)
-midpoint = int(n_total * 0.50)
+# Absolute Midpoint Physical Split (Force exact 50% split count)
+midpoint_idx = int(n_total * 0.50)
 
-# =====================================================================
-# 3. 📚 STRICT TRAINING ARRAY (FIRST 50% ONLY)
-# =====================================================================
-train_closes = close_arr[:midpoint]
-train_kalman = apply_kalman_filter_custom(train_closes, initial_p=50.0, q_val=0.0005, r_val=0.2)
-train_hurst = calculate_rolling_hurst(train_closes, window=50)
+# STEP 5:📚 ISOLATED TRAINING DOMAIN (FIRST 50% ARRAY ONLY)
+train_closes = raw_closes[:midpoint_idx]
+train_kalman = apply_kalman_filter_custom(train_closes)
+train_hurst = calculate_rolling_hurst(train_closes)
 train_ham = (train_closes - train_kalman) * (train_hurst * 2.0)
 train_atm = np.round(train_closes / 500.0) * 500.0
 
-# Training Labels (Target Scan restricted only inside train array boundaries)
+# Train Target Label Generation
 labels_train = np.zeros(len(train_closes), dtype=int)
 for idx in range(len(train_closes) - 24):
-    fut_settle = train_closes[idx + 24]
-    if fut_settle < train_atm[idx]: labels_train[idx] = 1
-    elif fut_settle > train_atm[idx]: labels_train[idx] = 2
+    if train_closes[idx + 24] < train_atm[idx]: 
+        labels_train[idx] = 1
+    elif train_closes[idx + 24] > train_atm[idx]: 
+        labels_train[idx] = 2
 
-# Fit Classifier ONLY on Train Features
+# Fit Classifier ONLY on First 50% Features
 X_train = np.column_stack((train_ham, train_atm))
 clf = DecisionTreeClassifier(max_depth=3, random_state=42)
 clf.fit(X_train, labels_train)
 
-# =====================================================================
-# 4. 🔮 PURE OUT-OF-SAMPLE TEST ARRAY (LAST 50% ONLY)
-# =====================================================================
-test_closes = close_arr[midpoint:]
-test_kalman = apply_kalman_filter_custom(test_closes, initial_p=50.0, q_val=0.0005, r_val=0.2)
-test_hurst = calculate_rolling_hurst(test_closes, window=50)
+# STEP 6: 🔮 ISOLATED PREDICTION DOMAIN (LAST 50% ARRAY ONLY)
+test_closes = raw_closes[midpoint_idx:]
+test_kalman = apply_kalman_filter_custom(test_closes)
+test_hurst = calculate_rolling_hurst(test_closes)
 test_ham = (test_closes - test_kalman) * (test_hurst * 2.0)
 test_atm = np.round(test_closes / 500.0) * 500.0
 
 X_test = np.column_stack((test_ham, test_atm))
-test_preds = clf.predict(X_test)
+test_predictions = clf.predict(X_test)
 
-# =====================================================================
-# 5. MATRIX COMPOSITION & DIARY LOCK
-# =====================================================================
+# STEP 7: COMPOSITE CONSOL DATA LOGGING (ZERO REPAINT HARDWARE)
 state_map = {0: "⚠️ RISK ZONE", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
-final_matrix_list = []
+final_matrix = []
 
 for i in range(n_total):
-    timestamp_key = time_arr[i].strftime('%Y-%m-%d %H:%M')
+    ts_key = timestamps[i].strftime('%Y-%m-%d %H:%M')
     
-    # Check if index belongs to Train or Test section
-    if i < midpoint:
+    # Check physical index placement to allocate exact split tags
+    if i < midpoint_idx:
         split_phase = "📚 LEARNING (FIRST 50%)"
-        price_val = train_closes[i]
-        ham_val = train_ham[i]
-        atm_val = int(train_atm[i])
-        status_text = state_map[labels_train[i]]
+        spot_price = train_closes[i]
+        ham_metric = train_ham[i]
+        atm_strike = int(train_atm[i])
+        engine_verdict = state_map[labels_train[i]]
     else:
         split_phase = "🔮 PREDICTION (LAST 50%)"
-        test_idx = i - midpoint
-        price_val = test_closes[test_idx]
-        ham_val = test_ham[test_idx]
-        atm_val = int(test_atm[test_idx])
-        status_text = state_map[test_preds[test_idx]]
+        t_idx = i - midpoint_idx
+        spot_price = test_closes[t_idx]
+        ham_metric = test_ham[t_idx]
+        atm_strike = int(test_atm[t_idx])
+        engine_verdict = state_map[test_predictions[t_idx]]
         
     if i == n_total - 1:
-        split_phase = "🔄 LIVE REAL-TIME LAYER"
+        split_phase = "🔄 LIVE TICKING LAYER"
 
-    # Lock into memory structure to prevent repainting
+    # Memory state storage injection
     if i < n_total - 1:
-        if timestamp_key in st.session_state['absolute_split_diary']:
-            saved_row = st.session_state['absolute_split_diary'][timestamp_key]
-            final_fixed_matrix_row = saved_row
+        if ts_key in st.session_state['absolute_frozen_diary']:
+            final_matrix.append(st.session_state['absolute_frozen_diary'][ts_key])
         else:
-            row_data = {
-                'Time Axis': timestamp_key,
+            row_structure = {
+                'Time Axis': ts_key,
                 'Split Phase': split_phase,
-                'BTC Spot': price_val,
-                'Dynamic HAM': ham_val,
-                '🔒 Locked Core Reality': f"{atm_val} | {status_text} [🔒 RECORDED]"
+                'BTC Spot': spot_price,
+                'Dynamic HAM': ham_metric,
+                '🔒 Target Option Grid': f"{atm_strike} | {engine_verdict} [🔒 FIXED]"
             }
-            st.session_state['absolute_split_diary'][timestamp_key] = row_data
-            final_fixed_matrix_row = row_data
+            st.session_state['absolute_frozen_diary'][ts_key] = row_structure
+            final_matrix.append(row_structure)
     else:
-        # Keep the final row dynamically tracking
-        final_fixed_matrix_row = {
-            'Time Axis': timestamp_key,
+        # Dynamic live candle row allocation
+        final_matrix.append({
+            'Time Axis': ts_key,
             'Split Phase': split_phase,
-            'BTC Spot': price_val,
-            'Dynamic HAM': ham_val,
-            '🔒 Locked Core Reality': f"{atm_val} | {status_text} [🔄 ACTIVE]"
-        }
-        
-    final_matrix_list.append(final_fixed_matrix_row)
+            'BTC Spot': spot_price,
+            'Dynamic HAM': ham_metric,
+            '🔒 Target Option Grid': f"{atm_strike} | {engine_verdict} [🔄 LIVE]"
+        })
 
-# Inverted Layout Grid Display
-display_df = pd.DataFrame(final_matrix_list)
-display_df.set_index('Time Axis', inplace=True)
-display_df_inverted = display_df.iloc[::-1]
-
-st.subheader("📋 Verification Matrix (Strict Independent Arrays Checked)")
-st.dataframe(display_df_inverted, use_container_width=True, height=600)
+# STEP 8: INVERTED FINAL GRID RENDER
+display_dataframe = pd.DataFrame(final_matrix)
+display_dataframe.set_index('Time Axis', inplace=True)
+st.subheader("📋 Final Strict Validated Verification Grid")
+st.dataframe(display_dataframe.iloc[::-1], use_container_width=True, height=600)
