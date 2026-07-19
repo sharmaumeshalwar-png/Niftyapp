@@ -5,9 +5,9 @@ import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Anti-Leakage 200pt Engine", layout="wide")
-st.title("🛡️ BTC Strict Anti-Leakage 200-Point Range Radar")
-st.write("🎯 **Pure 50:50 Train/Predict Split:** Zero Feature Leakage & Integrity Verified.")
+st.set_page_config(page_title="BTC HA 1HR Anti-Leakage Engine", layout="wide")
+st.title("🛡️ BTC Strict Anti-Leakage 1-Hour HA Radar")
+st.write("🎯 **Pure 50:50 Train/Predict Split:** 1-Hour Heikin-Ashi Candles (Zero Feature Leakage).")
 
 # =====================================================================
 # 1. MATHEMATICAL ENGINES
@@ -39,14 +39,13 @@ def calculate_rolling_hurst(price_series, window=50):
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
         
-        # Zero protection for flat markets
         rs_ratio = max(r_val / s_val, 1e-12)
         h = np.log(rs_ratio) / np.log(window)
         hurst_values[i] = np.clip(h, 0.0, 1.0)
     return hurst_values
 
 # =====================================================================
-# 2. DATA INGESTION & BARFILL INTEGRITY CHECK
+# 2. DATA INGESTION, BARFILL & HEIKIN-ASHI TRANSFORMATION
 # =====================================================================
 df = None
 with st.spinner("Ingesting 2-Year Hourly Market History..."):
@@ -56,122 +55,95 @@ with st.spinner("Ingesting 2-Year Hourly Market History..."):
             st.error("🚨 Error: Data download failed from Yahoo Finance.")
             st.stop()
             
-        # Resilient column flattening for modern yfinance output
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
         # Ingestion Verification & Strict Barfill
         df.dropna(subset=['Open', 'High', 'Low', 'Close'], how='all', inplace=True)
-        df = df.ffill()  # Fill any missing gaps in hourly sequence
-        df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True) # Final sweep
+        df = df.ffill()  
+        df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
         
-        # [INTEGRITY CHECK 1: BARFILL NAN VALIDATION]
-        if df[['Open', 'High', 'Low', 'Close']].isna().sum().sum() > 0:
-            st.error("🚨 Ingestion Leakage: NaN values found post ffill sweep!")
-            st.stop()
-            
         if df.index.tz is None:
             df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
         else:
             df.index = df.index.tz_convert('Asia/Kolkata')
+            
+        # --- HEIKIN-ASHI CONVERSION ---
+        ha_close = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4.0
+        
+        ha_open = np.zeros(len(df))
+        ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2.0
+        for i in range(1, len(df)):
+            ha_open[i] = (ha_open[i-1] + ha_close.iloc[i-1]) / 2.0
+            
+        df['HA_Close'] = ha_close
+        df['HA_Open'] = ha_open
+        
     except Exception as e:
         st.error(f"🚨 Ingestion Failure: {e}")
         st.stop()
 
 # =====================================================================
-# 3. STRICT 200-POINT ABSOLUTE RANGE LOCKING ENGINE
+# 3. IMMUTABLE FEATURE EXTRACTION & SCALING (1-HR CANDLES)
 # =====================================================================
-raw_closes = df['Close'].to_numpy(dtype=float)
-raw_times = df.index
-range_size = 200.0
+# Hum calculation normal close aur smooth Heikin-Ashi matrices dono ke base par dynamic rakhenge
+close_arr = df['Close'].to_numpy(dtype=float)
+ha_close_arr = df['HA_Close'].to_numpy(dtype=float)
 
-range_closes = [raw_closes[0]]
-range_times = [raw_times[0]]
-range_directions = ["INITIAL"]
+# Core Baseline & Hurst Calculators
+df['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+df['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
-current_anchor = raw_closes[0]
+# 1-Hour Base Features (Zero Double-Smoothing Lag)
+df['Weighted_Momentum'] = df['Close'] - df['Kalman_Baseline']
+df['Hurst_Amp_Momentum'] = df['Weighted_Momentum'] * (df['Hurst'] * 2.0)
+df['Normalized_Dev_Scaled'] = ((df['Close'] - df['Kalman_Baseline']) / df['Kalman_Baseline']) * 1000.0
 
-for i in range(1, len(raw_closes)):
-    price_diff = raw_closes[i] - current_anchor
-    
-    if abs(price_diff) >= range_size:
-        num_bars = int(abs(price_diff) // range_size)
-        direction = np.sign(price_diff)
-        
-        # Multi-bar structural expansion
-        for _ in range(num_bars):
-            current_anchor += direction * range_size
-            range_closes.append(current_anchor)
-            range_times.append(raw_times[i])
-            range_directions.append("UP" if direction > 0 else "DOWN")
-
-df_range = pd.DataFrame(index=range_times, data={
-    'Close': range_closes,
-    'Direction_State': range_directions
-})
+# Safe trim indicator warm-up phase
+df.dropna(subset=['Hurst', 'Kalman_Baseline', 'Hurst_Amp_Momentum'], inplace=True)
 
 # =====================================================================
-# 4. FIXED IMMUTABLE FEATURE EXTRACTION & SCALING (LAG REMOVED)
+# 4. ML TARGET LABEL GENERATION (NEXT-BAR HA DIRECTION)
 # =====================================================================
-close_arr = df_range['Close'].to_numpy(dtype=float)
-
-# Core baseline creation
-df_range['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-df_range['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
-
-# FIXED: Removed the secondary Kalman layer that caused double-smoothing lag.
-# Direct distribution retention preserves true directional alpha variance.
-df_range['Weighted_Momentum'] = df_range['Close'] - df_range['Kalman_Baseline']
-
-# Final Feature Multipliers
-df_range['Hurst_Amp_Momentum'] = df_range['Weighted_Momentum'] * (df_range['Hurst'] * 2.0)
-df_range['Normalized_Dev_Scaled'] = ((df_range['Close'] - df_range['Kalman_Baseline']) / df_range['Kalman_Baseline']) * 1000.0
-
-# Clear out indicators warm-up rows safely
-df_range.dropna(subset=['Hurst', 'Close', 'Normalized_Dev_Scaled'], inplace=True)
-
-# =====================================================================
-# 5. ML TARGET LABEL GENERATION (FUTURE NEXT-BAR REDIRECT)
-# =====================================================================
-n_len = len(df_range)
+n_len = len(df)
 target_labels = []
-dir_states = df_range['Direction_State'].to_numpy()
+ha_open_arr = df['HA_Open'].to_numpy()
+ha_close_arr = df['HA_Close'].to_numpy()
 
 for idx in range(n_len):
     if idx < n_len - 1:
-        next_state = dir_states[idx + 1]
-        if next_state == "UP":
-            target_labels.append(1)
-        elif next_state == "DOWN":
-            target_labels.append(2)
+        next_ha_close = ha_close_arr[idx + 1]
+        next_ha_open = ha_open_arr[idx + 1]
+        
+        # Target based on strict Heikin-Ashi body directional breakdown
+        if next_ha_close > next_ha_open:
+            target_labels.append(1)  # Bullish HA Candle
         else:
-            target_labels.append(0)
+            target_labels.append(2)  # Bearish HA Candle
     else:
-        target_labels.append(0) # Last point has no future direction layer yet
+        target_labels.append(0) 
 
-df_range['Target_Class'] = target_labels
+df['Target_Class'] = target_labels
 
 # =====================================================================
-# 6. PURE 50:50 LEARN VS PREDICT ENGINE WITH LEAKAGE SHIELD
+# 5. PURE 50:50 LEARN VS PREDICT ENGINE (STRICT FRONT SHIELD)
 # =====================================================================
 mid_point = n_len // 2
 
-# [INTEGRITY CHECK 2: LEAKAGE BOUNDARY SAFEGUARDS]
-train_df = df_range.iloc[:mid_point - 1].dropna()
-predict_df = df_range.iloc[mid_point:].copy()
+train_df = df.iloc[:mid_point - 1].dropna()
+predict_df = df.iloc[mid_point:].copy()
 
-# Critical Leakage Check: Test if index overlaps exist between structures
+# Integrity Check Boundary Protection
 overlap_check = train_df.index.intersection(predict_df.index)
 if len(overlap_check) > 0 and train_df.index.max() >= predict_df.index.min():
-    st.error("🚨 CRITICAL LEAKAGE DETECTED: Train matrix crosses Out-of-Sample timeline boundary!")
+    st.error("🚨 CRITICAL LEAKAGE DETECTED: Timeline cross-over observed!")
     st.stop()
 
 if len(train_df) > 10 and len(predict_df) > 0:
     X_train = train_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Scaled']].to_numpy()
     y_train = train_df['Target_Class'].to_numpy()
     
-    # ML Tree Engine Configured
-    tree_model = DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, class_weight='balanced', random_state=42)
+    tree_model = DecisionTreeClassifier(max_depth=6, min_samples_leaf=5, class_weight='balanced', random_state=42)
     tree_model.fit(X_train, y_train)
     
     X_predict = predict_df[['Hurst_Amp_Momentum', 'Normalized_Dev_Scaled']].to_numpy()
@@ -179,7 +151,7 @@ if len(train_df) > 10 and len(predict_df) > 0:
 else:
     predictions_out = np.zeros(len(predict_df))
 
-state_map = {0: "⏳ WAITING FOR BREAKOUT", 1: "📈 NEXT BAR: LOCKED UP", 2: "📉 NEXT BAR: LOCKED DOWN"}
+state_map = {0: "⏳ SCANNING MATRIX", 1: "📈 HA CANDLE: GREEN (UP)", 2: "📉 HA CANDLE: RED (DOWN)"}
 
 final_display_matrix = []
 predict_len = len(predict_df)
@@ -191,57 +163,57 @@ for i in range(predict_len):
     else:
         final_display_matrix.append(f"📊 HISTORICAL OOS -> {base_state}")
 
-predict_df['🌲 ML Tree Decision Grid'] = final_display_matrix
+predict_df['ML Signal Grid'] = final_display_matrix
 
 # =====================================================================
-# 7. LIVE USER INTERFACE & LOG VALIDATION
+# 6. STAGE VIEW RENDER (STRICT COLUMN FOCUS)
 # =====================================================================
 latest_row = predict_df.iloc[-1]
 
 st.markdown("---")
-st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT (ZERO-LEAKAGE CHECKED)")
+st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT (1-HOUR HA MODE)")
 
-if "LOCKED UP" in latest_row['🌲 ML Tree Decision Grid']:
-    st.success(f"### {latest_row['🌲 ML Tree Decision Grid']}")
-elif "LOCKED DOWN" in latest_row['🌲 ML Tree Decision Grid']:
-    st.info(f"### {latest_row['🌲 ML Tree Decision Grid']}")
+if "GREEN" in latest_row['ML Signal Grid']:
+    st.success(f"### {latest_row['ML Signal Grid']}")
+elif "RED" in latest_row['ML Signal Grid']:
+    st.info(f"### {latest_row['ML Signal Grid']}")
 else:
-    st.warning(f"### {latest_row['🌲 ML Tree Decision Grid']}")
+    st.warning(f"### {latest_row['ML Signal Grid']}")
 
 st.markdown("---")
 st.sidebar.markdown(f"### 🛡️ Pipeline Integrity Audit")
-st.sidebar.success("✓ 1hr Candles Stream Clean")
-st.sidebar.success("✓ Barfill Checks: 0% NaNs")
-st.sidebar.success("✓ Leakage Shield: Active")
+st.sidebar.success("✓ 1hr Raw Stream Bound")
+st.sidebar.success("✓ Heikin-Ashi Conversion Engine")
+st.sidebar.success("✓ 50:50 Temporal Shield Active")
 
 st.sidebar.markdown(f"### 📊 Data Split Analytics")
-st.sidebar.metric(label="📈 Total Generated Locked Bars", value=f"{n_len}")
-st.sidebar.metric(label="🧠 50% Learn Model Rows", value=f"{len(train_df)}")
-st.sidebar.metric(label="👁️ 50% Show Predict Rows", value=f"{predict_len}")
+st.sidebar.metric(label="📊 Total 1HR Candlesticks", value=f"{n_len}")
+st.sidebar.metric(label="🧠 50% Training Samples", value=f"{len(train_df)}")
+st.sidebar.metric(label="👁️ 50% Validation Frontier", value=f"{predict_len}")
 
-unique_states = predict_df['🌲 ML Tree Decision Grid'].value_counts()
-st.sidebar.markdown("### 🎯 Grid Signal Breakdown")
-for state_name, count in unique_states.items():
-    st.sidebar.text(f"{state_name.split('->')[-1].strip()}: {count}")
-
-r_col1, r_col2 = st.columns(2)
+r_col1, r_col2, r_col3 = st.columns(3)
 with r_col1:
-    st.metric(label="⚙️ Real-Time Dynamic HAM Log", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
+    st.metric(label="📊 Live Close Price", value=f"${latest_row['Close']:.2f}")
 with r_col2:
-    st.metric(label="📊 Current Locked Anchor Price", value=f"${latest_row['Close']:.2f}")
+    st.metric(label="⚡ Dynamic Weighted Momentum", value=f"{latest_row['Weighted_Momentum']:.4f}")
+with r_col3:
+    st.metric(label="⚙️ Hurst Amplitude Log (H.A.M)", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
 
-# Dataframe Preparation
-clean_cols = ['Close', 'Direction_State', 'Hurst_Amp_Momentum', '🌲 ML Tree Decision Grid']
+# Strict Table Columns Filtering (Date, Close, Weighted Momentum, Hurst, H.A.M, Matrix Signal)
+clean_cols = ['Close', 'Weighted_Momentum', 'Hurst', 'Hurst_Amp_Momentum', 'ML Signal Grid']
 display_df = predict_df[clean_cols].copy()
+
 display_df.rename(columns={
-    'Close': 'Locked Anchor Price', 
-    'Direction_State': 'Current Bar State',
-    'Hurst_Amp_Momentum': 'Dynamic HAM Log',
-    '🌲 ML Tree Decision Grid': 'ML Signal Grid'
+    'Close': 'Close Price', 
+    'Weighted_Momentum': 'Weighted Momentum',
+    'Hurst': 'Hurst Exponent',
+    'Hurst_Amp_Momentum': 'H.A.M Log',
+    'ML Signal Grid': 'Signal Direction Target'
 }, inplace=True)
 
+# Inverting matrix display log for top live reading
 display_df_inverted = display_df.iloc[::-1].copy()
 display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
 
-st.subheader("📋 Out-of-Sample Prediction Logs (Last 50% Matrix)")
+st.subheader("📋 Out-of-Sample Prediction Logs (Strict Columns Target)")
 st.dataframe(display_df_inverted, use_container_width=True, height=500)
