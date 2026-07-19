@@ -6,7 +6,7 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Crypto Signals:** 50:50 Split 1-Hour Candle Leak-Free Execution Matrix (IST & Correct HA Fix)")
+st.write("🎯 **Pure Direct Crypto Signals:** Dual H.A.M. Matrix (Normal vs Heikin-Ashi) in IST")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Backward-Looking / No Leakage)
@@ -47,30 +47,22 @@ def calculate_rolling_hurst_leak_free(price_series, window=100):
 # 🛠️ CORRECTED HEIKIN-ASHI ENGINE (Explicit Flat Vectors / Zero Leakage)
 # =====================================================================
 def apply_heikin_ashi(df_in):
-    """
-    Applies Heikin-Ashi transformation by explicitly flattening Pandas series 
-    into 1D numpy arrays to guarantee exact row-by-row mathematical matching.
-    """
-    # Force alignment by extracting pure 1D numpy arrays to bypass MultiIndex pandas calculation bugs
+    # Flatten variables to bypass MultiIndex pandas calculation bugs
     op = df_in['Open'].to_numpy().flatten()
     hi = df_in['High'].to_numpy().flatten()
     lo = df_in['Low'].to_numpy().flatten()
     cl = df_in['Close'].to_numpy().flatten()
     
-    # 1. Correct HA_Close Vector Calculation
     ha_close = (op + hi + lo + cl) / 4.0
     
-    # 2. Sequential HA_Open Calculation
     ha_open = np.zeros(len(df_in))
     ha_open[0] = (op[0] + cl[0]) / 2.0
     for i in range(1, len(df_in)):
         ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
         
-    # 3. Dynamic Extremes Boundary Capture
     ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
     ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
     
-    # Pack cleanly back into index-matched DataFrame
     df_out = df_in.copy()
     df_out['HA_Open'] = ha_open
     df_out['HA_High'] = ha_high
@@ -86,7 +78,6 @@ with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
     try:
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         
-        # Safe MultiIndex Flattening Rule for yfinance columns
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -94,7 +85,7 @@ with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
             df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             df = df.iloc[:-1] # Live Running Candle Protection
             
-            # 🌍 TIMEZONE CONVERSION TO INDIAN STANDARD TIME (IST)
+            # Convert to Indian Standard Time (IST)
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -107,41 +98,44 @@ with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
         st.stop()
 
 # =====================================================================
-# ⚡ CORE TRANSFORMATIONS & KINEMATICS
+# ⚡ CORE TRANSFORMATIONS & DUAL KINEMATICS ENGINE
 # =====================================================================
-# Apply corrected Heikin-Ashi calculation logic first
+# Apply Heikin-Ashi logic first
 df = apply_heikin_ashi(df)
 
 # Strict 50:50 split matrix execution
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} IST Bitcoin HA Candles (Leak-Free Engine Active)!**")
+st.success(f"🟢 **Synced & Secured {len(df_predict)} IST Bitcoin Candles (Leak-Free Engine Active)!**")
 
-# Kinematic Routing based on the fixed HA_Close values
-df_predict['Close_Raw'] = df_predict['HA_Close']
-close_arr = df_predict['Close_Raw'].values
+# --- PATH A: NORMAL CANDLE KINEMATICS ---
+normal_close = df_predict['Close'].to_numpy().flatten()
+df_predict['Hurst_Normal'] = calculate_rolling_hurst_leak_free(normal_close, window=100)
+kalman_base_normal = apply_kalman_filter_custom(normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_normal = apply_kalman_filter_custom(normal_close - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1)
+df_predict['HAM_Normal'] = np.array(momentum_normal) * (df_predict['Hurst_Normal'].to_numpy() * 2.0)
 
-df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-df_predict['Hurst'] = calculate_rolling_hurst_leak_free(close_arr, window=100)
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close = df_predict['HA_Close'].to_numpy().flatten()
+df_predict['Hurst_HA'] = calculate_rolling_hurst_leak_free(ha_close, window=100)
+kalman_base_ha = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_ha = apply_kalman_filter_custom(ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
+df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * (df_predict['Hurst_HA'].to_numpy() * 2.0)
 
-raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
-df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
-df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
-
-df_predict.dropna(subset=['Hurst'], inplace=True)
+# Drop clean NaNs based on window size
+df_predict.dropna(subset=['Hurst_Normal', 'Hurst_HA'], inplace=True)
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND IST DISPLAY
 # =====================================================================
 clean_cols = [
-    'HA_Open',
-    'HA_High',
-    'HA_Low',
-    'HA_Close', 
-    'Hurst', 
-    'Weighted_Momentum', 
-    'Hurst_Amp_Momentum'
+    'Close',              # Normal Raw Close
+    'HA_Close',           # Heikin-Ashi Close
+    'Hurst_Normal',       # Hurst for normal candles
+    'Hurst_HA',           # Hurst for HA candles
+    'HAM_Normal',         # H.A.M on Normal Candles
+    'HAM_HeikinAshi'      # H.A.M on Heikin-Ashi Candles
 ]
 display_df = df_predict[clean_cols].copy()
 
@@ -152,5 +146,5 @@ for c in clean_cols:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-st.subheader("📋 50:50 Split Pure Kinematic Analysis Matrix (IST - Heikin-Ashi Corrected)")
+st.subheader("📋 50:50 Split Pure Kinematic Analysis Matrix (Normal vs Heikin-Ashi Comparison)")
 st.dataframe(display_df, use_container_width=True, height=650)
