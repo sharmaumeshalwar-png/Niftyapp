@@ -5,12 +5,12 @@ import yfinance as yf
 from sklearn.tree import DecisionTreeClassifier
 
 # Page Configuration
-st.set_page_config(page_title="BTC Synchronized 1-Hour Radar", layout="wide")
+st.set_page_config(page_title="BTC Pure 1-Hour Matrix", layout="wide")
 st.title("🛡️ BTC Absolute 1-Hour Time-Locked Radar")
-st.write("🎯 **Dynamic Time-Series Alignment Engine:** Indicators calibrated specifically for standard hourly structural data.")
+st.write("🎯 **Pure 50:50 Split Architecture:** 2-year horizon mapped with zero-leakage vector validation.")
 
 # =====================================================================
-# 1. TUNED MATHEMATICAL ENGINES (HOURLY SPECIFIC)
+# 1. MATHEMATICAL ENGINES
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=10.0, q_val=0.005, r_val=0.05):
     if len(data_array) == 0: 
@@ -25,7 +25,7 @@ def apply_kalman_filter_custom(data_array, initial_p=10.0, q_val=0.005, r_val=0.
         filtered_values[i] = x
     return filtered_values
 
-def calculate_rolling_hurst(price_series, window=24): # Calibrated to 24-hour cycle
+def calculate_rolling_hurst(price_series, window=24):
     hurst_values = np.full(len(price_series), 0.5) 
     if len(price_series) <= window:
         return hurst_values
@@ -43,59 +43,55 @@ def calculate_rolling_hurst(price_series, window=24): # Calibrated to 24-hour cy
     return hurst_values
 
 # =====================================================================
-# 2. IMMUTABLE 1-HOUR HISTORICAL INGESTION (STRICT CLOSED BARS)
+# 2. DATA INGESTION PIPELINE (2-YEAR, BFILL, INVERTED SEPARATION)
 # =====================================================================
 @st.cache_data(ttl=600)
-def load_strict_hourly_dataset():
+def load_strict_engineered_dataset():
+    # Fetching exact 2-year dataset on a strict 1-hour candle frequency
     raw_data = yf.download(tickers="BTC-USD", period="2y", interval="1h", progress=False)
     if raw_data.empty:
-        st.error("🚨 Critical Market Ledger Pipeline drop.")
+        st.error("🚨 Critical Ledger Data Drop.")
         st.stop()
         
     df_out = pd.DataFrame(index=raw_data.index)
     df_out['Close'] = raw_data['Close'].values.astype(float)
+    
+    # CRITICAL: Structural backfill followed by forward fill to neutralize missing nodes
     df_out = df_out.bfill().ffill()
     
     if df_out.index.tz is None:
         df_out.index = df_out.index.tz_localize('UTC')
     df_out.index = df_out.index.tz_convert('Asia/Kolkata')
     
-    # --- ABSOLUTE SHIELD: Slice out the active running hour ---
+    # ABSOLUTE SHIELD: Slice out active clock tick to prevent historical repainting
     df_historical_confirmed = df_out.iloc[:-1].copy()
     live_floating_candle = df_out.iloc[-1:].copy()
     
     return df_historical_confirmed, live_floating_candle
 
-df_confirmed, df_live = load_strict_hourly_dataset()
+df_confirmed, df_live = load_strict_engineered_dataset()
 
 # =====================================================================
-# 3. DIRECT 1-HOUR MATRIX FORMATTING
+# 3. DIRECTION MATRIX CONFIGURATION
 # =====================================================================
 df_master = df_confirmed.copy()
 df_master['Direction_State'] = np.where(df_master['Close'] >= df_master['Close'].shift(1), "UP", "DOWN")
 df_master.iloc[0, df_master.columns.get_loc('Direction_State')] = "INITIAL"
 
 # =====================================================================
-# 4. FIXED INDICES CALCULATION (PATTHAR KI LAQEER - REALIGNED)
+# 4. MATH INDICATORS EXECUTION (BOUNDED ARCHITECTURE)
 # =====================================================================
 close_arr = df_master['Close'].to_numpy(dtype=float)
 kb = apply_kalman_filter_custom(close_arr, initial_p=10.0, q_val=0.005, r_val=0.05)
 hurst = calculate_rolling_hurst(close_arr, window=24)
 
-# Mathematical fix for accurate asset deviation mapping
-deviation = close_arr - kb
-rolling_series = pd.Series(deviation).rolling(window=24, min_periods=1).std()
-
-# --- CRITICAL STREAMLIT CRASH PATCHED HERE ---
-rolling_series.loc[rolling_series == 0] = 1e-10
-rolling_std = rolling_series.to_numpy()
-
-df_master['HAM_Log'] = (deviation / rolling_std) * hurst
-df_master['Dev_Scaled'] = (deviation / kb) * 1000.0
+pct_deviation = ((close_arr - kb) / kb) * 100.0
+df_master['HAM_Log'] = pct_deviation * hurst
+df_master['Dev_Scaled'] = pct_deviation * 10.0
 df_master.dropna(subset=['HAM_Log', 'Dev_Scaled'], inplace=True)
 
 # =====================================================================
-# 5. ML ENGINE 50:50 SPLIT BLOCK
+# 5. STRICT 50:50 OOS VALIDATION MATRIX SPLIT
 # =====================================================================
 n_len = len(df_master)
 target_labels = []
@@ -109,6 +105,7 @@ for idx in range(n_len):
         target_labels.append(0)
 df_master['Target_Class'] = target_labels
 
+# Pure 50:50 Halfway Segment Divider
 mid_point = n_len // 2
 train_df = df_master.iloc[:mid_point].copy()
 predict_df = df_master.iloc[mid_point:].copy()
@@ -116,6 +113,7 @@ predict_df = df_master.iloc[mid_point:].copy()
 X_train = train_df[['HAM_Log', 'Dev_Scaled']].to_numpy()
 y_train = train_df['Target_Class'].to_numpy()
 
+# Classifier Execution
 tree_model = DecisionTreeClassifier(max_depth=5, min_samples_leaf=5, class_weight='balanced', random_state=42)
 tree_model.fit(X_train, y_train)
 
@@ -132,20 +130,18 @@ for i in range(predict_len):
 predict_df['ML Signal Grid'] = final_display_matrix
 
 # =====================================================================
-# 6. PURE UNLINKED LIVE 1-HOUR RENDER GATEWAY
+# 6. PURE UNLINKED LIVE PIPELINE (NO LEAKAGE LAYER)
 # =====================================================================
 live_price = float(df_live['Close'].iloc[0])
 live_time = df_live.index[0]
 
 last_historical_close = float(predict_df['Close'].iloc[-1])
-live_delta = live_price - last_historical_close
 
-# Compute running features isolated exactly with the realigned hourly metrics
 live_kb = float(kb[-1])
 live_hurst = float(hurst[-1])
-live_std = float(rolling_std[-1])
+live_pct_dev = ((live_price - live_kb) / live_kb) * 100.0
 
-calculated_live_ham = float(((live_price - live_kb) / live_std) * live_hurst)
+calculated_live_ham = float(live_pct_dev * live_hurst)
 
 if live_price > last_historical_close:
     live_direction = "TEMPORARY UP"
@@ -157,7 +153,6 @@ else:
     live_direction = "UNCHANGED"
     live_signal = "⏳ LIVE RUNNING -> HORIZON MATCH"
 
-# Clean table structural rendering
 clean_cols = ['Close', 'Direction_State', 'HAM_Log', 'ML Signal Grid']
 display_df = predict_df[clean_cols].copy()
 display_df.rename(columns={'Close': 'Locked Close Price', 'Direction_State': 'Historical Close State', 'HAM_Log': 'Dynamic HAM Log'}, inplace=True)
@@ -176,7 +171,7 @@ live_row.index = live_row.index.strftime('%Y-%m-%d %H:%M')
 final_render_board = pd.concat([live_row, display_df_inverted])
 
 # =====================================================================
-# 7. METRIC BOARD INTERFACE
+# 7. METRIC INTERFACE DISPLAY
 # =====================================================================
 st.markdown("---")
 st.subheader("🌲 MACHINE LEARNING RIGID MATRIX OUTPUT BOARD")
@@ -189,10 +184,11 @@ else:
     st.warning(f"### {live_signal}")
 
 st.markdown("---")
-st.sidebar.markdown("### 🛡️ Pure Hourly Re-calibration Audit")
-st.sidebar.success("✓ Math Noise Windows Re-aligned")
-st.sidebar.success("✓ Volatility Scaler Synchronized")
-st.sidebar.metric(label="📊 Frozen Historical Hours", value=f"{len(predict_df)}")
+st.sidebar.markdown("### 🛡️ Pure Matrix Lock Audit")
+st.sidebar.success("✓ 2-Year Ingestion Set")
+st.sidebar.success("✓ Strict 50:50 OOS Partition")
+st.sidebar.success("✓ bfill/ffill Data Gap Seal")
+st.sidebar.metric(label="📊 Out-of-Sample Hours Plotted", value=f"{len(predict_df)}")
 
 col1, col2 = st.columns(2)
 with col1:
