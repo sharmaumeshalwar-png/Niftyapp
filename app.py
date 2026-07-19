@@ -2,18 +2,20 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 
-# STEP 1: INITIALIZE AIRTIGHT INTERFACE WAREHOUSE
-st.set_page_config(page_title="Rigid 2024-2026 Date Engine", layout="wide")
-st.title("⚡ BTC 2-Year Matrix: Explicit Date Alignment Timeline")
-st.write("🎯 **Pure 8-Step Verification:** Live July 2026 Horizon | 50:50 Clean Split Verification.")
+# Page Configuration
+st.set_page_config(page_title="BTC ML Decision Tree Engine", layout="wide")
+st.title("⚡ BTC 200-Point ML Pattern Learning Radar")
+st.write("🎯 **Decision Tree Engine:** Learning from historical HAM patterns to predict verified month-end zero strikes without look-ahead leaks.")
 
-# STEP 2: MATHEMATICAL MATH ENGINE DEFINITIONS
-def apply_kalman_filter_custom(data_array):
-    if len(data_array) == 0: return np.array([])
-    x, p = data_array[0], 50.0  
-    q_val, r_val = 0.0005, 0.2
+# =====================================================================
+# 1. MATHEMATICAL ENGINES
+# =====================================================================
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+    if len(data_array) == 0: 
+        return []
+    x, p = data_array[0], initial_p  
     filtered_values = np.zeros(len(data_array))
     for i, z in enumerate(data_array):
         p = p + q_val
@@ -25,7 +27,8 @@ def apply_kalman_filter_custom(data_array):
 
 def calculate_rolling_hurst(price_series, window=50):
     hurst_values = np.full(len(price_series), 0.5) 
-    if len(price_series) <= window: return list(hurst_values)
+    if len(price_series) <= window:
+        return hurst_values
     log_returns = np.log(price_series / np.roll(price_series, 1))
     log_returns[0] = 0
     for i in range(window, len(price_series)):
@@ -33,111 +36,173 @@ def calculate_rolling_hurst(price_series, window=50):
         cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
-        hurst_values[i] = np.clip(r_val / s_val, 0.0, 1.0)
-    return list(hurst_values)
+        rs_ratio = r_val / s_val
+        h = np.log(rs_ratio) / np.log(window)
+        hurst_values[i] = np.clip(h, 0.0, 1.0)
+    return hurst_values
 
-# STEP 3: DATA INGESTION (FETCHES EXACTLY UP TO 2026 LIVE HORIZON)
-try:
-    raw_df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
-    if isinstance(raw_df.columns, pd.MultiIndex):
-        raw_df.columns = [col[0] for col in raw_df.columns]
+# =====================================================================
+# 2. FIXED LEAK-PROOF DATA INGESTION
+# =====================================================================
+df = None
+with st.spinner("Ingesting & Cleaning Market History..."):
+    try:
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        if df is None or df.empty:
+            df = yf.download(tickers="BTC-USD", period="max", interval="1d")
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
         
-    df = raw_df[['Close']].copy()
-    df.dropna(subset=['Close'], inplace=True)
-    df = df.ffill() 
-except Exception as e:
-    st.error(f"Ingestion Fault: {e}")
-    st.stop()
+        if len(df) > 10: 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close'], how='all', inplace=True)
+            df = df.ffill() 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+            else:
+                df.index = df.index.tz_convert('Asia/Kolkata')
+        else:
+            st.error("🚨 Error: Insufficient data structure.")
+            st.stop()
+    except Exception as e:
+        st.error(f"🚨 Ingestion Failure: {e}")
+        st.stop()
 
-# STEP 4: PHYSICAL NUMPY ARRAY EXTRACTION & MIDPOINT ANCHOR
+# =====================================================================
+# 3. 200-POINT RANGE CANDLE GENERATION
+# =====================================================================
 raw_closes = df['Close'].to_numpy(dtype=float)
-timestamps = df.index
-n_total = len(raw_closes)
+raw_times = df.index
+range_size = 200.0
+range_closes, range_times = [raw_closes[0]], [raw_times[0]]
+current_anchor = raw_closes[0]
 
-midpoint_idx = int(n_total * 0.50)
+for i in range(1, len(raw_closes)):
+    price_diff = raw_closes[i] - current_anchor
+    if abs(price_diff) >= range_size:
+        num_bars = int(abs(price_diff) // range_size)
+        direction = np.sign(price_diff)
+        for _ in range(num_bars):
+            current_anchor += direction * range_size
+            range_closes.append(current_anchor)
+            range_times.append(raw_times[i])
 
-# STEP 5: 📚 NUMPY TRAINING BOUNDARY (FIRST 50% - PAST TIMELINE)
-train_closes = raw_closes[:midpoint_idx]
-train_kalman = apply_kalman_filter_custom(train_closes)
-train_hurst = np.array(calculate_rolling_hurst(train_closes))
-train_ham = (train_closes - train_kalman) * (train_hurst * 2.0)
-train_atm = np.round(train_closes / 500.0) * 500.0
-train_velocity = np.zeros(len(train_closes))
-train_velocity[1:] = np.diff(train_closes) 
+if raw_closes[-1] != range_closes[-1]:
+    range_closes.append(raw_closes[-1])
+    range_times.append(raw_times[-1])
 
-labels_train = np.zeros(len(train_closes), dtype=int)
-for idx in range(len(train_closes) - 24):
-    if train_closes[idx + 24] < train_atm[idx]: 
-        labels_train[idx] = 1
-    elif train_closes[idx + 24] > train_atm[idx]: 
-        labels_train[idx] = 2
+df_range = pd.DataFrame(index=range_times, data={'Close': range_closes})
+df_predict = df_range.copy()
 
-X_train = np.column_stack((train_ham, train_atm, train_hurst, train_velocity))
-clf = RandomForestClassifier(n_estimators=50, max_depth=4, random_state=42)
-clf.fit(X_train, labels_train)
+# =====================================================================
+# 4. FEATURE EXTRACTION (HAM & NEAR ATM)
+# =====================================================================
+close_arr = df_predict['Close'].to_numpy(dtype=float)
+df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
+df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=50)
 
-# STEP 6: 🔮 NUMPY PREDICTION BOUNDARY (LAST 50% - FORWARD UP TO CURRENT 2026)
-test_closes = raw_closes[midpoint_idx:]
-test_kalman = apply_kalman_filter_custom(test_closes)
-test_hurst = np.array(calculate_rolling_hurst(test_closes))
-test_ham = (test_closes - test_kalman) * (test_hurst * 2.0)
-test_atm = np.round(test_closes / 500.0) * 500.0
-test_velocity = np.zeros(len(test_closes))
-test_velocity[1:] = np.diff(test_closes)
+raw_weighted_momentum = df_predict['Close'] - df_predict['Kalman_Baseline']
+df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.to_numpy(), initial_p=0.50, q_val=0.001, r_val=0.1)
+df_predict['Hurst_Amp_Momentum'] = df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0)
+df_predict.dropna(subset=['Hurst', 'Close'], inplace=True)
 
-X_test = np.column_stack((test_ham, test_atm, test_hurst, test_velocity))
-test_predictions = clf.predict(X_test)
+strike_interval = 500.0
+prices = df_predict['Close'].to_numpy()
+n_len = len(df_predict)
+near_atm_numeric = np.round(prices / strike_interval) * strike_interval
+df_predict['Near_ATM'] = near_atm_numeric
 
-# STEP 7: MEMORY SNAPSHOT SEPARATION STRATEGY
-state_map = {0: "⚠️ RISK ZONE", 1: "👑 CE ZERO FIXED", 2: "👑 PE ZERO FIXED"}
-train_matrix = []
-test_matrix = []
+# =====================================================================
+# 5. ML TARGET LABEL GENERATION (PAST MONTH-END EXPIRY REALITIES)
+# =====================================================================
+expiry_window = 750
+target_labels = []
 
-for i in range(n_total):
-    ts_key = timestamps[i].strftime('%Y-%m-%d %H:%M')
+for idx in range(n_len):
+    end_idx = min(idx + expiry_window, n_len - 1)
+    future_max = np.max(prices[idx:end_idx + 1])
+    future_min = np.min(prices[idx:end_idx + 1])
+    future_settle = prices[end_idx]
+    current_atm = near_atm_numeric[idx]
     
-    if i < midpoint_idx:
-        row_structure = {
-            'Time Axis': ts_key,
-            'Split Phase': "📚 LEARNING (PAST)",
-            'BTC Spot': round(float(train_closes[i]), 2),
-            'Dynamic HAM': round(float(train_ham[i]), 4),
-            '🔒 Core Grid Result': f"{int(train_atm[i])} | {state_map[labels_train[i]]}"
-        }
-        train_matrix.append(row_structure)
+    # Label mapping based on actual outcomes
+    if future_settle < current_atm and future_max < current_atm + 200:
+        target_labels.append(1)  # Verified CE Zero Zone
+    elif future_settle > current_atm and future_min > current_atm - 200:
+        target_labels.append(2)  # Verified PE Zero Zone
     else:
-        t_idx = i - midpoint_idx
-        live_tag = "[🔄 LIVE HORIZON]" if i == n_total - 1 else "[🔒 FORWARD PREDICTED]"
-        row_structure = {
-            'Time Axis': ts_key,
-            'Split Phase': "🔮 PREDICTION (FORWARD)",
-            'BTC Spot': round(float(test_closes[t_idx]), 2),
-            'Dynamic HAM': round(float(test_ham[t_idx]), 4),
-            '🔒 Core Grid Result': f"{int(test_atm[t_idx])} | {state_map[test_predictions[t_idx]]} {live_tag}"
-        }
-        test_matrix.append(row_structure)
+        target_labels.append(0)  # Volatile/Breached Zone
 
-train_df = pd.DataFrame(train_matrix).set_index('Time Axis')
-test_df = pd.DataFrame(test_matrix).set_index('Time Axis')
+df_predict['Target_Class'] = target_labels
 
-# STEP 8: EXPLICIT TIMELINE VISUALIZATION WITH STREAMLIT METRICS
-start_date_overall = timestamps[0].strftime('%B %Y')
-mid_date_overall = timestamps[midpoint_idx].strftime('%B %Y')
-end_date_overall = timestamps[-1].strftime('%B %Y')
+# =====================================================================
+# 6. TRAINING THE ML DECISION TREE (LEARNING FROM PATTERNS)
+# =====================================================================
+# Train model using only historical bars (excluding the very end to prevent bleed)
+train_df = df_predict.iloc[:-expiry_window].dropna() if n_len > expiry_window else df_predict.dropna()
 
-col1, col2, col3 = st.columns(3)
-col1.metric("📅 Timeline Start", start_date_overall, "Data Ingestion Point")
-col2.metric("✂️ Physical 50:50 Cutoff", mid_date_overall, "Model Shift Point")
-col3.metric("🚀 Current Live State", end_date_overall, "July 2026 Engine Edge")
+if len(train_df) > 10:
+    X_train = train_df[['Hurst_Amp_Momentum', 'Near_ATM']].to_numpy()
+    y_train = train_df['Target_Class'].to_numpy()
+    
+    # Strict Decision Tree Classifier
+    tree_model = DecisionTreeClassifier(max_depth=5, random_state=42)
+    tree_model.fit(X_train, y_train)
+    
+    # Predict for the entire matrix based on pure historical tree mapping
+    X_all = df_predict[['Hurst_Amp_Momentum', 'Near_ATM']].to_numpy()
+    predictions = tree_model.predict(X_all)
+else:
+    predictions = np.zeros(n_len)
 
-tab1, tab2 = st.tabs(["📚 Historical Learning Domain", "🔮 Live Evaluation Domain"])
+# Map predictions back to descriptive string representations
+state_map = {0: "⚠️ VOLATILE / BREACH EXPECTED", 1: "👑 PAST PATTERN: CE ZERO FIXED", 2: "👑 PAST PATTERN: PE ZERO FIXED"}
+df_predict['Tree_Learned_State'] = [state_map[p] for p in predictions]
 
-with tab1:
-    st.subheader(f"📋 Training Grid Target ({start_date_overall} ➡️ {mid_date_overall})")
-    st.caption("Yeh model ka historical database hai jisse rule patterns sikhe gaye hain.")
-    st.dataframe(train_df.iloc[::-1], use_container_width=True, height=450)
+# =====================================================================
+# 7. 🔒 FREEZE MATRIX (SECOND LAST ROW IMPLEMENTATION)
+# =====================================================================
+final_display_matrix = []
+for i in range(n_len):
+    atm_str = str(int(near_atm_numeric[i]))
+    pattern_status = df_predict['Tree_Learned_State'].iloc[i]
+    final_display_matrix.append(f"Strike Ref: {atm_str} | {pattern_status}")
 
-with tab2:
-    st.subheader(f"📋 Prediction Grid Target ({mid_date_overall} ➡️ {end_date_overall})")
-    st.caption("Yeh un-seen forward timeline hai jisme continuous real-time execution chal raha hai.")
-    st.dataframe(test_df.iloc[::-1], use_container_width=True, height=450)
+df_predict['🔒 Frozen Tree Decision'] = final_display_matrix
+
+# =====================================================================
+# 8. LIVE USER INTERFACE
+# =====================================================================
+latest_row = df_predict.iloc[-1]
+
+st.markdown("---")
+st.subheader("🌲 MACHINE LEARNING DECISION TREE OUTPUT BOARD")
+
+if "CE ZERO" in latest_row['🔒 Frozen Tree Decision']:
+    st.success(f"### {latest_row['🔒 Frozen Tree Decision']}")
+elif "PE ZERO" in latest_row['🔒 Frozen Tree Decision']:
+    st.info(f"### {latest_row['🔒 Frozen Tree Decision']}")
+else:
+    st.warning(f"### {latest_row['🔒 Frozen Tree Decision']}")
+
+st.markdown("---")
+r_col1, r_col2 = st.columns(2)
+with r_col1:
+    st.metric(label="⚙️ Real-Time Dynamic HAM", value=f"{latest_row['Hurst_Amp_Momentum']:.4f}")
+with r_col2:
+    st.metric(label="📊 BTC Spot Valuation", value=f"${latest_row['Close']:.2f}")
+
+# Grid Matrix Visual
+clean_cols = ['Close', 'Hurst_Amp_Momentum', '🔒 Frozen Tree Decision']
+display_df = df_predict[clean_cols].copy()
+display_df.rename(columns={
+    'Close': 'BTC Price', 
+    'Hurst_Amp_Momentum': '⚙️ Dynamic HAM Log',
+    '🔒 Frozen Tree Decision': '🌲 ML Tree Learned Reality Grid'
+}, inplace=True)
+
+display_df_inverted = display_df.iloc[::-1].copy()
+display_df_inverted.index = display_df_inverted.index.strftime('%Y-%m-%d %H:%M')
+
+st.subheader("📋 Tree Node History Logs (Second Last Layer Frozen)")
+st.dataframe(display_df_inverted, use_container_width=True, height=500)
