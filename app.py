@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="S&P 500 HA Dual Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
+st.title("⚡ S&P 500 Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close & HA-HAM update dynamically every 15 mins.")
 
 # =====================================================================
@@ -80,12 +80,13 @@ def compute_ha_ham_features(df_raw):
     return df_ha
 
 # =====================================================================
-# DATA INGESTION
+# DATA INGESTION (S&P 500 INDEX -> ^GSPC)
 # =====================================================================
-with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
+with st.spinner("Fetching Live 1-Hour & 15-Minute S&P 500 Data..."):
     try:
-        df_1h_raw = yf.download(tickers="BTC-USD", period="60d", interval="1h")
-        df_15m_raw = yf.download(tickers="BTC-USD", period="14d", interval="15m")
+        # ^GSPC = S&P 500 Index Ticker in Yahoo Finance
+        df_1h_raw = yf.download(tickers="^GSPC", period="60d", interval="1h")
+        df_15m_raw = yf.download(tickers="^GSPC", period="14d", interval="15m")
         
         for d in [df_1h_raw, df_15m_raw]:
             if isinstance(d.columns, pd.MultiIndex):
@@ -113,7 +114,7 @@ df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index,
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
-# 💥 NAYA CALCULATION: (1H Locked HA-HAM) minus (15M Live HA-HAM)
+# HAM Difference Calculation: (1H Locked HA-HAM) minus (15M Live HA-HAM)
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
 
 n = len(df_15m_grid)
@@ -167,25 +168,24 @@ col_s1, col_s2 = st.columns([1, 2])
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
     if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
-        st.success(f"### Live Signal ({latest_time})\n# {sig}")
+        st.success(f"### Live S&P 500 Signal ({latest_time})\n# {sig}")
     elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
-        st.error(f"### Live Signal ({latest_time})\n# {sig}")
+        st.error(f"### Live S&P 500 Signal ({latest_time})\n# {sig}")
     else:
-        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
+        st.warning(f"### Live S&P 500 Signal ({latest_time})\n# {sig}")
 
 with col_s2:
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
-    m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
+    m1.metric("1H HA-Close", f"{latest['1H_HA_Close_Frozen']:,.2f}")
+    m2.metric("15M HA-Close", f"{latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
     m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
+st.subheader("📋 S&P 500 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with HAM Difference Column
 clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
 
