@@ -7,7 +7,7 @@ import yfinance as yf
 st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
-st.caption("1-Hour Close & HA-HAM stay locked for 1 hour, while 15-Min Close & HA-HAM update dynamically every 15 mins.")
+st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close & HA-HAM update dynamically every 15 mins.")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
@@ -108,10 +108,13 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Forward Fill 1-Hour Close Price & HA-HAM on 15M timestamps
-df_15m_grid['1H_Close_Frozen'] = df_1h['Close'].reindex(df_15m_grid.index, method='ffill')
+# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
+df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
+
+# 💥 NAYA CALCULATION: (1H Locked HA-HAM) minus (15M Live HA-HAM)
+df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
@@ -130,14 +133,14 @@ for i in range(2, n):
     
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
     
-    # Case A: 1H Macro HAM is declining (e.g. 589 -> 520)
+    # Case A: 1H Macro HAM is declining
     if h1_curr > 0 and h1_curr < h1_prev:
         if m15_curr < 0 or is_ha_red:
             signals[i] = '🔴 REAL TOP (1H Drop + 15M Red)'
         else:
             signals[i] = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
             
-    # Case B: 1H Macro HAM is recovering (e.g. -589 -> -520)
+    # Case B: 1H Macro HAM is recovering
     elif h1_curr < 0 and h1_curr > h1_prev:
         if m15_curr > 0 and not is_ha_red:
             signals[i] = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
@@ -171,27 +174,30 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("1H Close Price", f"${latest['1H_Close_Frozen']:,.2f}")
-    m2.metric("15M Close Price", f"${latest['Close']:,.2f}")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
+    m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
+    m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Dual Timeframe Timeline (1H Locked vs 15M Live Updates)")
+st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-clean_cols = ['1H_Close_Frozen', 'Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'Instant_Kinematic_Signal']
+# Table with HAM Difference Column
+clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
-    '1H_Close_Frozen': '1H Close Price',
-    'Close': '15M Close Price',
+    '1H_HA_Close_Frozen': '1H HA-Close',
+    'HA_Close': '15M HA-Close',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
-    'HA_HAM': '15M Live HA-HAM'
+    'HA_HAM': '15M Live HA-HAM',
+    'HAM_Diff': 'HAM Diff (1H - 15M)'
 }, inplace=True)
 
-for c in ['1H Close Price', '15M Close Price', '1H Locked HA-HAM', '15M Live HA-HAM']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
