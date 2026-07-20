@@ -70,7 +70,6 @@ def apply_heikin_ashi(df_in):
 df = None
 with st.spinner("Fetching 2 Years 1-Hour Bitcoin Data..."):
     try:
-        # Fetching 1h interval data over 2y period
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         
         if isinstance(df.columns, pd.MultiIndex):
@@ -120,19 +119,35 @@ momentum_ha = apply_kalman_filter_custom(ha_close - kalman_base_ha, initial_p=0.
 
 df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * (df_predict['Hurst_HA'].to_numpy() * 2.0)
 
-# Clean NaN
-df_predict.dropna(subset=['Hurst_Normal', 'Hurst_HA'], inplace=True)
+# =====================================================================
+# 🆕 NEW HURST KINEMATIC SIGNAL GENERATION (80/20 FILTER)
+# =====================================================================
+# Hurst Velocity & Acceleration
+df_predict['H_Slope'] = df_predict['Hurst_Normal'].diff()
+df_predict['H_Accel'] = df_predict['H_Slope'].diff()
+df_predict['H_Peak_Diff'] = df_predict['Hurst_Normal'] - df_predict['Hurst_Normal'].rolling(window=5).max()
 
-# Signal Generation Logic
-def generate_signal(row):
-    if row['HAM_Normal'] > 0 and row['Weighted_Momentum'] > 0:
+def generate_hurst_kinematic_signal(row):
+    # Condition 1: Hurst drop + High Momentum Re-acceleration (20% Case) -> Strong BUY Confirmation
+    if row['H_Peak_Diff'] < 0 and row['H_Accel'] > 0 and row['Weighted_Momentum'] > 0:
+        return '🟢 BUY (H-Reaccelerate)'
+    
+    # Condition 2: Confirmed Reversal (80% Case: Hurst Drops > 0.05 + Accel Down) -> Confirmed SELL
+    elif row['H_Peak_Diff'] < -0.05 and row['H_Accel'] < 0 and row['Weighted_Momentum'] < 0:
+        return '🔴 SELL (H-Reversal)'
+    
+    # Condition 3: Standard Base Signals
+    elif row['HAM_Normal'] > 0 and row['Weighted_Momentum'] > 0:
         return '🟢 BUY'
     elif row['HAM_Normal'] < 0 and row['Weighted_Momentum'] < 0:
         return '🔴 SELL'
     else:
-        return '⚪ WAIT'
+        return '⚪ WAIT / PAUSE'
 
-df_predict['Signal'] = df_predict.apply(generate_signal, axis=1)
+df_predict['Hurst_Kinematic_Signal'] = df_predict.apply(generate_hurst_kinematic_signal, axis=1)
+
+# Clean NaN
+df_predict.dropna(subset=['Hurst_Normal', 'Hurst_HA'], inplace=True)
 
 latest = df_predict.iloc[-1]
 latest_time = df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')
@@ -144,12 +159,13 @@ st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
-    if 'BUY' in latest['Signal']:
-        st.success(f"### 1H Signal ({latest_time})\n# {latest['Signal']}")
-    elif 'SELL' in latest['Signal']:
-        st.error(f"### 1H Signal ({latest_time})\n# {latest['Signal']}")
+    sig = latest['Hurst_Kinematic_Signal']
+    if 'BUY' in sig:
+        st.success(f"### 1H Kinematic Signal ({latest_time})\n# {sig}")
+    elif 'SELL' in sig:
+        st.error(f"### 1H Kinematic Signal ({latest_time})\n# {sig}")
     else:
-        st.warning(f"### 1H Signal ({latest_time})\n# {latest['Signal']}")
+        st.warning(f"### 1H Kinematic Signal ({latest_time})\n# {sig}")
 
 with col_s2:
     m1, m2, m3 = st.columns(3)
@@ -159,9 +175,9 @@ with col_s2:
 
 st.markdown("---")
 
-# Clean Table
+# Clean Table with New Column Included
 st.subheader("📋 Pure Kinematic Matrix (1-Hour Candles, IST)")
-clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
+clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Hurst_Kinematic_Signal']
 display_df = df_predict[clean_cols].copy()
 
 for c in ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi']:
