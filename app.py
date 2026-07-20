@@ -2,13 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import calendar
 
 # Page Configuration
-st.set_page_config(page_title="BTC HAM Price Alignment Engine", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BTC Kinematic Trap Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC HAM vs Close Price Trap Engine")
-st.caption("Bar-by-Bar HAM & Close Price Structural Alignment Verification")
+st.title("⚡ BTC/USDT Kinematic Trap Engine (1H Candles)")
+st.caption("Pure Price Kinematics | HAM vs Close Price Structural Trap Filter")
 
 # =====================================================================
 # MATHEMATICAL ENGINES
@@ -65,16 +64,11 @@ def apply_heikin_ashi(df_in):
     df_out['HA_Close'] = ha_close
     return df_out
 
-def get_month_expiry_date(dt_val):
-    year, month = dt_val.year, dt_val.month
-    last_day = calendar.monthrange(year, month)[1]
-    return f"{last_day} {dt_val.strftime('%b %Y')}"
-
 # =====================================================================
-# DATA INGESTION
+# DATA INGESTION (2 YEARS, 1H CANDLES)
 # =====================================================================
 df = None
-with st.spinner("Fetching BTC Data & Matching HAM with Close Price..."):
+with st.spinner("Fetching 2 Years BTC Data & Running Dynamic Engine..."):
     try:
         df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
         if isinstance(df.columns, pd.MultiIndex):
@@ -82,7 +76,7 @@ with st.spinner("Fetching BTC Data & Matching HAM with Close Price..."):
             
         if len(df) > 300: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
-            df = df.iloc[:-1]
+            df = df.iloc[:-1] # Live candle safety
             
             if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
@@ -115,20 +109,15 @@ kalman_base_ha = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.00
 momentum_ha = apply_kalman_filter_custom(ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
 df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * (df_predict['Hurst_HA'].to_numpy() * 2.0)
 
-df_predict['Near_ATM_Strike'] = (df_predict['Close'] / 100.0).round() * 100
-
 # =====================================================================
-# ⚙️ HAM + CLOSE PRICE STRUCTURAL ALIGNMENT ENGINE
+# ⚙️ HAM + CLOSE PRICE TRAP ENGINE
 # =====================================================================
 n = len(df_predict)
 ham_vals = df_predict['HAM_Normal'].to_numpy()
 close_vals = df_predict['Close'].to_numpy()
 open_vals = df_predict['Open'].to_numpy()
-dates = df_predict.index
-atms = df_predict['Near_ATM_Strike'].to_numpy()
 
 signals = ['⚪ NEUTRAL'] * n
-option_preds = ['⚪ WAIT'] * n
 
 for i in range(2, n):
     curr_ham, prev_ham = ham_vals[i], ham_vals[i-1]
@@ -141,52 +130,44 @@ for i in range(2, n):
     # CASE 1: HAM DROP (Positives dropping: e.g., 589 -> 520 -> 420)
     if curr_ham > 0 and curr_ham < prev_ham:
         if is_red_candle:
-            # 🔴 PRICE RED & HAM DECAY = REAL TOP DROP!
             signals[i] = '🔴 REAL TOP (Red Confirmed)'
-            expiry_dt = get_month_expiry_date(dates[i])
-            option_preds[i] = f"SELL {int(atms[i])} CE (Zero on {expiry_dt})"
         else:
-            # 🟢 HAM GIRA LEKIN PRICE RED NAHI HUA = TRAP DROP!
             signals[i] = '🟢 TRAP PASS (Fake Drop / Continuation)'
-            expiry_dt = get_month_expiry_date(dates[i])
-            option_preds[i] = f"SELL {int(atms[i])} PE (Zero on {expiry_dt})"
             
     # CASE 2: HAM RISE (Negatives recovering: e.g., -589 -> -520 -> -420)
     elif curr_ham < 0 and curr_ham > prev_ham:
         if is_green_candle:
-            # 🟢 PRICE GREEN & HAM RECOVERY = REAL BOTTOM RISE!
             signals[i] = '🟢 REAL BOTTOM (Green Confirmed)'
-            expiry_dt = get_month_expiry_date(dates[i])
-            option_preds[i] = f"SELL {int(atms[i])} PE (Zero on {expiry_dt})"
         else:
-            # 🔴 HAM BADA LEKIN PRICE GREEN NAHI HUA = TRAP RALLY!
-            signals[i] = '🔴 TRAP PASS (Fake Rally / Down Continuation)'
-            expiry_dt = get_month_expiry_date(dates[i])
-            option_preds[i] = f"SELL {int(atms[i])} CE (Zero on {expiry_dt})"
+            signals[i] = '🔴 TRAP PASS (Fake Rally / Continuation Down)'
+            
+    # CONTINUATIONS
+    elif curr_ham > prev_ham and curr_ham > 0:
+        signals[i] = '🟢 ACCELERATED RALLY'
+    elif curr_ham < prev_ham and curr_ham < 0:
+        signals[i] = '🔴 ACCELERATED DROP'
 
 df_predict['Instant_Kinematic_Signal'] = signals
-df_predict['ML_ATM_Option_Expiry_Prediction'] = option_preds
 
 df_predict.dropna(subset=['Hurst_Normal', 'HAM_Normal'], inplace=True)
 latest = df_predict.iloc[-1]
 latest_time = df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')
 
 # =====================================================================
-# 📊 DISPLAY MATRIX
+# 📊 VISUAL DISPLAY
 # =====================================================================
 st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
-    opt_pred = latest['ML_ATM_Option_Expiry_Prediction']
     
-    if 'REAL BOTTOM' in sig or 'TRAP PASS (Fake Drop' in sig:
-        st.success(f"### Live Signal ({latest_time})\n# {sig}\n\n**Option Recommendation:** `{opt_pred}`")
-    elif 'REAL TOP' in sig or 'TRAP PASS (Fake Rally' in sig:
-        st.error(f"### Live Signal ({latest_time})\n# {sig}\n\n**Option Recommendation:** `{opt_pred}`")
+    if 'REAL BOTTOM' in sig or 'TRAP PASS (Fake Drop' in sig or 'RALLY' in sig:
+        st.success(f"### Live Signal ({latest_time})\n# {sig}")
+    elif 'REAL TOP' in sig or 'TRAP PASS (Fake Rally' in sig or 'DROP' in sig:
+        st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
-        st.warning(f"### Live Signal ({latest_time})\n# {sig}\n\n**Option Recommendation:** `{opt_pred}`")
+        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
     m1, m2, m3 = st.columns(3)
@@ -196,8 +177,9 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Pure Kinematic Matrix (HAM + Close Price Trap Verified)")
-clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Instant_Kinematic_Signal', 'ML_ATM_Option_Expiry_Prediction']
+# Clean Original Table Setup
+st.subheader("📋 Pure Kinematic Matrix (1-Hour Candles, IST)")
+clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Instant_Kinematic_Signal']
 display_df = df_predict[clean_cols].copy()
 
 for c in ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi']:
