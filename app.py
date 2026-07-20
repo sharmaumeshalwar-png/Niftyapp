@@ -12,26 +12,28 @@ st.caption("1-Hour HA-HAM remains locked for the hour, while 15-Minute HA-HAM up
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
 # =====================================================================
-def compute_heikin_ashi(df):
-    df_ha = df.copy()
+def compute_heikin_ashi(df_in):
+    df_ha = df_in.copy()
     
-    # Heikin-Ashi Close = (Open + High + Low + Close) / 4
-    df_ha['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4.0
+    op = df_ha['Open'].to_numpy().flatten()
+    hi = df_ha['High'].to_numpy().flatten()
+    lo = df_ha['Low'].to_numpy().flatten()
+    cl = df_ha['Close'].to_numpy().flatten()
     
-    # Heikin-Ashi Open
-    ha_open = np.zeros(len(df))
-    ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2.0
+    ha_close = (op + hi + lo + cl) / 4.0
+    ha_open = np.zeros(len(df_in))
+    ha_open[0] = (op[0] + cl[0]) / 2.0
     
-    close_vals = df['Close'].to_numpy()
-    open_vals = df['Open'].to_numpy()
-    ha_close_vals = df_ha['HA_Close'].to_numpy()
-    
-    for i in range(1, len(df)):
-        ha_open[i] = (ha_open[i-1] + ha_close_vals[i-1]) / 2.0
+    for i in range(1, len(df_in)):
+        ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
         
+    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
+    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
+    
     df_ha['HA_Open'] = ha_open
-    df_ha['HA_High'] = df[['High', 'HA_Open', 'HA_Close']].max(axis=1)
-    df_ha['HA_Low'] = df[['Low', 'HA_Open', 'HA_Close']].min(axis=1)
+    df_ha['HA_High'] = ha_high
+    df_ha['HA_Low'] = ha_low
+    df_ha['HA_Close'] = ha_close
     
     return df_ha
 
@@ -104,7 +106,6 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 # =====================================================================
 # ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
 # =====================================================================
-# Base grid will be 15-Minute candles so every 15-min update is visible!
 df_15m_grid = df_15m.copy()
 
 # Forward Fill 1-Hour HA-HAM on 15M timestamps (11:00 value stays for 11:15, 11:30, 11:45)
@@ -131,19 +132,15 @@ for i in range(2, n):
     # Case A: 1H Macro HAM is declining (e.g. 589 -> 520)
     if h1_curr > 0 and h1_curr < h1_prev:
         if m15_curr < 0 or is_ha_red:
-            # 15M HA Candle bhi red/bearish hui = Real Top Confirmed
             signals[i] = '🔴 REAL TOP (1H Drop + 15M Red)'
         else:
-            # 15M HA Candle green / positive hai = Trap Drop
             signals[i] = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
             
     # Case B: 1H Macro HAM is recovering (e.g. -589 -> -520)
     elif h1_curr < 0 and h1_curr > h1_prev:
         if m15_curr > 0 and not is_ha_red:
-            # 15M HA Candle bhi green/bullish hui = Real Bottom Confirmed
             signals[i] = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
         else:
-            # 15M HA Candle red hai = Fake Rally
             signals[i] = '🔴 TRAP PASS (15M Bearish / Fake Rally)'
             
     elif h1_curr > h1_prev and h1_curr > 0:
