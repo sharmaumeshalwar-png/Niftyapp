@@ -4,10 +4,10 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC 3M 5Min Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BTC 4Y 2H Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC/USDT 3-Month Kinematic Engine (5M Candles)")
-st.caption("Pure Price Kinematics | 5-Minute Timeframe | 3-Month Horizon (50:50 Split) in IST")
+st.title("⚡ BTC/USDT 4-Year Kinematic Engine (2H Candles)")
+st.caption("Pure Price Kinematics | 2-Hour Timeframe | 4-Year Horizon (50:50 Split) in IST")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Pure Price Kinematics)
@@ -65,15 +65,14 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 # =====================================================================
-# SYSTEM DATA INGESTION (3 MONTHS, 5-MINUTE CANDLES)
+# SYSTEM DATA INGESTION (4 YEARS, 2-HOUR CANDLES)
 # =====================================================================
 df = None
-with st.spinner("Fetching 3 Months 5-Minute Bitcoin Data..."):
+with st.spinner("Fetching 4 Years 2-Hour Bitcoin Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="1mo", interval="5m") # Note: yfinance limits 5m data to max 1-3 months
-        if len(df) == 0:
-            df = yf.download(tickers="BTC-USD", period="60d", interval="5m")
-            
+        # Fetching 2h interval data over 4y period
+        df = yf.download(tickers="BTC-USD", period="4y", interval="2h")
+        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
@@ -146,11 +145,11 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     if 'BUY' in latest['Signal']:
-        st.success(f"### 5M Signal ({latest_time})\n# {latest['Signal']}")
+        st.success(f"### 2H Signal ({latest_time})\n# {latest['Signal']}")
     elif 'SELL' in latest['Signal']:
-        st.error(f"### 5M Signal ({latest_time})\n# {latest['Signal']}")
+        st.error(f"### 2H Signal ({latest_time})\n# {latest['Signal']}")
     else:
-        st.warning(f"### 5M Signal ({latest_time})\n# {latest['Signal']}")
+        st.warning(f"### 2H Signal ({latest_time})\n# {latest['Signal']}")
 
 with col_s2:
     m1, m2, m3 = st.columns(3)
@@ -161,7 +160,7 @@ with col_s2:
 st.markdown("---")
 
 # Clean Table
-st.subheader("📋 Pure Kinematic Matrix (5-Min Candles, IST)")
+st.subheader("📋 Pure Kinematic Matrix (2-Hour Candles, IST)")
 clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
 display_df = df_predict[clean_cols].copy()
 
