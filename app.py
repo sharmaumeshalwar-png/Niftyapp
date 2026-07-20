@@ -4,10 +4,10 @@ import pandas as pd
 import yfinance as yf
 
 # Page Configuration
-st.set_page_config(page_title="BTC Kinematic Signals", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BTC 10Y Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC/USDT Pure Kinematic Master Engine")
-st.caption("Pure Real-Time Kinematics (Zero Chart, Table Only) in IST")
+st.title("⚡ BTC/USDT 10-Year Kinematic Engine (1D Candles)")
+st.caption("Pure Price Kinematics | 1-Day Timeframe | 10-Year Horizon (50:50 Split) in IST")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Pure Price Kinematics)
@@ -65,16 +65,16 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 # =====================================================================
-# SYSTEM DATA INGESTION
+# SYSTEM DATA INGESTION (10 YEARS, 1-DAY CANDLES)
 # =====================================================================
 df = None
-with st.spinner("Fetching Live Bitcoin Data..."):
+with st.spinner("Fetching 10 Years Daily Bitcoin Data..."):
     try:
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        df = yf.download(tickers="BTC-USD", period="10y", interval="1d")
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 120: 
+        if len(df) > 300: 
             df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
             df = df.iloc[:-1] # Live running candle safety
             
@@ -94,7 +94,7 @@ with st.spinner("Fetching Live Bitcoin Data..."):
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# 50:50 Split Execution
+# Exact 50:50 Train & Predict Split
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -107,7 +107,7 @@ momentum_normal = apply_kalman_filter_custom(normal_close - kalman_base_normal, 
 df_predict['Kalman_Price'] = kalman_base_normal
 df_predict['Weighted_Momentum'] = momentum_normal
 
-# PURE HAM FORMULA
+# PURE HAM FORMULA: Momentum * (Hurst * 2.0)
 df_predict['HAM_Normal'] = np.array(momentum_normal) * (df_predict['Hurst_Normal'].to_numpy() * 2.0)
 
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
@@ -133,7 +133,7 @@ def generate_signal(row):
 df_predict['Signal'] = df_predict.apply(generate_signal, axis=1)
 
 latest = df_predict.iloc[-1]
-latest_time = df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')
+latest_time = df_predict.index[-1].strftime('%Y-%m-%d IST')
 
 # =====================================================================
 # 📊 VISUAL DISPLAY (NO CHART, ONLY TABLE)
@@ -143,11 +143,11 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     if 'BUY' in latest['Signal']:
-        st.success(f"### Signal ({latest_time})\n# {latest['Signal']}")
+        st.success(f"### Daily Signal ({latest_time})\n# {latest['Signal']}")
     elif 'SELL' in latest['Signal']:
-        st.error(f"### Signal ({latest_time})\n# {latest['Signal']}")
+        st.error(f"### Daily Signal ({latest_time})\n# {latest['Signal']}")
     else:
-        st.warning(f"### Signal ({latest_time})\n# {latest['Signal']}")
+        st.warning(f"### Daily Signal ({latest_time})\n# {latest['Signal']}")
 
 with col_s2:
     m1, m2, m3 = st.columns(3)
@@ -158,7 +158,7 @@ with col_s2:
 st.markdown("---")
 
 # Clean Table
-st.subheader("📋 Pure Kinematic Matrix")
+st.subheader("📋 Pure Kinematic Matrix (10-Year Horizon, Daily)")
 clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
 display_df = df_predict[clean_cols].copy()
 
@@ -166,6 +166,6 @@ for c in ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Norma
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
+display_df.index = display_df.index.strftime('%Y-%m-%d IST')
 
-st.dataframe(display_df, use_container_width=True, height=600)
+st.dataframe(display_df, use_container_width=True, height=650)
