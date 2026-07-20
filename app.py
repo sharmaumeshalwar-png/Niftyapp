@@ -7,7 +7,7 @@ import yfinance as yf
 st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
-st.caption("1-Hour HA-HAM remains locked for the hour, while 15-Minute HA-HAM updates dynamically every 15 mins.")
+st.caption("1-Hour Close & HA-HAM stay locked for 1 hour, while 15-Min Close & HA-HAM update dynamically every 15 mins.")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
@@ -99,7 +99,7 @@ with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Heikin-Ashi + HAM Dynamic Calculations
+# Compute Heikin-Ashi & HAM Features
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
@@ -108,7 +108,8 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Forward Fill 1-Hour HA-HAM on 15M timestamps (11:00 value stays for 11:15, 11:30, 11:45)
+# Forward Fill 1-Hour Close Price & HA-HAM on 15M timestamps
+df_15m_grid['1H_Close_Frozen'] = df_1h['Close'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
@@ -163,30 +164,34 @@ col_s1, col_s2 = st.columns([1, 2])
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
     if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
-        st.success(f"### Live 15M Signal ({latest_time})\n# {sig}")
+        st.success(f"### Live Signal ({latest_time})\n# {sig}")
     elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
-        st.error(f"### Live 15M Signal ({latest_time})\n# {sig}")
+        st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
-        st.warning(f"### Live 15M Signal ({latest_time})\n# {sig}")
+        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Live Close", f"${latest['Close']:,.2f}")
-    m2.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
-    m3.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("1H Close Price", f"${latest['1H_Close_Frozen']:,.2f}")
+    m2.metric("15M Close Price", f"${latest['Close']:,.2f}")
+    m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+    m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 15-Minute Dynamic Timeline (1H Locked + 15M Live HA Updates)")
-clean_cols = ['Close', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'Instant_Kinematic_Signal']
+st.subheader("📋 Dual Timeframe Timeline (1H Locked vs 15M Live Updates)")
+
+clean_cols = ['1H_Close_Frozen', 'Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
+    '1H_Close_Frozen': '1H Close Price',
+    'Close': '15M Close Price',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM': '15M Live HA-HAM'
 }, inplace=True)
 
-for c in ['Close', 'HA_Close', '1H Locked HA-HAM', '15M Live HA-HAM']:
+for c in ['1H Close Price', '15M Close Price', '1H Locked HA-HAM', '15M Live HA-HAM']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
