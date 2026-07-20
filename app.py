@@ -1,191 +1,155 @@
 import streamlit as st
-import requests
-import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-import plotly.graph_objects as go
+import pandas as pd
+import yfinance as yf
 
-# Streamlit Page Configuration
-st.set_page_config(page_title="BTC HAM ML", layout="wide", initial_sidebar_state="collapsed")
+# Page Configuration
+st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
+st.write("🎯 **Pure Direct Crypto Signals:** Dual H.A.M. Matrix with Volume Multiplier in IST")
 
-st.title("🚀 BTC/USDT HAM & ML Predictor")
+# =====================================================================
+# MATHEMATICAL ENGINES (Strictly Backward-Looking / No Leakage)
+# =====================================================================
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+    if len(data_array) == 0: return []
+    x, p = data_array[0], initial_p  
+    filtered_values = []
+    for z in data_array:
+        p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values.append(x)
+    return filtered_values
 
-# Multi-Source Robust Data Fetcher
-@st.cache_data(ttl=1800)
-def fetch_btc_data_robust():
-    df = pd.DataFrame()
+def calculate_rolling_hurst_leak_free(price_series, window=100):
+    hurst_values = np.full(len(price_series), 0.5) 
+    s = pd.Series(price_series)
+    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
     
-    # SOURCE 1: Binance Public API
+    for i in range(window, len(price_series)):
+        window_data = log_returns[i - window + 1 : i + 1]
+        cum_dev = np.cumsum(window_data - np.mean(window_data))
+        r_val = np.max(cum_dev) - np.min(cum_dev)
+        s_val = np.std(window_data) + 1e-10
+        
+        rs_ratio = r_val / s_val
+        if rs_ratio > 0:
+            h = np.log(rs_ratio) / np.log(window)
+            hurst_values[i] = np.clip(h, 0.0, 1.0)
+            
+    return hurst_values
+
+def apply_heikin_ashi(df_in):
+    op = df_in['Open'].to_numpy().flatten()
+    hi = df_in['High'].to_numpy().flatten()
+    lo = df_in['Low'].to_numpy().flatten()
+    cl = df_in['Close'].to_numpy().flatten()
+    
+    ha_close = (op + hi + lo + cl) / 4.0
+    
+    ha_open = np.zeros(len(df_in))
+    ha_open[0] = (op[0] + cl[0]) / 2.0
+    for i in range(1, len(df_in)):
+        ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
+        
+    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
+    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
+    
+    df_out = df_in.copy()
+    df_out['HA_Open'] = ha_open
+    df_out['HA_High'] = ha_high
+    df_out['HA_Low'] = ha_low
+    df_out['HA_Close'] = ha_close
+    return df_out
+
+# =====================================================================
+# 🛡️ SYSTEM DATA INGESTION (BTC-USD Setup - 2y, 1h)
+# =====================================================================
+df = None
+with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
     try:
-        url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000"
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if isinstance(data, list) and len(data) > 0:
-                df = pd.DataFrame(data, columns=[
-                    'open_time', 'open', 'high', 'low', 'close', 'volume',
-                    'close_time', 'quote_asset_volume', 'number_of_trades',
-                    'taker_buy_base', 'taker_buy_quote', 'ignore'
-                ])
-                df['timestamp'] = df['open_time']
-                df['close'] = df['close'].astype(float)
-                df['volume'] = df['volume'].astype(float)
-                return df[['timestamp', 'close', 'volume']]
-    except Exception:
-        pass
+        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
+        
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        if len(df) > 120: 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+            df = df.iloc[:-1] # Live Running Candle Protection
+            
+            # Convert to Indian Standard Time (IST)
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+            else:
+                df.index = df.index.tz_convert('Asia/Kolkata')
+        else:
+            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
+            st.stop()
+    except Exception as e:
+        st.error(f"🚨 API Failure: {e}")
+        st.stop()
 
-    # SOURCE 2: CryptoCompare API (Fallback if Binance IP is blocked)
-    try:
-        url_cc = "https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USDT&limit=1000"
-        res_cc = requests.get(url_cc, timeout=5)
-        if res_cc.status_code == 200:
-            data_cc = res_cc.json()
-            if 'Data' in data_cc and 'Data' in data_cc['Data']:
-                raw = data_cc['Data']['Data']
-                df = pd.DataFrame(raw)
-                df['timestamp'] = df['time'] * 1000
-                df['close'] = df['close'].astype(float)
-                df['volume'] = df['volumeto'].astype(float)
-                return df[['timestamp', 'close', 'volume']]
-    except Exception:
-        pass
+# =====================================================================
+# ⚡ CORE TRANSFORMATIONS & DUAL KINEMATICS ENGINE
+# =====================================================================
+# Apply Heikin-Ashi logic first
+df = apply_heikin_ashi(df)
 
-    return pd.DataFrame()
+# Volume Factor Logic (Current Volume / 20-period Moving Average Volume)
+vol_ma20 = df['Volume'].rolling(window=20).mean()
+df['Volume_Factor'] = (df['Volume'] / vol_ma20).fillna(1.0)
 
-# Data Fetch Progress
-with st.spinner("Live BTC Data Fetch Ho Raha Hai... Kripya Wait Karein..."):
-    raw_df = fetch_btc_data_robust()
+# Strict 50:50 split matrix execution
+split_idx = int(len(df) * 0.50)
+df_predict = df.iloc[split_idx:].copy()
 
-# Safety Check
-if raw_df.empty or len(raw_df) < 50:
-    st.error("⚠️ API Access Temporarily Blocked. Kripya 2 minute baad refresh karein!")
-    st.stop()
+st.success(f"🟢 **Synced & Secured {len(df_predict)} IST Bitcoin Candles with Volume Multiplier!**")
 
-df = raw_df.copy()
+# --- PATH A: NORMAL CANDLE KINEMATICS ---
+normal_close = df_predict['Close'].to_numpy().flatten()
+df_predict['Hurst_Normal'] = calculate_rolling_hurst_leak_free(normal_close, window=100)
+kalman_base_normal = apply_kalman_filter_custom(normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_normal = apply_kalman_filter_custom(normal_close - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 1. Date & Time Column
-df['Date_Time'] = pd.to_datetime(df['timestamp'], unit='ms')
+# Final HAM Calculation: Momentum * (Hurst * Volume_Factor)
+df_predict['Host_x_Vol_Normal'] = df_predict['Hurst_Normal'] * df_predict['Volume_Factor']
+df_predict['HAM_Normal'] = np.array(momentum_normal) * df_predict['Host_x_Vol_Normal']
 
-# 2. Close Price Column
-df['Close'] = df['close']
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close = df_predict['HA_Close'].to_numpy().flatten()
+df_predict['Hurst_HA'] = calculate_rolling_hurst_leak_free(ha_close, window=100)
+kalman_base_ha = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_ha = apply_kalman_filter_custom(ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-# 3. Kalman Filter Column (0.50 Gain directly on Close)
-def apply_kalman(series, gain=0.50):
-    estimates = []
-    if len(series) == 0:
-        return estimates
-    curr = series.iloc[0]
-    for p in series:
-        curr = curr + gain * (p - curr)
-        estimates.append(curr)
-    return estimates
+# Final HAM Calculation: Momentum * (Hurst * Volume_Factor)
+df_predict['Host_x_Vol_HA'] = df_predict['Hurst_HA'] * df_predict['Volume_Factor']
+df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * df_predict['Host_x_Vol_HA']
 
-df['Kalman_0.50'] = apply_kalman(df['Close'], 0.50)
+# Drop clean NaNs based on window size
+df_predict.dropna(subset=['Hurst_Normal', 'Hurst_HA'], inplace=True)
 
-# Weighted Momentum Column (Close - Kalman)
-df['Weighted_Momentum'] = df['Close'] - df['Kalman_0.50']
-
-# 4. Host (Hurst Exponent Column - Rolling Window of 100)
-def calculate_hurst(ts, max_lag=20):
-    try:
-        lags = range(2, max_lag)
-        tau = [np.std(np.subtract(ts[lag:], ts[:-lag])) for lag in lags if len(ts[lag:]) > 0]
-        if len(tau) < 2 or any(t == 0 for t in tau):
-            return 0.5
-        poly = np.polyfit(np.log(lags[:len(tau)]), np.log(tau), 1)
-        return poly[0]
-    except:
-        return 0.5
-
-df['Host'] = df['Close'].rolling(window=100).apply(lambda x: calculate_hurst(x.values), raw=False)
-
-# 5. Volume Factor Column (Current Volume / 20-period Moving Avg Volume)
-df['Avg_Volume_20'] = df['volume'].rolling(window=20).mean()
-df['Volume_Factor'] = df['volume'] / df['Avg_Volume_20']
-
-# 6. Host * Volume Factor Column
-df['Host_x_Volume'] = df['Host'] * df['Volume_Factor']
-
-# 7. Final HAM Column (Host_x_Volume * Weighted_Momentum)
-df['Final_HAM'] = df['Host_x_Volume'] * df['Weighted_Momentum']
-
-# Drop NaN values generated due to rolling calculations
-df_clean = df.dropna().copy()
-
-# Re-arranging EXACT Requested Column Sequence
-final_cols = [
-    'Date_Time', 
-    'Close', 
-    'Kalman_0.50', 
-    'Weighted_Momentum', 
-    'Host', 
-    'Volume_Factor', 
-    'Host_x_Volume', 
-    'Final_HAM'
+# =====================================================================
+# 📋 MATRIX FORMATTING AND IST DISPLAY
+# =====================================================================
+clean_cols = [
+    'Close',              # Normal Raw Close
+    'HA_Close',           # Heikin-Ashi Close
+    'Volume_Factor',      # Volume Factor Ratio
+    'Hurst_Normal',       # Hurst for normal candles
+    'Host_x_Vol_Normal',  # Hurst x Volume Factor (Normal)
+    'HAM_Normal',         # Final H.A.M on Normal Candles
+    'HAM_HeikinAshi'      # Final H.A.M on Heikin-Ashi Candles
 ]
-df_final = df_clean[final_cols].reset_index(drop=True)
+display_df = df_predict[clean_cols].copy()
 
-# Machine Learning Implementation (50% Train / 50% Predict)
-df_final['Target'] = np.where(df_final['Close'].shift(-1) > df_final['Close'], 1, 0)
-features = ['Kalman_0.50', 'Weighted_Momentum', 'Host', 'Volume_Factor', 'Host_x_Volume', 'Final_HAM']
+for c in clean_cols:
+    display_df[c] = display_df[c].round(2)
 
-X = df_final[features][:-1]
-y = df_final['Target'][:-1]
+# Sort descending for active trading view (Latest IST candles on top)
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-split_idx = int(len(X) * 0.50)
-
-# 50-50 Split Data
-X_train, X_predict = X.iloc[:split_idx], X.iloc[split_idx:]
-y_train, y_predict = y.iloc[:split_idx], y.iloc[split_idx:]
-
-# Model Training
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-# 50% Predictions
-predictions = model.predict(X_predict)
-
-# Results Assembly
-df_results = df_final.iloc[split_idx:-1].copy()
-df_results['ML_Predicted_Direction'] = predictions
-df_results['ML_Predicted_Direction'] = df_results['ML_Predicted_Direction'].map({1: '🟢 UP', 0: '🔴 DOWN'})
-
-acc = accuracy_score(y_predict, predictions)
-
-# Mobile Display Metrics
-col1, col2 = st.columns(2)
-col1.metric("Live Close", f"${df_final['Close'].iloc[-1]:,.2f}")
-col2.metric("ML Accuracy (50%)", f"{acc * 100:.1f}%")
-
-col3, col4 = st.columns(2)
-col3.metric("Latest HAM", f"{df_final['Final_HAM'].iloc[-1]:.3f}")
-col4.metric("Signal", df_results['ML_Predicted_Direction'].iloc[-1])
-
-st.markdown("---")
-
-# Plotly Interactive Chart
-st.subheader("Price vs Kalman Filter (0.50)")
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_final['Date_Time'], y=df_final['Close'], name="Close", line=dict(color='gray', width=1)))
-fig.add_trace(go.Scatter(x=df_final['Date_Time'], y=df_final['Kalman_0.50'], name="Kalman", line=dict(color='orange', width=2)))
-fig.update_layout(height=350, template="plotly_dark", margin=dict(l=5, r=5, t=10, b=5))
-st.plotly_chart(fig, use_container_width=True)
-
-# Final Data Table
-st.subheader("Results Table (50% Predict)")
-st.dataframe(
-    df_results[[
-        'Date_Time', 
-        'Close', 
-        'Kalman_0.50', 
-        'Weighted_Momentum', 
-        'Host', 
-        'Volume_Factor', 
-        'Host_x_Volume', 
-        'Final_HAM', 
-        'ML_Predicted_Direction'
-    ]].tail(100),
-    use_container_width=True
-)
+st.subheader("📋 50:50 Split Kinematic Analysis Matrix (Hurst x Volume Factor Integrated)")
+st.dataframe(display_df, use_container_width=True, height=650)
