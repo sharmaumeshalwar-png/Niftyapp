@@ -12,68 +12,55 @@ st.set_page_config(page_title="BTC HAM ML", layout="wide", initial_sidebar_state
 
 st.title("🚀 BTC/USDT HAM & ML Predictor")
 
-# Direct Binance REST API Fetcher with Safety Fallback
-@st.cache_data(ttl=3600)
-def fetch_btc_data_direct():
-    symbol = "BTCUSDT"
-    interval = "1h"
+# Multi-Source Robust Data Fetcher
+@st.cache_data(ttl=1800)
+def fetch_btc_data_robust():
+    df = pd.DataFrame()
     
-    # Try fetching historical data
-    two_years_ago = datetime.utcnow() - timedelta(days=730)
-    since_ms = int(two_years_ago.timestamp() * 1000)
-    
-    all_klines = []
-    
-    # Attempt batch fetching
-    for _ in range(18): # Limit requests to avoid blocking
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&startTime={since_ms}&limit=1000"
-        try:
-            res = requests.get(url, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                if not data or not isinstance(data, list):
-                    break
-                all_klines.extend(data)
-                since_ms = data[-1][6] + 1
-                if len(data) < 1000:
-                    break
-            else:
-                break
-        except Exception:
-            break
+    # SOURCE 1: Binance Public API
+    try:
+        url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000"
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if isinstance(data, list) and len(data) > 0:
+                df = pd.DataFrame(data, columns=[
+                    'open_time', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_asset_volume', 'number_of_trades',
+                    'taker_buy_base', 'taker_buy_quote', 'ignore'
+                ])
+                df['timestamp'] = df['open_time']
+                df['close'] = df['close'].astype(float)
+                df['volume'] = df['volume'].astype(float)
+                return df[['timestamp', 'close', 'volume']]
+    except Exception:
+        pass
 
-    # Fallback: If long historical fetch failed/blocked, fetch recent 1000 candles
-    if len(all_klines) < 100:
-        try:
-            url_fallback = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=1000"
-            res_fb = requests.get(url_fallback, timeout=5)
-            if res_fb.status_code == 200:
-                all_klines = res_fb.json()
-        except Exception:
-            pass
+    # SOURCE 2: CryptoCompare API (Fallback if Binance IP is blocked)
+    try:
+        url_cc = "https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USDT&limit=1000"
+        res_cc = requests.get(url_cc, timeout=5)
+        if res_cc.status_code == 200:
+            data_cc = res_cc.json()
+            if 'Data' in data_cc and 'Data' in data_cc['Data']:
+                raw = data_cc['Data']['Data']
+                df = pd.DataFrame(raw)
+                df['timestamp'] = df['time'] * 1000
+                df['close'] = df['close'].astype(float)
+                df['volume'] = df['volumeto'].astype(float)
+                return df[['timestamp', 'close', 'volume']]
+    except Exception:
+        pass
 
-    if not all_klines:
-        return pd.DataFrame()
+    return pd.DataFrame()
 
-    # Parse JSON to DataFrame
-    df = pd.DataFrame(all_klines, columns=[
-        'open_time', 'open', 'high', 'low', 'close', 'volume',
-        'close_time', 'quote_asset_volume', 'number_of_trades',
-        'taker_buy_base', 'taker_buy_quote', 'ignore'
-    ])
-    
-    df['timestamp'] = df['open_time']
-    df['close'] = df['close'].astype(float)
-    df['volume'] = df['volume'].astype(float)
-    return df[['timestamp', 'close', 'volume']]
+# Data Fetch Progress
+with st.spinner("Live BTC Data Fetch Ho Raha Hai... Kripya Wait Karein..."):
+    raw_df = fetch_btc_data_robust()
 
-# Data Fetch Progress Spinner
-with st.spinner("Binance API se Data Fetch Ho Raha Hai... Kripya Wait Karein..."):
-    raw_df = fetch_btc_data_direct()
-
-# Empty Data Guard Check (Prevents IndexError)
-if raw_df.empty or len(raw_df) < 100:
-    st.error("⚠️ Binance API se Data Fetch nahi ho paya. Kripya thodi der baad page refresh karein!")
+# Safety Check
+if raw_df.empty or len(raw_df) < 50:
+    st.error("⚠️ API Access Temporarily Blocked. Kripya 2 minute baad refresh karein!")
     st.stop()
 
 df = raw_df.copy()
