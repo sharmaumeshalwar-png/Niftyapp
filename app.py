@@ -1,5 +1,5 @@
 import streamlit as st
-import ccxt
+import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -12,33 +12,48 @@ st.set_page_config(page_title="BTC HAM ML", layout="wide", initial_sidebar_state
 
 st.title("🚀 BTC/USDT HAM & ML Predictor")
 
-# Data Fetching Function (Binance API via CCXT)
+# Direct Binance REST API Fetcher (No CCXT needed)
 @st.cache_data(ttl=3600)
-def fetch_btc_data():
-    exchange = ccxt.binance({'enableRateLimit': True})
-    two_years_ago = datetime.utcnow() - timedelta(days=730)
-    since = int(two_years_ago.timestamp() * 1000)
+def fetch_btc_data_direct():
+    symbol = "BTCUSDT"
+    interval = "1h"
+    limit = 1000
     
-    all_ohlcv = []
-    # Fetching 2 years 1-Hour data in batches
-    while since < exchange.milliseconds():
+    two_years_ago = datetime.utcnow() - timedelta(days=730)
+    since_ms = int(two_years_ago.timestamp() * 1000)
+    
+    all_klines = []
+    
+    # Batch fetching from Binance Public API
+    while len(all_klines) < 17500:
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&startTime={since_ms}&limit={limit}"
         try:
-            ohlcv = exchange.fetch_ohlcv('BTC/USDT', '1h', since=since, limit=1000)
-            if not ohlcv:
+            res = requests.get(url, timeout=10)
+            data = res.json()
+            if not data or not isinstance(data, list):
                 break
-            since = ohlcv[-1][0] + 1
-            all_ohlcv.extend(ohlcv)
-            if len(all_ohlcv) >= 17500: # ~2 years of 1h candles
+            all_klines.extend(data)
+            since_ms = data[-1][6] + 1  # Next timestamp after close_time
+            if len(data) < limit:
                 break
         except Exception:
             break
-            
-    df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    return df
 
-# Spinner while fetching data
-with st.spinner("Binance se 2 Saal ka Data Fetch aur Process Ho Raha Hai... Kripya Wait Karein..."):
-    raw_df = fetch_btc_data()
+    # Parse JSON to DataFrame
+    df = pd.DataFrame(all_klines, columns=[
+        'open_time', 'open', 'high', 'low', 'close', 'volume',
+        'close_time', 'quote_asset_volume', 'number_of_trades',
+        'taker_buy_base', 'taker_buy_quote', 'ignore'
+    ])
+    
+    df['timestamp'] = df['open_time']
+    df['close'] = df['close'].astype(float)
+    df['volume'] = df['volume'].astype(float)
+    return df[['timestamp', 'close', 'volume']]
+
+# Data Fetch Progress Spinner
+with st.spinner("Binance REST API se Data Fetch aur Process Ho Raha Hai... Kripya Wait Karein..."):
+    raw_df = fetch_btc_data_direct()
 
 df = raw_df.copy()
 
