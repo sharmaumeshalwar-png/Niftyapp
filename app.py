@@ -2,13 +2,12 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import plotly.graph_objects as go
 
 # Page Configuration
 st.set_page_config(page_title="BTC Kinematic Signals", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("⚡ BTC/USDT Pure Kinematic Master Engine")
-st.caption("Pure Real-Time Kinematics (No Volume Noise) in IST")
+st.caption("Pure Real-Time Kinematics (Zero Chart, Table Only) in IST")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Pure Price Kinematics)
@@ -91,7 +90,7 @@ with st.spinner("Fetching Live Bitcoin Data..."):
         st.stop()
 
 # =====================================================================
-# ⚡ PURE KINEMATICS ENGINE (ZERO VOLUME)
+# ⚡ PURE KINEMATICS ENGINE
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -108,7 +107,7 @@ momentum_normal = apply_kalman_filter_custom(normal_close - kalman_base_normal, 
 df_predict['Kalman_Price'] = kalman_base_normal
 df_predict['Weighted_Momentum'] = momentum_normal
 
-# PURE HAM FORMULA: Momentum * (Hurst * 2.0 Scaling)
+# PURE HAM FORMULA
 df_predict['HAM_Normal'] = np.array(momentum_normal) * (df_predict['Hurst_Normal'].to_numpy() * 2.0)
 
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
@@ -137,7 +136,7 @@ latest = df_predict.iloc[-1]
 latest_time = df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')
 
 # =====================================================================
-# 📊 VISUAL DISPLAY
+# 📊 VISUAL DISPLAY (NO CHART, ONLY TABLE)
 # =====================================================================
 st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
@@ -158,14 +157,6 @@ with col_s2:
 
 st.markdown("---")
 
-# Price vs Kalman Chart
-st.subheader("📈 Price vs Kalman Trend")
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Close'], name="Close", line=dict(color='gray', width=1)))
-fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Kalman_Price'], name="Kalman Filter", line=dict(color='orange', width=2)))
-fig.update_layout(height=350, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
-st.plotly_chart(fig, use_container_width=True)
-
 # Clean Table
 st.subheader("📋 Pure Kinematic Matrix")
 clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
@@ -177,4 +168,4 @@ for c in ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Norma
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-st.dataframe(display_df, use_container_width=True, height=450)
+st.dataframe(display_df, use_container_width=True, height=600)
