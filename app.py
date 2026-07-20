@@ -7,11 +7,11 @@ import plotly.graph_objects as go
 # Page Configuration
 st.set_page_config(page_title="BTC Kinematic Signals", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC/USDT Kinematic Master Engine")
-st.caption("Pure Real-Time Kinematics + Smooth Volume (1000-Candle Avg) in IST")
+st.title("⚡ BTC/USDT Pure Kinematic Master Engine")
+st.caption("Pure Real-Time Kinematics (No Volume Noise) in IST")
 
 # =====================================================================
-# MATHEMATICAL ENGINES
+# MATHEMATICAL ENGINES (Pure Price Kinematics)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
@@ -75,8 +75,8 @@ with st.spinner("Fetching Live Bitcoin Data..."):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
-        if len(df) > 1000: 
-            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+        if len(df) > 120: 
+            df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
             df = df.iloc[:-1] # Live running candle safety
             
             if df.index.tz is None:
@@ -84,20 +84,16 @@ with st.spinner("Fetching Live Bitcoin Data..."):
             else:
                 df.index = df.index.tz_convert('Asia/Kolkata')
         else:
-            st.error("🚨 Error: Insufficient Data (Need 1000+ candles for Ultra-Slow Volume Avg)")
+            st.error("🚨 Error: Insufficient Data")
             st.stop()
     except Exception as e:
         st.error(f"🚨 API Failure: {e}")
         st.stop()
 
 # =====================================================================
-# ⚡ KINEMATICS ENGINE WITH 1000-CANDLE SMOOTH VOLUME
+# ⚡ PURE KINEMATICS ENGINE (ZERO VOLUME)
 # =====================================================================
 df = apply_heikin_ashi(df)
-
-# 🐌 Ultra-Slow Volume Movement (1000 Moving Average)
-vol_ma1000 = df['Volume'].rolling(window=1000, min_periods=100).mean()
-df['Volume_Factor_1000'] = (df['Volume'] / vol_ma1000).fillna(1.0)
 
 # 50:50 Split Execution
 split_idx = int(len(df) * 0.50)
@@ -112,9 +108,8 @@ momentum_normal = apply_kalman_filter_custom(normal_close - kalman_base_normal, 
 df_predict['Kalman_Price'] = kalman_base_normal
 df_predict['Weighted_Momentum'] = momentum_normal
 
-# HAM FORMULA WITH SMOOTH VOLUME: Momentum * (Hurst * Volume_Factor_1000)
-df_predict['Host_x_Vol_Normal'] = df_predict['Hurst_Normal'] * df_predict['Volume_Factor_1000']
-df_predict['HAM_Normal'] = np.array(momentum_normal) * df_predict['Host_x_Vol_Normal']
+# PURE HAM FORMULA: Momentum * (Hurst * 2.0 Scaling)
+df_predict['HAM_Normal'] = np.array(momentum_normal) * (df_predict['Hurst_Normal'].to_numpy() * 2.0)
 
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close = df_predict['HA_Close'].to_numpy().flatten()
@@ -122,8 +117,7 @@ df_predict['Hurst_HA'] = calculate_rolling_hurst_leak_free(ha_close, window=100)
 kalman_base_ha = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
 momentum_ha = apply_kalman_filter_custom(ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
 
-df_predict['Host_x_Vol_HA'] = df_predict['Hurst_HA'] * df_predict['Volume_Factor_1000']
-df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * df_predict['Host_x_Vol_HA']
+df_predict['HAM_HeikinAshi'] = np.array(momentum_ha) * (df_predict['Hurst_HA'].to_numpy() * 2.0)
 
 # Clean NaN
 df_predict.dropna(subset=['Hurst_Normal', 'Hurst_HA'], inplace=True)
@@ -157,11 +151,10 @@ with col_s1:
         st.warning(f"### Signal ({latest_time})\n# {latest['Signal']}")
 
 with col_s2:
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Live Close", f"${latest['Close']:,.2f}")
     m2.metric("Weighted Momentum", f"{latest['Weighted_Momentum']:.2f}")
-    m3.metric("Smooth Vol Factor (1000MA)", f"{latest['Volume_Factor_1000']:.2f}x")
-    m4.metric("Final HAM Score", f"{latest['HAM_Normal']:.2f}")
+    m3.metric("Pure HAM Score", f"{latest['HAM_Normal']:.2f}")
 
 st.markdown("---")
 
@@ -173,12 +166,12 @@ fig.add_trace(go.Scatter(x=df_predict.index, y=df_predict['Kalman_Price'], name=
 fig.update_layout(height=350, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
 st.plotly_chart(fig, use_container_width=True)
 
-# Clean Matrix Table
-st.subheader("📋 Kinematic Matrix Summary (With Slow Volume Avg)")
-clean_cols = ['Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'Volume_Factor_1000', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
+# Clean Table
+st.subheader("📋 Pure Kinematic Matrix")
+clean_cols = ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi', 'Signal']
 display_df = df_predict[clean_cols].copy()
 
-for c in ['Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'Volume_Factor_1000', 'HAM_Normal', 'HAM_HeikinAshi']:
+for c in ['Close', 'HA_Close', 'Kalman_Price', 'Weighted_Momentum', 'Hurst_Normal', 'HAM_Normal', 'HAM_HeikinAshi']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
