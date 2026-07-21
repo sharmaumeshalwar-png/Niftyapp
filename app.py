@@ -7,23 +7,40 @@ import requests
 st.set_page_config(page_title="BTC Binance Kinematic Engine + Bid-Ask Candles", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("⚡ BTC Binance Dual Engine + Historical Candle Bid/Ask Data")
-st.caption("100% Pure Binance REST API Pipeline (No Yahoo Finance Limits)")
+st.caption("100% Pure Binance REST API Pipeline (With Network Fallback Engine)")
 
 # =====================================================================
-# 🌐 BINANCE API DATA ENGINE (OHLCV + HISTORICAL BID/ASK)
+# 🌐 FIXED BINANCE API DATA ENGINE (WITH FALLBACK & HEADERS)
 # =====================================================================
-def fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=200):
+def fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=300):
     """
-    Fetches Binance Futures Historical Candlesticks along with 
-    Taker Buy/Sell Volumes to derive Bid/Ask dynamics.
+    Fetches Binance Candlesticks with Headers & Automatic Spot Fallback 
+    if Futures API is blocked/restricted by ISP or Cloudflare.
     """
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
+    # Dual Endpoints: Try Futures API first; if blocked, fallback to Spot API
+    endpoints = [
+        f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}",
+        f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    ]
+    
+    data = None
+    for url in endpoints:
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                break
+        except Exception:
+            continue
+            
+    if not data or not isinstance(data, list):
+        return pd.DataFrame()
+
     try:
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        
         cols = [
             'Open Time', 'Open', 'High', 'Low', 'Close', 'Volume',
             'Close Time', 'Quote Volume', 'Trades', 'Taker Buy Base Vol',
@@ -39,19 +56,16 @@ def fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=200):
         df.set_index('Open Time', inplace=True)
         
         # Historical Candle Bid-Ask Estimation via Order Flow
-        # Low = Best Available Bid Hit, High = Best Available Ask Cleared
         df['Candle_Bid_Price'] = df['Low']
         df['Candle_Ask_Price'] = df['High']
         df['Candle_Spread'] = df['High'] - df['Low']
         
-        # Taker Buy Volume = Market Buy Orders hitting Ask
-        # Taker Sell Volume = Market Sell Orders hitting Bid
         df['Ask_Volume_Buy'] = df['Taker Buy Base Vol']
         df['Bid_Volume_Sell'] = df['Volume'] - df['Taker Buy Base Vol']
         
         return df
     except Exception as e:
-        st.error(f"Error fetching Binance data: {e}")
+        st.error(f"Error parsing Binance data: {e}")
         return pd.DataFrame()
 
 # =====================================================================
@@ -127,12 +141,12 @@ def compute_ha_ham_features(df_raw):
 # =====================================================================
 # DATA PIPELINE EXECUTION
 # =====================================================================
-with st.spinner("Fetching Binance Futures OHLCV + Candle Bid/Ask Data..."):
+with st.spinner("Fetching Binance OHLCV + Candle Bid/Ask Data..."):
     df_1h_raw = fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=300)
     df_15m_raw = fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=300)
 
 if df_1h_raw.empty or df_15m_raw.empty:
-    st.error("Failed to load Binance market data.")
+    st.error("🚨 Failed to load Binance market data. Please check your internet connection or turn on VPN if Binance is restricted by your ISP.")
     st.stop()
 
 # Compute Features
@@ -213,13 +227,26 @@ latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
 # 📊 METRICS & TABLE DISPLAY
 # =====================================================================
 st.markdown("---")
+
+# Signal Banner
+sig = latest['Instant_Kinematic_Signal']
+if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
+    st.success(f"### Live Signal ({latest_time})\n# {sig}")
+elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
+    st.error(f"### Live Signal ({latest_time})\n# {sig}")
+else:
+    st.warning(f"### Live Signal ({latest_time})\n# {sig}")
+
+st.markdown("---")
+
+# Metrics Display
 m1, m2, m3, m4, m5, m6 = st.columns(6)
 m1.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
-m2.metric("Candle Bid Price", f"${latest['Candle_Bid_Price']:,.2f}")
-m3.metric("Candle Ask Price", f"${latest['Candle_Ask_Price']:,.2f}")
-m4.metric("Candle Spread", f"${latest['Candle_Spread']:.2f}")
-m5.metric("Buy Vol (Ask Hits)", f"{latest['Ask_Volume_Buy']:.2f} BTC")
-m6.metric("Sell Vol (Bid Hits)", f"{latest['Bid_Volume_Sell']:.2f} BTC")
+m2.metric("Candle Min Bid", f"${latest['Candle_Bid_Price']:,.2f}")
+m3.metric("Candle Max Ask", f"${latest['Candle_Ask_Price']:,.2f}")
+m4.metric("Candle Range", f"${latest['Candle_Spread']:.2f}")
+m5.metric("Buy Vol (BTC)", f"{latest['Ask_Volume_Buy']:.2f}")
+m6.metric("Sell Vol (BTC)", f"{latest['Bid_Volume_Sell']:.2f}")
 
 st.markdown("---")
 
@@ -227,13 +254,14 @@ st.subheader("📋 Binance Historical Candle Data (Includes Bid, Ask, Spread & V
 
 # Format Columns for Clean Table
 clean_cols = [
-    'HA_Close', 'Candle_Bid_Price', 'Candle_Ask_Price', 'Candle_Spread', 
+    '1H_HA_Close_Frozen', 'HA_Close', 'Candle_Bid_Price', 'Candle_Ask_Price', 'Candle_Spread', 
     'Ask_Volume_Buy', 'Bid_Volume_Sell', 'Barrier_Level', 
     '15M_Delta_Momentum', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
+    '1H_HA_Close_Frozen': '1H HA Close',
     'HA_Close': '15M HA Close',
     'Candle_Bid_Price': 'Candle Min Bid',
     'Candle_Ask_Price': 'Candle Max Ask',
@@ -245,7 +273,7 @@ display_df.rename(columns={
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for col in ['15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 'Candle Range/Spread', 'Market Buy Vol (BTC)', 'Market Sell Vol (BTC)', 'Active Barrier', '15M_Delta_Momentum']:
+for col in ['1H HA Close', '15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 'Candle Range/Spread', 'Market Buy Vol (BTC)', 'Market Sell Vol (BTC)', 'Active Barrier', '15M Delta Momentum']:
     display_df[col] = display_df[col].round(2)
 
 display_df = display_df.iloc[::-1]
