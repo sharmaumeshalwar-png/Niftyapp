@@ -6,8 +6,8 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Relativistic E=mc² HAM)")
-st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-HAM uses Physics Energy Equivalence (E = m * c²).")
+st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M E=mc² Kalman 0.80)")
+st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-HAM applies Relativistic Energy Equivalence smoothed with a 0.80 Kalman Filter.")
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI, KALMAN & RELATIVISTIC ENERGY)
@@ -37,7 +37,11 @@ def compute_heikin_ashi(df_in):
     
     return df_ha
 
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.80):
+    """
+    Custom Kalman Filter with Adjustable Noise Measurement Variance (r_val).
+    Default set to r_val = 0.80 as requested.
+    """
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -90,8 +94,8 @@ def compute_ha_ham_features(df_raw):
     ha_close = df_ha['HA_Close'].to_numpy().flatten()
     
     df_ha['Hurst'] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    kalman = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
-    momentum = apply_kalman_filter_custom(ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1)
+    kalman = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.20)
+    momentum = apply_kalman_filter_custom(ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.10)
     
     df_ha['Kalman_Price'] = kalman
     df_ha['HA_HAM_Raw'] = np.array(momentum) * (df_ha['Hurst'].to_numpy() * 2.0)
@@ -123,20 +127,22 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 
 df_1h['HA_HAM'] = df_1h['HA_HAM_Raw']
 
-# E = mc² 15M HAM
+# E = mc² 15M HAM + KALMAN 0.80 FILTER
 m15_ham_raw = df_15m['HA_HAM_Raw'].to_numpy().flatten()
 m15_volume = df_15m['Volume'].to_numpy().flatten()
 m15_close = df_15m['Close'].to_numpy().flatten()
 
-df_15m['HA_HAM_Energy'] = apply_e_mc_square_energy(m15_ham_raw, m15_volume, m15_close, window=20)
+raw_energy = apply_e_mc_square_energy(m15_ham_raw, m15_volume, m15_close, window=20)
+
+# ⚛️ APPLYING KALMAN FILTER (R = 0.80) ON E=mc² OUTPUT
+df_15m['HA_HAM_Energy'] = apply_kalman_filter_custom(raw_energy, initial_p=1.0, q_val=0.001, r_val=0.80)
 df_15m['HA_HAM'] = df_15m['HA_HAM_Energy']
 
 # =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE (SAFE ALIGNMENT)
+# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Safe Alignment using reindex with ffill and bfill
 full_index = df_15m_grid.index.union(df_1h.index).sort_values()
 df_1h_reindexed = df_1h.reindex(full_index).ffill()
 
@@ -182,7 +188,6 @@ for i in range(2, n):
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
 
-# Handle empty grid safely
 df_15m_grid.dropna(subset=['HA_HAM_Energy', 'HA_HAM_1H_Frozen', '1H_HA_Close_Frozen'], inplace=True)
 
 if df_15m_grid.empty:
@@ -213,7 +218,7 @@ with col_s2:
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Raw HAM", f"{latest['HA_HAM_Raw']:.2f}")
-    m5.metric("15M E=mc² HAM", f"{latest['HA_HAM_Energy']:.2f}")
+    m5.metric("15M E=mc² Kalman (0.80)", f"{latest['HA_HAM_Energy']:.2f}")
     m6.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
@@ -231,12 +236,12 @@ display_df.rename(columns={
     'HA_Close': '15M HA-Close',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM_Raw': '15M Raw HAM',
-    'HA_HAM_Energy': '15M E=mc² HAM',
+    'HA_HAM_Energy': '15M E=mc² Kalman (0.80)',
     'HAM_Diff': 'HAM Diff (1H - 15M)',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Raw HAM', '15M E=mc² HAM', 'HAM Diff (1H - 15M)']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Raw HAM', '15M E=mc² Kalman (0.80)', 'HAM Diff (1H - 15M)']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
