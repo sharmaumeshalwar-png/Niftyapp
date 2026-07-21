@@ -1,20 +1,16 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import ccxt
-import time
-from datetime import datetime, timedelta
+import yfinance as yf
 
 # Page Configuration
 st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
-
-# Initialize CCXT Binance Client
-exchange = ccxt.binance({'enableRateLimit': True})
+st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close & HA-HAM update dynamically every 15 mins.")
 
 # =====================================================================
-# 1. MATHEMATICAL ENGINES (HEIKIN-ASHI, KALMAN & HURST)
+# MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
 # =====================================================================
 def compute_heikin_ashi(df_in):
     df_ha = df_in.copy()
@@ -84,42 +80,46 @@ def compute_ha_ham_features(df_raw):
     return df_ha
 
 # =====================================================================
-# DATA INGESTION & DUAL TIMEFRAME RESAMPLING
+# DATA INGESTION
 # =====================================================================
 @st.cache_data(ttl=60)
-def fetch_ccxt_klines(symbol='BTC/USDT', tf_15m='15m', limit_15m=1500):
+def load_market_data():
+    df_1h_raw = yf.download(tickers="BTC-USD", period="60d", interval="1h", progress=False)
+    df_15m_raw = yf.download(tickers="BTC-USD", period="14d", interval="15m", progress=False)
+    
+    for d in [df_1h_raw, df_15m_raw]:
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        d.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
+        if d.index.tz is None:
+            d.index = d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+        else:
+            d.index = d.index.tz_convert('Asia/Kolkata')
+            
+    return df_1h_raw, df_15m_raw
+
+with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
     try:
-        ohlcv = exchange.fetch_ohlcv(symbol, tf_15m, limit=limit_15m)
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
-        df.set_index('timestamp', inplace=True)
-        return df
+        df_1h_raw, df_15m_raw = load_market_data()
     except Exception as e:
-        st.error(f"CCXT Fetch Error: {e}")
-        return pd.DataFrame()
+        st.error(f"🚨 Data Fetching Error: {e}")
+        st.stop()
 
-df_15m_raw = fetch_ccxt_klines()
-
-if df_15m_raw.empty:
-    st.stop()
-
-# Build 1H Data from 15M Raw Data for Perfect Alignment
-df_1h_raw = df_15m_raw.resample('1h').agg({
-    'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
-}).dropna()
-
+# Compute Heikin-Ashi & HAM Features
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
 # =====================================================================
-# ⚙️ 1H FREEZE + 15M LIVE MATRIX LOGIC
+# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
+# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
 df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
+# HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
 
 n = len(df_15m_grid)
@@ -137,16 +137,16 @@ for i in range(2, n):
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
     
-    ha_close = ha_close_vals[i]
-    ha_open = ha_open_vals[i]
-    is_ha_red = ha_close < ha_open
-
+    is_ha_red = ha_close_vals[i] < ha_open_vals[i]
+    
+    # Case A: 1H Macro HAM is declining
     if h1_curr > 0 and h1_curr < h1_prev:
         if m15_curr < 0 or is_ha_red:
             signals[i] = '🔴 REAL TOP (1H Drop + 15M Red)'
         else:
             signals[i] = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
             
+    # Case B: 1H Macro HAM is recovering
     elif h1_curr < 0 and h1_curr > h1_prev:
         if m15_curr > 0 and not is_ha_red:
             signals[i] = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
@@ -159,7 +159,6 @@ for i in range(2, n):
         signals[i] = '🔴 ACCELERATED DROP'
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
-
 df_15m_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen'], inplace=True)
 
 latest = df_15m_grid.iloc[-1]
@@ -181,16 +180,18 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
-    m3.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
-    m4.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
+    m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+    m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
+    m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline (15M Bars)")
+st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
+# Table with HAM Difference Column
 clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
 
