@@ -13,11 +13,10 @@ st.title("⚡ BTC Renko 50-Point Dual Engine (1H Frozen + Renko Live Dynamic)")
 st.caption("Includes 90 Days Backtest Engine + Completed 50-Point Renko Bricks Invalidation Logic")
 
 # =====================================================================
-# 1. STREAMLIT-CLOUD SAFE MULTI-SOURCE DATA FETCHER
+# 1. PURE CACHED DATA FETCHER (NO STREAMLIT UI INSIDE CACHE)
 # =====================================================================
 @st.cache_data(ttl=300)
-def fetch_btc_data_streamlit_cloud(days=90):
-    # Specialized Data Mirrors & Official Cloud-Friendly Endpoints
+def fetch_btc_data_pure(days=90):
     sources = [
         ("https://data-api.binance.vision/api/v3/klines", "Binance Public Vision API"),
         ("https://fapi.binance.com/fapi/v1/klines", "Binance Futures Public API"),
@@ -47,7 +46,7 @@ def fetch_btc_data_streamlit_cloud(days=90):
                     'endTime': end_time,
                     'limit': limit
                 }
-                res = requests.get(url, params=params, headers=headers, timeout=6)
+                res = requests.get(url, params=params, headers=headers, timeout=5)
                 if res.status_code == 200:
                     data = res.json()
                     if not isinstance(data, list) or len(data) == 0:
@@ -68,24 +67,22 @@ def fetch_btc_data_streamlit_cloud(days=90):
                 for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                     df[col] = df[col].astype(float)
                 df = df[~df.index.duplicated(keep='first')]
-                st.toast(f"✅ Loaded live market data via {source_name}", icon="⚡")
-                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']], source_name
         except Exception:
             continue
 
-    # Fallback to Yahoo Finance Engine if Cloud IP block hits all Binance mirrors
+    # Fallback to Yahoo Finance Engine
     try:
         btc_yf = yf.Ticker("BTC-USD")
         df_yf = btc_yf.history(period="60d", interval="15m")
         if not df_yf.empty:
             df_yf.index = df_yf.index.tz_convert('Asia/Kolkata')
             df_yf = df_yf[['Open', 'High', 'Low', 'Close', 'Volume']]
-            st.toast("✅ Loaded market data via Yahoo Finance Fallback", icon="🛰️")
-            return df_yf
-    except Exception as e:
-        st.error(f"Data Source Connection Error: {e}")
+            return df_yf, "Yahoo Finance Fallback"
+    except Exception:
+        pass
 
-    return pd.DataFrame()
+    return pd.DataFrame(), "None"
 
 # =====================================================================
 # 2. RENKO BRICK BUILDER (STRICT 50-POINT COMPLETED BRICKS ONLY)
@@ -211,13 +208,15 @@ def compute_ha_ham_features(df_raw):
     return df_ha
 
 # =====================================================================
-# DATA INGESTION & RENKO GENERATION
+# DATA INGESTION & UI NOTIFICATION
 # =====================================================================
-df_15m_raw = fetch_btc_data_streamlit_cloud(days=90)
+df_15m_raw, data_source = fetch_btc_data_pure(days=90)
 
 if df_15m_raw.empty:
     st.error("🚨 Market data load status: Failed. Click refresh to attempt new connection.")
     st.stop()
+else:
+    st.toast(f"✅ Loaded live market data via {data_source}", icon="⚡")
 
 # Build Completed 50-Point Renko Bricks
 df_renko_raw = build_pure_renko_bricks(df_15m_raw, brick_size=50.0)
