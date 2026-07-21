@@ -113,8 +113,14 @@ df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index,
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
-# 💥 NAYA CALCULATION: (1H Locked HA-HAM) minus (15M Live HA-HAM)
+# HAM Difference Calculation
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
+
+# 🌟 NAYA FEATURE: HAM Difference पर 0.80 R-Value का Kalman Filter
+ham_diff_array = df_15m_grid['HAM_Diff'].to_numpy().flatten()
+df_15m_grid['HAM_Diff_Kalman'] = apply_kalman_filter_custom(
+    ham_diff_array, initial_p=1.0, q_val=0.0005, r_val=0.80
+)
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
@@ -174,19 +180,23 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
+    m5.metric("HAM Diff Raw", f"{latest['HAM_Diff']:.2f}")
+    m6.metric("HAM Diff Kalman (0.80)", f"{latest['HAM_Diff_Kalman']:.2f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with HAM Difference Column
-clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
+# Table with HAM Difference & Filtered HAM Diff Column
+clean_cols = [
+    '1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 
+    'HA_HAM', 'HAM_Diff', 'HAM_Diff_Kalman', 'Instant_Kinematic_Signal'
+]
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
@@ -194,10 +204,12 @@ display_df.rename(columns={
     'HA_Close': '15M HA-Close',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM': '15M Live HA-HAM',
-    'HAM_Diff': 'HAM Diff (1H - 15M)'
+    'HAM_Diff': 'HAM Diff (Raw)',
+    'HAM_Diff_Kalman': 'HAM Diff (Kalman 0.80)',
+    'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (Raw)', 'HAM Diff (Kalman 0.80)']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
