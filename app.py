@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import requests
 import time
+import yfinance as yf
 from datetime import datetime, timedelta
 
 # Page Configuration
@@ -12,20 +13,19 @@ st.title("⚡ BTC Renko 50-Point Dual Engine (1H Frozen + Renko Live Dynamic)")
 st.caption("Includes 90 Days Backtest Engine + Completed 50-Point Renko Bricks Invalidation Logic")
 
 # =====================================================================
-# 1. ROBUST MULTI-ENDPOINT BINANCE 90-DAYS DATA FETCHER
+# 1. STREAMLIT-CLOUD SAFE MULTI-SOURCE DATA FETCHER
 # =====================================================================
-@st.cache_data(ttl=600)
-def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
-    # Multiple public endpoints to bypass IP/Mirror restrictions
-    endpoints = [
-        "https://api.binance.com/api/v3/klines",
-        "https://api1.binance.com/api/v3/klines",
-        "https://api2.binance.com/api/v3/klines",
-        "https://api3.binance.com/api/v3/klines"
+@st.cache_data(ttl=300)
+def fetch_btc_data_streamlit_cloud(days=90):
+    # Specialized Data Mirrors & Official Cloud-Friendly Endpoints
+    sources = [
+        ("https://data-api.binance.vision/api/v3/klines", "Binance Public Vision API"),
+        ("https://fapi.binance.com/fapi/v1/klines", "Binance Futures Public API"),
+        ("https://api.binance.us/api/v3/klines", "Binance US Data Endpoint")
     ]
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
     }
     
     now = datetime.utcnow()
@@ -33,75 +33,59 @@ def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
     start_time = int(start_dt.timestamp() * 1000)
     end_time = int(now.timestamp() * 1000)
     
-    all_data = []
-    limit = 1000
-    current_start = start_time
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    total_expected = days * 24 * 4  # ~8640 candles for 90 days
-    
-    active_url_idx = 0
-
-    while current_start < end_time:
-        params = {
-            'symbol': symbol,
-            'interval': interval,
-            'startTime': current_start,
-            'endTime': end_time,
-            'limit': limit
-        }
-        
-        success = False
-        # Retry loop across available Binance mirror endpoints
-        for idx in range(len(endpoints)):
-            target_url = endpoints[(active_url_idx + idx) % len(endpoints)]
-            try:
-                res = requests.get(target_url, params=params, headers=headers, timeout=12)
-                
+    for url, source_name in sources:
+        try:
+            all_data = []
+            current_start = start_time
+            limit = 1000
+            
+            while current_start < end_time:
+                params = {
+                    'symbol': 'BTCUSDT',
+                    'interval': '15m',
+                    'startTime': current_start,
+                    'endTime': end_time,
+                    'limit': limit
+                }
+                res = requests.get(url, params=params, headers=headers, timeout=6)
                 if res.status_code == 200:
                     data = res.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        all_data.extend(data)
-                        current_start = data[-1][0] + 1
-                        success = True
-                        active_url_idx = (active_url_idx + idx) % len(endpoints)
+                    if not isinstance(data, list) or len(data) == 0:
                         break
-                elif res.status_code in [403, 451]:
-                    # IP restricted / Cloud block detected
-                    continue
-            except Exception:
-                continue
+                    all_data.extend(data)
+                    current_start = data[-1][0] + 1
+                    time.sleep(0.01)
+                else:
+                    break
+            
+            if len(all_data) > 500:
+                df = pd.DataFrame(all_data, columns=[
+                    'timestamp', 'Open', 'High', 'Low', 'Close', 'Volume',
+                    'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
+                ])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
+                df.set_index('timestamp', inplace=True)
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    df[col] = df[col].astype(float)
+                df = df[~df.index.duplicated(keep='first')]
+                st.toast(f"✅ Loaded live market data via {source_name}", icon="⚡")
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception:
+            continue
 
-        if not success:
-            st.warning("⚠️ High latency or API endpoint blocking detected. Finalizing loaded candles.")
-            break
+    # Fallback to Yahoo Finance Engine if Cloud IP block hits all Binance mirrors
+    try:
+        btc_yf = yf.Ticker("BTC-USD")
+        df_yf = btc_yf.history(period="60d", interval="15m")
+        if not df_yf.empty:
+            df_yf.index = df_yf.index.tz_convert('Asia/Kolkata')
+            df_yf = df_yf[['Open', 'High', 'Low', 'Close', 'Volume']]
+            st.toast("✅ Loaded market data via Yahoo Finance Fallback", icon="🛰️")
+            return df_yf
+    except Exception as e:
+        st.error(f"Data Source Connection Error: {e}")
 
-        progress = min(len(all_data) / total_expected, 1.0)
-        progress_bar.progress(progress)
-        status_text.text(f"Fetching Data... Loaded {len(all_data)} candles")
-        time.sleep(0.02)
-
-    progress_bar.empty()
-    status_text.empty()
-
-    if not all_data:
-        st.error("🚨 Connection Failed: Binance API endpoints blocked. If using Streamlit Cloud, hosting server IPs might be blocked by Binance.")
-        return pd.DataFrame()
-
-    df = pd.DataFrame(all_data, columns=[
-        'timestamp', 'Open', 'High', 'Low', 'Close', 'Volume',
-        'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
-    ])
-    
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
-    df.set_index('timestamp', inplace=True)
-    
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        df[col] = df[col].astype(float)
-        
-    df = df[~df.index.duplicated(keep='first')]
-    return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+    return pd.DataFrame()
 
 # =====================================================================
 # 2. RENKO BRICK BUILDER (STRICT 50-POINT COMPLETED BRICKS ONLY)
@@ -229,20 +213,20 @@ def compute_ha_ham_features(df_raw):
 # =====================================================================
 # DATA INGESTION & RENKO GENERATION
 # =====================================================================
-df_15m_raw = fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90)
+df_15m_raw = fetch_btc_data_streamlit_cloud(days=90)
 
 if df_15m_raw.empty:
-    st.error("🚨 Unable to load data from Binance API endpoints. If you are hosted on Streamlit Cloud, Binance might be blocking cloud server IPs. Try running locally or refreshing.")
+    st.error("🚨 Market data load status: Failed. Click refresh to attempt new connection.")
     st.stop()
 
-# 1. Generate Completed 50-Point Renko Bricks
+# Build Completed 50-Point Renko Bricks
 df_renko_raw = build_pure_renko_bricks(df_15m_raw, brick_size=50.0)
 
 if df_renko_raw.empty:
     st.error("🚨 Renko Brick Calculation Failure.")
     st.stop()
 
-# Build 1H Data from 15M Raw Data for Higher Timeframe Baseline
+# Build 1H Data Baseline
 df_1h_raw = df_15m_raw.resample('1h').agg({
     'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
 }).dropna()
@@ -255,7 +239,6 @@ df_renko = compute_ha_ham_features(df_renko_raw)
 # =====================================================================
 df_renko_grid = df_renko.copy()
 
-# Forward-fill 1H metrics to Renko timeline with strict anti-leakage shift
 df_renko_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_renko_grid.index, method='ffill')
 df_renko_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_renko_grid.index, method='ffill')
 df_renko_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_renko_grid.index, method='ffill')
@@ -290,9 +273,7 @@ for i in range(2, n):
     
     is_renko_red = ha_close < ha_open
 
-    # ----------------------------------------------------
-    # STEP 1: INSTANT LEVEL FLIP LOGIC (HIGHEST PRIORITY)
-    # ----------------------------------------------------
+    # STEP 1: INSTANT LEVEL FLIP LOGIC
     if active_state == 'TOP' and last_level is not None:
         if ha_close > last_level:
             active_state = 'BOTTOM'
@@ -309,9 +290,7 @@ for i in range(2, n):
             barrier_levels[i] = last_level
             continue
 
-    # ----------------------------------------------------
     # STEP 2: BASE DUAL-TIMEFRAME ENGINE
-    # ----------------------------------------------------
     if h1_curr > 0 and h1_curr < h1_prev:
         if renko_curr < 0 or is_renko_red:
             signals[i] = '🔴 REAL TOP (1H Drop + Renko Red)'
@@ -368,7 +347,7 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 50-Point Completed Renko Bricks Timeline (90 Days)")
+st.subheader("📋 50-Point Completed Renko Bricks Timeline")
 
 clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'Barrier_Level', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
 display_df = df_renko_grid[clean_cols].copy()
