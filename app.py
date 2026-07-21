@@ -259,8 +259,15 @@ display_df.rename(columns={
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for col in ['1H HA Close', '15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 'Candle Range/Spread', 'Market Buy Vol', 'Market Sell Vol', 'Active Barrier', '15M Delta Momentum']:
-    display_df[col] = display_df[col].round(2)
+# Safe Rounding Fix: Convert None/NaN to 0.0 before rounding to prevent TypeError
+num_cols = [
+    '1H HA Close', '15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 
+    'Candle Range/Spread', 'Market Buy Vol', 'Market Sell Vol', 
+    'Active Barrier', '15M Delta Momentum'
+]
+
+for col in num_cols:
+    display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0.0).round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
