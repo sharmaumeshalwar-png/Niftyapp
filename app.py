@@ -162,14 +162,14 @@ df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
 )
 
-# Kinematic Score
+# Original Kinematic Score Calculation
 df_15m_grid["Kinematic_Score"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"]
 ) * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
 
-# Naya Column: Kinematic Score Divided by 100,000 (1 Lakh)
-df_15m_grid["Kinematic_Score_100k"] = (
-    df_15m_grid["Kinematic_Score"] / 100000.0
+# Divide by 100,000,000,000 (100 Billion)
+df_15m_grid["Kinematic_Score_100B"] = (
+    df_15m_grid["Kinematic_Score"] / 100000000000.0
 )
 
 n = len(df_15m_grid)
@@ -189,7 +189,7 @@ for i in range(2, n):
 
   is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-  # Signal Classification
+  # Signal Classification logic
   if h1_curr > 0 and h1_curr < h1_prev:
     signals[i] = (
         "🔴 REAL TOP (1H Drop + 15M Red)"
@@ -214,7 +214,7 @@ df_15m_grid.dropna(
         "HA_HAM_1H_Frozen",
         "15M_Delta_Momentum",
         "Kinematic_Score",
-        "Kinematic_Score_100k",
+        "Kinematic_Score_100B",
     ],
     inplace=True,
 )
@@ -245,13 +245,13 @@ with col_s2:
   m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
   m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
   m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
-  m7.metric("Score (/100k)", f"{latest['Kinematic_Score_100k']:.3f}")
+  m7.metric("Score (/100B)", f"{latest['Kinematic_Score_100B']:.6f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table display
+# Table display setup
 clean_cols = [
     "1H_HA_Close_Frozen",
     "HA_Close",
@@ -260,7 +260,7 @@ clean_cols = [
     "HAM_Diff",
     "15M_Delta_Momentum",
     "Kinematic_Score",
-    "Kinematic_Score_100k",
+    "Kinematic_Score_100B",
     "Instant_Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -274,7 +274,7 @@ display_df.rename(
         "HAM_Diff": "HAM Diff (1H - 15M)",
         "15M_Delta_Momentum": "15M Delta Momentum",
         "Kinematic_Score": "Kinematic Score",
-        "Kinematic_Score_100k": "Kinematic Score (/100k)",
+        "Kinematic_Score_100B": "Kinematic Score (/100B)",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
@@ -291,10 +291,10 @@ for c in [
 ]:
   display_df[c] = display_df[c].round(2)
 
-# Format the 100k column strictly to 3 decimal places
-display_df["Kinematic Score (/100k)"] = display_df[
-    "Kinematic Score (/100k)"
-].round(3)
+# Formatting 100B column strictly to 6 decimal places for precision
+display_df["Kinematic Score (/100B)"] = display_df[
+    "Kinematic Score (/100B)"
+].round(6)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
