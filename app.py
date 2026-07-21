@@ -12,11 +12,21 @@ st.title("⚡ BTC Renko 50-Point Dual Engine (1H Frozen + Renko Live Dynamic)")
 st.caption("Includes 90 Days Backtest Engine + Completed 50-Point Renko Bricks Invalidation Logic")
 
 # =====================================================================
-# 1. DIRECT BINANCE 90-DAYS DATA FETCHER
+# 1. ROBUST MULTI-ENDPOINT BINANCE 90-DAYS DATA FETCHER
 # =====================================================================
 @st.cache_data(ttl=600)
 def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
-    url = "https://api.binance.com/api/v3/klines"
+    # Multiple public endpoints to bypass IP/Mirror restrictions
+    endpoints = [
+        "https://api.binance.com/api/v3/klines",
+        "https://api1.binance.com/api/v3/klines",
+        "https://api2.binance.com/api/v3/klines",
+        "https://api3.binance.com/api/v3/klines"
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
     
     now = datetime.utcnow()
     start_dt = now - timedelta(days=days)
@@ -31,6 +41,8 @@ def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
     status_text = st.empty()
     total_expected = days * 24 * 4  # ~8640 candles for 90 days
     
+    active_url_idx = 0
+
     while current_start < end_time:
         params = {
             'symbol': symbol,
@@ -39,27 +51,42 @@ def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
             'endTime': end_time,
             'limit': limit
         }
-        try:
-            res = requests.get(url, params=params, timeout=10)
-            data = res.json()
-            if not data or not isinstance(data, list) or len(data) == 0:
-                break
-            all_data.extend(data)
-            
-            progress = min(len(all_data) / total_expected, 1.0)
-            progress_bar.progress(progress)
-            status_text.text(f"Fetching 90 Days Data... Loaded {len(all_data)} candles")
-            
-            current_start = data[-1][0] + 1
-            time.sleep(0.03)
-        except Exception as e:
-            st.error(f"Data Fetching Error: {e}")
+        
+        success = False
+        # Retry loop across available Binance mirror endpoints
+        for idx in range(len(endpoints)):
+            target_url = endpoints[(active_url_idx + idx) % len(endpoints)]
+            try:
+                res = requests.get(target_url, params=params, headers=headers, timeout=12)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        all_data.extend(data)
+                        current_start = data[-1][0] + 1
+                        success = True
+                        active_url_idx = (active_url_idx + idx) % len(endpoints)
+                        break
+                elif res.status_code in [403, 451]:
+                    # IP restricted / Cloud block detected
+                    continue
+            except Exception:
+                continue
+
+        if not success:
+            st.warning("⚠️ High latency or API endpoint blocking detected. Finalizing loaded candles.")
             break
+
+        progress = min(len(all_data) / total_expected, 1.0)
+        progress_bar.progress(progress)
+        status_text.text(f"Fetching Data... Loaded {len(all_data)} candles")
+        time.sleep(0.02)
 
     progress_bar.empty()
     status_text.empty()
 
     if not all_data:
+        st.error("🚨 Connection Failed: Binance API endpoints blocked. If using Streamlit Cloud, hosting server IPs might be blocked by Binance.")
         return pd.DataFrame()
 
     df = pd.DataFrame(all_data, columns=[
@@ -80,10 +107,6 @@ def fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90):
 # 2. RENKO BRICK BUILDER (STRICT 50-POINT COMPLETED BRICKS ONLY)
 # =====================================================================
 def build_pure_renko_bricks(df_in, brick_size=50.0):
-    """
-    Price ko strictly 50 points complete hone par hi new brick banata hai.
-    Live/Incomplete brick filter out ho jata hai.
-    """
     closes = df_in['Close'].to_numpy()
     timestamps = df_in.index
     
@@ -91,14 +114,11 @@ def build_pure_renko_bricks(df_in, brick_size=50.0):
     if len(closes) == 0:
         return pd.DataFrame()
 
-    # Pehla base price setup
     base_price = np.floor(closes[0] / brick_size) * brick_size
     
     for i in range(len(closes)):
         price = closes[i]
         ts = timestamps[i]
-        
-        # Check kitne 50-point completed bricks ban rahe hain
         diff = price - base_price
         
         if diff >= brick_size:
@@ -212,7 +232,7 @@ def compute_ha_ham_features(df_raw):
 df_15m_raw = fetch_binance_90_days_data(symbol='BTCUSDT', interval='15m', days=90)
 
 if df_15m_raw.empty:
-    st.error("🚨 Data Load Error from Binance API. Please refresh.")
+    st.error("🚨 Unable to load data from Binance API endpoints. If you are hosted on Streamlit Cloud, Binance might be blocking cloud server IPs. Try running locally or refreshing.")
     st.stop()
 
 # 1. Generate Completed 50-Point Renko Bricks
