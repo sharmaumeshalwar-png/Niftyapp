@@ -38,10 +38,6 @@ def compute_heikin_ashi(df_in):
     return df_ha
 
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.80):
-    """
-    Custom Kalman Filter with Adjustable Noise Measurement Variance (r_val).
-    Default set to r_val = 0.80 as requested.
-    """
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
     filtered_values = []
@@ -133,23 +129,35 @@ m15_volume = df_15m['Volume'].to_numpy().flatten()
 m15_close = df_15m['Close'].to_numpy().flatten()
 
 raw_energy = apply_e_mc_square_energy(m15_ham_raw, m15_volume, m15_close, window=20)
-
-# ⚛️ APPLYING KALMAN FILTER (R = 0.80) ON E=mc² OUTPUT
 df_15m['HA_HAM_Energy'] = apply_kalman_filter_custom(raw_energy, initial_p=1.0, q_val=0.001, r_val=0.80)
 df_15m['HA_HAM'] = df_15m['HA_HAM_Energy']
 
 # =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
+# ⚙️ SAFE ALIGNMENT USING MERGE_ASOF (PREVENTS EMPTY DATAFRAME)
 # =====================================================================
-df_15m_grid = df_15m.copy()
+df_15m_reset = df_15m.reset_index()
+df_1h_reset = df_1h[['HA_Close', 'HA_HAM']].reset_index()
 
-full_index = df_15m_grid.index.union(df_1h.index).sort_values()
-df_1h_reindexed = df_1h.reindex(full_index).ffill()
+df_1h_reset.rename(columns={
+    'HA_Close': '1H_HA_Close_Frozen',
+    'HA_HAM': 'HA_HAM_1H_Frozen'
+}, inplace=True)
 
-df_15m_grid['1H_HA_Close_Frozen'] = df_1h_reindexed['HA_Close'].reindex(df_15m_grid.index).ffill().bfill()
-df_15m_grid['HA_HAM_1H_Frozen'] = df_1h_reindexed['HA_HAM'].reindex(df_15m_grid.index).ffill().bfill()
-df_15m_grid['HA_HAM_1H_Prev'] = df_1h_reindexed['HA_HAM'].shift(1).reindex(df_15m_grid.index).ffill().bfill()
+df_1h_reset['HA_HAM_1H_Prev'] = df_1h_reset['HA_HAM_1H_Frozen'].shift(1)
 
+# Backward merge ensures 15M receives the latest closed 1H bar
+merged_df = pd.merge_asof(
+    df_15m_reset.sort_values('Datetime'),
+    df_1h_reset.sort_values('Datetime'),
+    on='Datetime',
+    direction='backward'
+)
+
+merged_df.set_index('Datetime', inplace=True)
+merged_df.ffill(inplace=True)
+merged_df.bfill(inplace=True)
+
+df_15m_grid = merged_df.copy()
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM_Energy']
 
 n = len(df_15m_grid)
@@ -187,8 +195,6 @@ for i in range(2, n):
         signals[i] = '🔴 ACCELERATED DROP'
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
-
-df_15m_grid.dropna(subset=['HA_HAM_Energy', 'HA_HAM_1H_Frozen', '1H_HA_Close_Frozen'], inplace=True)
 
 if df_15m_grid.empty:
     st.error("🚨 Filtered DataFrame is empty. Please check data source connection.")
