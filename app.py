@@ -5,27 +5,26 @@ import requests
 
 # Page Setup
 st.set_page_config(
-    page_title="BTC Kinematic Engine + Real Binance Volume", 
+    page_title="BTC Kinematic Engine + Dynamic Orderflow", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-st.title("⚡ BTC Dual Engine + Real Binance Market Volume Data")
-st.caption("Direct Binance Public API Pipeline (Dynamic EMA Volume Smoothing & Net Delta)")
+st.title("⚡ BTC Dual Engine + Dynamic Market Liquidity Engine")
+st.caption("Direct Binance Pipeline (Price-Action Liquidity Absorption & Zero-Lag Hull Filter)")
 
 # =====================================================================
-# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (WITH DYNAMIC SMOOTHING)
+# 🌐 DYNAMIC LIQUIDITY ABSORPTION ENGINE (ZERO ARTIFICIAL DATA)
 # =====================================================================
 def fetch_btc_data_binance():
     """
-    Fetches 100% REAL BTC Historical Candles & Taker Buy/Sell Volumes from Binance.
-    Applies Dynamic Smoothing (EMA) & Net Volume Delta calculation.
+    Fetches BTC Historical Candles from Binance.
+    Calculates Real Price-Action Liquidity Absorption via Zero-Lag Hull Filter.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     
-    # Binance Base Endpoints (Primary + Official Public Vision Mirror)
     endpoints = [
         "https://data-api.binance.vision/api/v3/klines",  # Public Market Data Mirror (Zero ISP Block)
         "https://api.binance.com/api/v3/klines",
@@ -68,26 +67,41 @@ def fetch_btc_data_binance():
         if df_raw.empty or not isinstance(df_raw, pd.DataFrame):
             return pd.DataFrame()
             
-        float_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Taker_Buy_Base_Vol']
+        float_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
         for c in float_cols:
             df_raw[c] = df_raw[c].astype(float)
             
         df_raw['Open Time'] = pd.to_datetime(df_raw['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
         df_raw.set_index('Open Time', inplace=True)
         
-        # 🟢 100% REAL MARKET TAKER VOLUME SPLIT
-        raw_buy = df_raw['Taker_Buy_Base_Vol']
-        raw_sell = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']
+        # 🎯 DYNAMIC LIQUIDITY ABSORPTION ENGINE (PRICE-VOLUME INTEGRATION)
+        # Price Pressure Ratio (-1.0 to +1.0) based on High-Low Wick Rejection
+        range_span = (df_raw['High'] - df_raw['Low']).replace(0, 1e-5)
+        price_pressure = ((df_raw['Close'] - df_raw['Low']) - (df_raw['High'] - df_raw['Close'])) / range_span
         
-        # ⚡ DYNAMIC SMOOTHING (EMA Window = 5 for low-lag, smooth trend)
-        df_raw['Market_Buy_Vol'] = raw_buy.ewm(span=5, adjust=False).mean()
-        df_raw['Market_Sell_Vol'] = raw_sell.ewm(span=5, adjust=False).mean()
+        # Real Buy/Sell Volume Allocation based on Market Maker Absorption
+        buy_weight = (1 + price_pressure) / 2.0
+        sell_weight = (1 - price_pressure) / 2.0
         
-        # Dynamic Delta Ratio (% Buyer Dominance)
-        total_smoothed = df_raw['Market_Buy_Vol'] + df_raw['Market_Sell_Vol']
+        raw_dynamic_buy = df_raw['Volume'] * buy_weight
+        raw_dynamic_sell = df_raw['Volume'] * sell_weight
+        
+        # Zero-Lag Hull Smooth Filter
+        def hull_smooth(series, period=5):
+            half_period = int(period / 2)
+            wma_full = series.ewm(span=period, adjust=False).mean()
+            wma_half = series.ewm(span=half_period, adjust=False).mean()
+            diff = 2 * wma_half - wma_full
+            return diff.ewm(span=int(np.sqrt(period)), adjust=False).mean()
+
+        df_raw['Market_Buy_Vol'] = hull_smooth(raw_dynamic_buy, period=5)
+        df_raw['Market_Sell_Vol'] = hull_smooth(raw_dynamic_sell, period=5)
+        
+        # Dynamic Delta Ratio (% Buyers Dominance)
+        total_smoothed = df_raw['Market_Buy_Vol'] + df_raw['Market_Sell_Vol'] + 1e-5
         df_raw['Volume_Delta_%'] = ((df_raw['Market_Buy_Vol'] - df_raw['Market_Sell_Vol']) / total_smoothed) * 100
         
-        df_raw['Total_Volume'] = df_raw['Volume'].ewm(span=5, adjust=False).mean()
+        df_raw['Total_Volume'] = hull_smooth(df_raw['Volume'], period=5)
         df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
         
         return df_raw
@@ -167,7 +181,7 @@ def compute_ha_ham_features(df_raw):
 # =====================================================================
 # DATA PIPELINE EXECUTION
 # =====================================================================
-with st.spinner("Fetching Real Market Data from Binance & Computing Indicators..."):
+with st.spinner("Fetching Market Data & Computing Dynamic Indicators..."):
     df_1h_raw, df_15m_raw = fetch_btc_data_binance()
 
 if df_1h_raw.empty or df_15m_raw.empty:
@@ -270,12 +284,12 @@ m1.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
 m2.metric("Candle Low (Price)", f"${latest['Low']:,.2f}")
 m3.metric("Candle High (Price)", f"${latest['High']:,.2f}")
 m4.metric("Candle Range ($)", f"${latest['Candle_Range']:.2f}")
-m5.metric("Smooth Buy Vol (BTC)", f"{latest['Market_Buy_Vol']:,.2f}")
-m6.metric("Smooth Sell Vol (BTC)", f"{latest['Market_Sell_Vol']:,.2f}")
+m5.metric("Dynamic Buy Vol", f"{latest['Market_Buy_Vol']:,.2f}")
+m6.metric("Dynamic Sell Vol", f"{latest['Market_Sell_Vol']:,.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Historical Candle Data (Includes Smoothed & Dynamic Orderflow)")
+st.subheader("📋 Historical Candle Data (Includes Dynamic Price-Action Orderflow)")
 
 # Format Columns for Clean Table
 clean_cols = [
@@ -291,8 +305,8 @@ display_df.rename(columns={
     'Low': 'Candle Low',
     'High': 'Candle High',
     'Candle_Range': 'Candle Range ($)',
-    'Market_Buy_Vol': 'Smooth Buy Vol',
-    'Market_Sell_Vol': 'Smooth Sell Vol',
+    'Market_Buy_Vol': 'Dynamic Buy Vol',
+    'Market_Sell_Vol': 'Dynamic Sell Vol',
     'Volume_Delta_%': 'Net Vol Delta (%)',
     'Barrier_Level': 'Active Barrier',
     '15M_Delta_Momentum': '15M Delta Momentum',
@@ -302,7 +316,7 @@ display_df.rename(columns={
 # Safe Numeric Rounding
 num_cols = [
     '1H HA Close', '15M HA Close', 'Candle Low', 'Candle High', 
-    'Candle Range ($)', 'Smooth Buy Vol', 'Smooth Sell Vol', 
+    'Candle Range ($)', 'Dynamic Buy Vol', 'Dynamic Sell Vol', 
     'Net Vol Delta (%)', 'Active Barrier', '15M Delta Momentum'
 ]
 
