@@ -10,17 +10,18 @@ st.title("⚡ BTC Dual Engine + Historical Candle Bid/Ask Data")
 st.caption("CoinGecko Public API Pipeline (Zero ISP/VPN Restrictions)")
 
 # =====================================================================
-# 🌐 COINGECKO / PUBLIC API ENGINE (NO BLOCKING)
+# 🌐 COINGECKO / PUBLIC API ENGINE (FREQ FORMAT FIXED)
 # =====================================================================
 def fetch_btc_data_coingecko():
     """
     Fetches BTC Historical Candles via CoinGecko & Derives Order Flow Bid/Ask Estimates.
+    Fixed Pandas frequency strings ('15min' & '1h').
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
-    # 1. Fetch OHLC (Daily/Intraday Granular Data)
+    # Fetch OHLC Data
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=30"
     
     try:
@@ -40,14 +41,14 @@ def fetch_btc_data_coingecko():
         df['Candle_Ask_Price'] = df['High']
         df['Candle_Spread'] = df['High'] - df['Low']
         
-        # Simulated Volume Split (50/50 Baseline + Volatility Momentum)
+        # Simulated Volume Split
         range_diff = (df['High'] - df['Low']) / df['Close']
-        df['Ask_Volume_Buy'] = round(100 * (1 + range_diff), 2)
-        df['Bid_Volume_Sell'] = round(100 * (1 - range_diff), 2)
+        df['Ask_Volume_Buy'] = np.round(100 * (1 + range_diff), 2)
+        df['Bid_Volume_Sell'] = np.round(100 * (1 - range_diff), 2)
         
-        # 1H & 15M Resampled Grid
+        # 1H & 15M Resampled Grid (Updated to Pandas-compatible frequency aliases)
         df_1h = df.resample('1h').interpolate(method='linear')
-        df_15m = df.resample('15m').interpolate(method='linear')
+        df_15m = df.resample('15min').interpolate(method='linear')
         
         return df_1h, df_15m
     except Exception as e:
