@@ -7,13 +7,27 @@ import yfinance as yf
 st.set_page_config(
     page_title="BTC HA Dual-Timeframe Kinematic Engine",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption(
     "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
     " HA-HAM update dynamically every 15 mins."
+)
+
+# Sidebar Threshold Control
+st.sidebar.header("⚙️ Engine Controls")
+score_threshold = st.sidebar.slider(
+    "Kinematic Score Trigger Threshold (|Score|):",
+    min_value=0.1,
+    max_value=5.0,
+    value=1.0,
+    step=0.1,
+    help=(
+        "Scores above +Threshold or below -Threshold indicate High Conviction"
+        " moves."
+    ),
 )
 
 
@@ -162,7 +176,7 @@ df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
 )
 
-# 🆕 NAYA COLUMN: (HAM 1H * HAM 15M) * (HAM Diff * Dynamic Delta) / 100000
+# NAYA COLUMN: Normalized by 100,000 (1 Lakh)
 df_15m_grid["Kinematic_Score"] = (
     (df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"])
     * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
@@ -175,6 +189,7 @@ m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
 
 ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
+score_vals = df_15m_grid["Kinematic_Score"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
 
@@ -182,23 +197,33 @@ for i in range(2, n):
   h1_curr = h1_curr_arr[i]
   h1_prev = h1_prev_arr[i]
   m15_curr = m15_curr_arr[i]
+  score = score_vals[i]
 
   is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-  # Case A: 1H Macro HAM is declining
-  if h1_curr > 0 and h1_curr < h1_prev:
-    if m15_curr < 0 or is_ha_red:
-      signals[i] = "🔴 REAL TOP (1H Drop + 15M Red)"
+  # 1 Lakh Base Decision Filtering Logic
+  if score >= score_threshold:
+    if h1_curr > h1_prev:
+      signals[i] = "🚀 HIGH CONVICTION BULLISH (Score > Threshold)"
     else:
-      signals[i] = "🟢 TRAP PASS (15M Bullish / Dip Buy)"
-
-  # Case B: 1H Macro HAM is recovering
+      signals[i] = "🟢 TRAP PASS / DIP BUY"
+  elif score <= -score_threshold:
+    if h1_curr < h1_prev:
+      signals[i] = "🔻 HIGH CONVICTION BEARISH (Score < -Threshold)"
+    else:
+      signals[i] = "🔴 TRAP PASS / FAKE RALLY"
+  elif h1_curr > 0 and h1_curr < h1_prev:
+    signals[i] = (
+        "🔴 REAL TOP (1H Drop)"
+        if (m15_curr < 0 or is_ha_red)
+        else "🟢 WEAK DIP BUY"
+    )
   elif h1_curr < 0 and h1_curr > h1_prev:
-    if m15_curr > 0 and not is_ha_red:
-      signals[i] = "🟢 REAL BOTTOM (1H Rise + 15M Green)"
-    else:
-      signals[i] = "🔴 TRAP PASS (15M Bearish / Fake Rally)"
-
+    signals[i] = (
+        "🟢 REAL BOTTOM (1H Rise)"
+        if (m15_curr > 0 and not is_ha_red)
+        else "🔴 WEAK FAKE RALLY"
+    )
   elif h1_curr > h1_prev and h1_curr > 0:
     signals[i] = "🟢 ACCELERATED RALLY"
   elif h1_curr < h1_prev and h1_curr < 0:
@@ -226,9 +251,9 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
   sig = latest["Instant_Kinematic_Signal"]
-  if "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
+  if "BULLISH" in sig or "RALLY" in sig or "REAL BOTTOM" in sig:
     st.success(f"### Live Signal ({latest_time})\n# {sig}")
-  elif "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig:
+  elif "BEARISH" in sig or "DROP" in sig or "REAL TOP" in sig:
     st.error(f"### Live Signal ({latest_time})\n# {sig}")
   else:
     st.warning(f"### Live Signal ({latest_time})\n# {sig}")
