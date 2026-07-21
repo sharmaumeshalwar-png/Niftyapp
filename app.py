@@ -5,6 +5,7 @@ import requests
 import time
 import yfinance as yf
 from datetime import datetime, timedelta
+import pytz
 
 # Page Configuration
 st.set_page_config(page_title="BTC Renko Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
@@ -13,24 +14,35 @@ st.title("⚡ BTC Renko 50-Point Dual Engine (1H Frozen + Renko Live Dynamic)")
 st.caption("Includes 90 Days Backtest Engine + Completed 50-Point Renko Bricks Invalidation Logic")
 
 # =====================================================================
-# 1. PURE CACHED DATA FETCHER (NO STREAMLIT UI INSIDE CACHE)
+# SIDEBAR REFRESH CONTROLS
 # =====================================================================
-@st.cache_data(ttl=300)
+st.sidebar.header("🔄 Live Sync Engine")
+if st.sidebar.button("⚡ Force Live Fetch Now"):
+    st.cache_data.clear()
+    st.rerun()
+
+st.sidebar.caption("Auto Refresh: Streamlit reloads on user action or cache expiry (TTL 120s).")
+
+# =====================================================================
+# 1. PURE CACHED DATA FETCHER WITH DYNAMIC TIME BOUNDARY
+# =====================================================================
+@st.cache_data(ttl=120)
 def fetch_btc_data_pure(days=90):
     sources = [
+        ("https://fapi.binance.com/fapi/v1/klines", "Binance Futures API"),
         ("https://data-api.binance.vision/api/v3/klines", "Binance Public Vision API"),
-        ("https://fapi.binance.com/fapi/v1/klines", "Binance Futures Public API"),
-        ("https://api.binance.us/api/v3/klines", "Binance US Data Endpoint")
+        ("https://api.binance.us/api/v3/klines", "Binance US Endpoint")
     ]
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
     }
     
-    now = datetime.utcnow()
-    start_dt = now - timedelta(days=days)
+    # Force alignment to Current UTC Time
+    now_utc = datetime.now(pytz.utc)
+    start_dt = now_utc - timedelta(days=days)
     start_time = int(start_dt.timestamp() * 1000)
-    end_time = int(now.timestamp() * 1000)
+    end_time = int(now_utc.timestamp() * 1000)
     
     for url, source_name in sources:
         try:
@@ -71,7 +83,7 @@ def fetch_btc_data_pure(days=90):
         except Exception:
             continue
 
-    # Fallback to Yahoo Finance Engine
+    # Yahoo Finance Fallback if Binance is completely blocked
     try:
         btc_yf = yf.Ticker("BTC-USD")
         df_yf = btc_yf.history(period="60d", interval="15m")
@@ -216,7 +228,8 @@ if df_15m_raw.empty:
     st.error("🚨 Market data load status: Failed. Click refresh to attempt new connection.")
     st.stop()
 else:
-    st.toast(f"✅ Loaded live market data via {data_source}", icon="⚡")
+    latest_candle_time = df_15m_raw.index[-1].strftime('%Y-%m-%d %H:%M IST')
+    st.toast(f"✅ Data Synced ({data_source}) | Latest Candle: {latest_candle_time}", icon="⚡")
 
 # Build Completed 50-Point Renko Bricks
 df_renko_raw = build_pure_renko_bricks(df_15m_raw, brick_size=50.0)
@@ -319,7 +332,7 @@ df_renko_grid['Barrier_Level'] = barrier_levels
 df_renko_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen'], inplace=True)
 
 latest = df_renko_grid.iloc[-1]
-latest_time = df_renko_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
+latest_renko_time = df_renko_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
 
 # =====================================================================
 # 📊 DISPLAY MATRIX
@@ -330,11 +343,11 @@ col_s1, col_s2 = st.columns([1, 2])
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
     if 'REAL BOTTOM' in sig or 'TRAP PASS (Renko Bullish' in sig or 'RALLY' in sig:
-        st.success(f"### Live Completed Renko Signal ({latest_time})\n# {sig}")
+        st.success(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
     elif 'REAL TOP' in sig or 'TRAP PASS (Renko Bearish' in sig or 'DROP' in sig:
-        st.error(f"### Live Completed Renko Signal ({latest_time})\n# {sig}")
+        st.error(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
     else:
-        st.warning(f"### Live Completed Renko Signal ({latest_time})\n# {sig}")
+        st.warning(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
 
 with col_s2:
     m1, m2, m3, m4, m5 = st.columns(5)
