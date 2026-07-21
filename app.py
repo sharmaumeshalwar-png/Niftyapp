@@ -11,12 +11,10 @@ st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption("Includes 90 Days Backtest Engine + Instant Level-Flip Invalidation Logic")
 
 # =====================================================================
-# 1. BULLETPROOF 90-DAY DATA FETCHER (REPLACES DIRECT BINANCE API)
+# 1. DATA FETCHER (90 DAYS VIA YFINANCE CHUNKS)
 # =====================================================================
 @st.cache_data(ttl=300)
 def load_market_data_90days():
-    # Chunk 1: Last 45 Days
-    # Chunk 2: 45 Days to 90 Days ago
     end_dt = datetime.utcnow()
     mid_dt = end_dt - timedelta(days=45)
     start_dt = end_dt - timedelta(days=90)
@@ -114,16 +112,15 @@ def compute_ha_ham_features(df_raw):
     return df_ha
 
 # =====================================================================
-# DATA INGESTION & DUAL TIMEFRAME RESAMPLING
+# DATA INGESTION & RESAMPLING
 # =====================================================================
-with st.spinner("Fetching Live 90-Days BTC Market Data..."):
+with st.spinner("Loading Market Data..."):
     df_15m_raw = load_market_data_90days()
 
 if df_15m_raw.empty:
-    st.error("🚨 Data Load Error. Please try refreshing after a moment.")
+    st.error("🚨 Data Load Error. Please try refreshing.")
     st.stop()
 
-# Build 1H Data directly from 15M Raw Data for Perfect Alignment
 df_1h_raw = df_15m_raw.resample('1h').agg({
     'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'
 }).dropna()
@@ -132,14 +129,13 @@ df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
 # =====================================================================
-# ⚙️ 1H FREEZE + LEVEL INVALIDATION FLIP ENGINE
+# ⚙️ EXACT ORIGINAL MATH + SIMPLE INVALIDATION FLIP
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
 df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
-
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
 
 n = len(df_15m_grid)
@@ -155,8 +151,8 @@ ha_low_vals = df_15m_grid['HA_Low'].to_numpy()
 signals = ['⚪ NEUTRAL'] * n
 barrier_levels = [None] * n
 
-active_state = None       # 'TOP' or 'BOTTOM'
-last_level = None         # Barrier Price
+active_state = None  # Tracks current state: 'TOP' or 'BOTTOM'
+last_level = None    # Tracks the exact level to watch for invalidation
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
@@ -170,44 +166,57 @@ for i in range(2, n):
     
     is_ha_red = ha_close < ha_open
 
-    # STEP 1: INSTANT LEVEL FLIP LOGIC
-    if active_state == 'TOP' and last_level is not None:
-        if ha_close > last_level:
-            active_state = 'BOTTOM'
-            last_level = ha_low
-            signals[i] = '🟢 REAL BOTTOM (Instant Flip / Level Break)'
-            barrier_levels[i] = last_level
-            continue
-
-    elif active_state == 'BOTTOM' and last_level is not None:
-        if ha_close < last_level:
-            active_state = 'TOP'
-            last_level = ha_high
-            signals[i] = '🔴 REAL TOP (Instant Flip / Level Break)'
-            barrier_levels[i] = last_level
-            continue
-
-    # STEP 2: BASE DUAL-TIMEFRAME ENGINE
+    # ----------------------------------------------------
+    # 1. BASE ORIGINAL SIGNAL EVALUATION
+    # ----------------------------------------------------
+    base_signal = '⚪ NEUTRAL'
+    
     if h1_curr > 0 and h1_curr < h1_prev:
         if m15_curr < 0 or is_ha_red:
-            signals[i] = '🔴 REAL TOP (1H Drop + 15M Red)'
-            active_state = 'TOP'
-            last_level = ha_high
+            base_signal = '🔴 REAL TOP (1H Drop + 15M Red)'
         else:
-            signals[i] = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
+            base_signal = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
             
     elif h1_curr < 0 and h1_curr > h1_prev:
         if m15_curr > 0 and not is_ha_red:
-            signals[i] = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
-            active_state = 'BOTTOM'
-            last_level = ha_low
+            base_signal = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
         else:
-            signals[i] = '🔴 TRAP PASS (15M Bearish / Fake Rally)'
+            base_signal = '🔴 TRAP PASS (15M Bearish / Fake Rally)'
             
     elif h1_curr > h1_prev and h1_curr > 0:
-        signals[i] = '🟢 ACCELERATED RALLY'
+        base_signal = '🟢 ACCELERATED RALLY'
     elif h1_curr < h1_prev and h1_curr < 0:
-        signals[i] = '🔴 ACCELERATED DROP'
+        base_signal = '🔴 ACCELERATED DROP'
+
+    # ----------------------------------------------------
+    # 2. STATE UPDATES AND INVALIDATION LOGIC
+    # ----------------------------------------------------
+    # Update state if original rules trigger a main setup
+    if 'REAL TOP' in base_signal:
+        active_state = 'TOP'
+        last_level = ha_high
+        signals[i] = base_signal
+
+    elif 'REAL BOTTOM' in base_signal:
+        active_state = 'BOTTOM'
+        last_level = ha_low
+        signals[i] = base_signal
+
+    # Check for Invalidation on existing active state
+    elif active_state == 'TOP' and last_level is not None and ha_close > last_level:
+        # Top Level broken upwards -> Flip decision to Real Bottom
+        active_state = 'BOTTOM'
+        last_level = ha_low
+        signals[i] = '🟢 REAL BOTTOM (Level Breakout Flip)'
+
+    elif active_state == 'BOTTOM' and last_level is not None and ha_close < last_level:
+        # Bottom Level broken downwards -> Flip decision to Real Top
+        active_state = 'TOP'
+        last_level = ha_high
+        signals[i] = '🔴 REAL TOP (Level Breakdown Flip)'
+
+    else:
+        signals[i] = base_signal
 
     barrier_levels[i] = last_level
 
@@ -220,16 +229,16 @@ latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
 
 # =====================================================================
-# 📊 DISPLAY MATRIX
+# DISPLAY UI
 # =====================================================================
 st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
-    if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
+    if 'REAL BOTTOM' in sig or 'RALLY' in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
-    elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
+    elif 'REAL TOP' in sig or 'DROP' in sig:
         st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
@@ -238,13 +247,12 @@ with col_s2:
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
-    m3.metric("Barrier Level", f"${latest['Barrier_Level']:,.2f}" if latest['Barrier_Level'] else "N/A")
+    m3.metric("Active Barrier", f"${latest['Barrier_Level']:,.2f}" if latest['Barrier_Level'] else "N/A")
     m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
+    m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
-
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline (90 Days Data)")
+st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
 clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'Barrier_Level', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
@@ -252,14 +260,14 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(columns={
     '1H_HA_Close_Frozen': '1H HA-Close',
     'HA_Close': '15M HA-Close',
-    'Barrier_Level': 'Barrier Level',
+    'Barrier_Level': 'Active Barrier',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM': '15M Live HA-HAM',
-    'HAM_Diff': 'HAM Diff (1H - 15M)',
+    'HAM_Diff': 'HAM Diff',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', 'Barrier Level', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)']:
+for c in ['1H HA-Close', '15M HA-Close', 'Active Barrier', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
