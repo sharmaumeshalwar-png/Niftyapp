@@ -4,27 +4,37 @@ import pandas as pd
 import requests
 
 # Page Setup
-st.set_page_config(page_title="BTC Kinematic Engine + Real Binance Volume", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="BTC Kinematic Engine + Real Binance Volume", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 st.title("⚡ BTC Dual Engine + Real Binance Market Volume Data")
 st.caption("Direct Binance Public API Pipeline (100% Real Taker Orderflow - Zero Synthetic Math)")
 
 # =====================================================================
-# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (100% REAL VOLUME SPLIT)
+# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (WITH FALLBACK MIRRORS)
 # =====================================================================
 def fetch_btc_data_binance():
     """
     Fetches 100% REAL BTC Historical Candles & Taker Buy/Sell Volumes from Binance.
+    Includes multi-endpoint fallback to bypass ISP/Geo-blocking seamlessly.
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     
-    url = "https://api.binance.com/api/v3/klines"
+    # Binance Base Endpoints (Primary + Official Public Vision Mirror)
+    endpoints = [
+        "https://data-api.binance.vision/api/v3/klines",  # Public Market Data Mirror (Zero ISP Block)
+        "https://api.binance.com/api/v3/klines",
+        "https://api1.binance.com/api/v3/klines",
+        "https://api2.binance.com/api/v3/klines",
+        "https://api3.binance.com/api/v3/klines"
+    ]
     
-    # 15M Interval Fetch (Limit 1000 candles)
     params_15m = {'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 1000}
-    # 1H Interval Fetch (Limit 500 candles)
     params_1h = {'symbol': 'BTCUSDT', 'interval': '1h', 'limit': 500}
     
     cols = [
@@ -33,39 +43,47 @@ def fetch_btc_data_binance():
         'Taker_Buy_Base_Vol', 'Taker_Buy_Quote_Vol', 'Ignore'
     ]
     
-    try:
-        # Fetch 15M Data
-        res_15m = requests.get(url, params=params_15m, headers=headers, timeout=10)
-        df_15m = pd.DataFrame(res_15m.json(), columns=cols)
-        
-        # Fetch 1H Data
-        res_1h = requests.get(url, params=params_1h, headers=headers, timeout=10)
-        df_1h = pd.DataFrame(res_1h.json(), columns=cols)
-        
-        def process_df(df_raw):
-            if df_raw.empty or not isinstance(df_raw, pd.DataFrame):
-                return pd.DataFrame()
-                
-            float_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Taker_Buy_Base_Vol']
-            for c in float_cols:
-                df_raw[c] = df_raw[c].astype(float)
-                
-            df_raw['Open Time'] = pd.to_datetime(df_raw['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
-            df_raw.set_index('Open Time', inplace=True)
+    res_15m_json = None
+    res_1h_json = None
+    
+    for url in endpoints:
+        try:
+            r15 = requests.get(url, params=params_15m, headers=headers, timeout=5)
+            r1 = requests.get(url, params=params_1h, headers=headers, timeout=5)
             
-            # 🟢 100% REAL MARKET TAKER VOLUME SPLIT
-            df_raw['Market_Buy_Vol'] = df_raw['Taker_Buy_Base_Vol']                         # Actual Market Buy Orders
-            df_raw['Market_Sell_Vol'] = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']     # Actual Market Sell Orders
-            df_raw['Total_Volume'] = df_raw['Volume']
-            df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
+            if r15.status_code == 200 and r1.status_code == 200:
+                res_15m_json = r15.json()
+                res_1h_json = r1.json()
+                break
+        except Exception:
+            continue
             
-            return df_raw
-
-        return process_df(df_1h), process_df(df_15m)
-
-    except Exception as e:
-        st.error(f"Error fetching Binance data: {e}")
+    if not res_15m_json or not res_1h_json:
         return pd.DataFrame(), pd.DataFrame()
+        
+    df_15m = pd.DataFrame(res_15m_json, columns=cols)
+    df_1h = pd.DataFrame(res_1h_json, columns=cols)
+    
+    def process_df(df_raw):
+        if df_raw.empty or not isinstance(df_raw, pd.DataFrame):
+            return pd.DataFrame()
+            
+        float_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Taker_Buy_Base_Vol']
+        for c in float_cols:
+            df_raw[c] = df_raw[c].astype(float)
+            
+        df_raw['Open Time'] = pd.to_datetime(df_raw['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
+        df_raw.set_index('Open Time', inplace=True)
+        
+        # 🟢 100% REAL MARKET TAKER VOLUME SPLIT
+        df_raw['Market_Buy_Vol'] = df_raw['Taker_Buy_Base_Vol']                         # Actual Market Buy Orders
+        df_raw['Market_Sell_Vol'] = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']     # Actual Market Sell Orders
+        df_raw['Total_Volume'] = df_raw['Volume']
+        df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
+        
+        return df_raw
+
+    return process_df(df_1h), process_df(df_15m)
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
@@ -272,7 +290,7 @@ display_df.rename(columns={
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-# Safe Numeric Rounding
+# Safe Numeric Rounding Fix (Prevents TypeError on None/NaNs)
 num_cols = [
     '1H HA Close', '15M HA Close', 'Candle Low', 'Candle High', 
     'Candle Range ($)', 'Real Buy Vol (BTC)', 'Real Sell Vol (BTC)', 
