@@ -10,7 +10,7 @@ st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close & HA-HAM update dynamically every 15 mins.")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
+# MATHEMATICAL ENGINES (HEIKIN-ASHI, KALMAN & ADAPTIVE FILTERS)
 # =====================================================================
 def compute_heikin_ashi(df_in):
     df_ha = df_in.copy()
@@ -67,6 +67,34 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
             
     return hurst_values
 
+def apply_dynamic_adaptive_filter(series, n=10, fastest=2, slowest=30):
+    """
+    Kaufman's Adaptive Moving Average (KAMA) Logic:
+    Dynamic sensitivity based on market Efficiency Ratio (ER).
+    Moves FAST during strong market shifts, stays SMOOTH during noise.
+    """
+    data = np.array(series, dtype=float)
+    size = len(data)
+    if size < n:
+        return data
+    
+    ama = np.zeros(size)
+    ama[:n] = data[:n]
+    
+    fastest_sc = 2 / (fastest + 1)
+    slowest_sc = 2 / (slowest + 1)
+    
+    for i in range(n, size):
+        change = abs(data[i] - data[i - n])
+        volatility = np.sum(np.abs(np.diff(data[i - n:i + 1])))
+        
+        er = change / volatility if volatility != 0 else 0
+        sc = (er * (fastest_sc - slowest_sc) + slowest_sc) ** 2
+        
+        ama[i] = ama[i - 1] + sc * (data[i] - ama[i - 1])
+        
+    return ama
+
 def compute_ha_ham_features(df_raw):
     df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha['HA_Close'].to_numpy().flatten()
@@ -116,11 +144,9 @@ df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.ind
 # HAM Difference Calculation
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
 
-# 🌟 NAYA FEATURE: HAM Difference पर 0.80 R-Value का Kalman Filter
+# ⚡ DYNAMIC ADAPTIVE FILTER (KAMA) ON HAM DIFF (No Kalman Lag)
 ham_diff_array = df_15m_grid['HAM_Diff'].to_numpy().flatten()
-df_15m_grid['HAM_Diff_Kalman'] = apply_kalman_filter_custom(
-    ham_diff_array, initial_p=1.0, q_val=0.0005, r_val=0.80
-)
+df_15m_grid['HAM_Diff_Adaptive'] = apply_dynamic_adaptive_filter(ham_diff_array, n=10, fastest=2, slowest=30)
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
@@ -186,16 +212,16 @@ with col_s2:
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
     m5.metric("HAM Diff Raw", f"{latest['HAM_Diff']:.2f}")
-    m6.metric("HAM Diff Kalman (0.80)", f"{latest['HAM_Diff_Kalman']:.2f}")
+    m6.metric("HAM Diff Dynamic", f"{latest['HAM_Diff_Adaptive']:.2f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with HAM Difference & Filtered HAM Diff Column
+# Table with HAM Difference & Adaptive Dynamic Column
 clean_cols = [
     '1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 
-    'HA_HAM', 'HAM_Diff', 'HAM_Diff_Kalman', 'Instant_Kinematic_Signal'
+    'HA_HAM', 'HAM_Diff', 'HAM_Diff_Adaptive', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
@@ -205,11 +231,11 @@ display_df.rename(columns={
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM': '15M Live HA-HAM',
     'HAM_Diff': 'HAM Diff (Raw)',
-    'HAM_Diff_Kalman': 'HAM Diff (Kalman 0.80)',
+    'HAM_Diff_Adaptive': 'HAM Diff (Dynamic)',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (Raw)', 'HAM Diff (Kalman 0.80)']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (Raw)', 'HAM Diff (Dynamic)']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
