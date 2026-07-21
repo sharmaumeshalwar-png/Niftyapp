@@ -7,27 +7,13 @@ import yfinance as yf
 st.set_page_config(
     page_title="BTC HA Dual-Timeframe Kinematic Engine",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption(
     "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
     " HA-HAM update dynamically every 15 mins."
-)
-
-# Sidebar Threshold Control
-st.sidebar.header("⚙️ Engine Controls")
-score_threshold = st.sidebar.slider(
-    "Kinematic Score Trigger Threshold (|Score|):",
-    min_value=0.1,
-    max_value=5.0,
-    value=1.0,
-    step=0.1,
-    help=(
-        "Scores above +Threshold or below -Threshold indicate High Conviction"
-        " moves."
-    ),
 )
 
 
@@ -168,7 +154,7 @@ df_15m_grid["HAM_Diff"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
 )
 
-# FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
+# EXACT FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
 df_15m_grid["HA_Close_Diff_15M"] = (
     df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
 )
@@ -176,7 +162,7 @@ df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
 )
 
-# NAYA COLUMN: Normalized by 100,000 (1 Lakh)
+# Scaled Kinematic Score (/ 100,000)
 df_15m_grid["Kinematic_Score"] = (
     (df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"])
     * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
@@ -189,7 +175,6 @@ m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
 
 ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
-score_vals = df_15m_grid["Kinematic_Score"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
 
@@ -197,32 +182,21 @@ for i in range(2, n):
   h1_curr = h1_curr_arr[i]
   h1_prev = h1_prev_arr[i]
   m15_curr = m15_curr_arr[i]
-  score = score_vals[i]
 
   is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-  # 1 Lakh Base Decision Filtering Logic
-  if score >= score_threshold:
-    if h1_curr > h1_prev:
-      signals[i] = "🚀 HIGH CONVICTION BULLISH (Score > Threshold)"
-    else:
-      signals[i] = "🟢 TRAP PASS / DIP BUY"
-  elif score <= -score_threshold:
-    if h1_curr < h1_prev:
-      signals[i] = "🔻 HIGH CONVICTION BEARISH (Score < -Threshold)"
-    else:
-      signals[i] = "🔴 TRAP PASS / FAKE RALLY"
-  elif h1_curr > 0 and h1_curr < h1_prev:
+  # Signal Classification
+  if h1_curr > 0 and h1_curr < h1_prev:
     signals[i] = (
-        "🔴 REAL TOP (1H Drop)"
+        "🔴 REAL TOP (1H Drop + 15M Red)"
         if (m15_curr < 0 or is_ha_red)
-        else "🟢 WEAK DIP BUY"
+        else "🟢 TRAP PASS (15M Bullish / Dip Buy)"
     )
   elif h1_curr < 0 and h1_curr > h1_prev:
     signals[i] = (
-        "🟢 REAL BOTTOM (1H Rise)"
+        "🟢 REAL BOTTOM (1H Rise + 15M Green)"
         if (m15_curr > 0 and not is_ha_red)
-        else "🔴 WEAK FAKE RALLY"
+        else "🔴 TRAP PASS (15M Bearish / Fake Rally)"
     )
   elif h1_curr > h1_prev and h1_curr > 0:
     signals[i] = "🟢 ACCELERATED RALLY"
@@ -251,9 +225,9 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
   sig = latest["Instant_Kinematic_Signal"]
-  if "BULLISH" in sig or "RALLY" in sig or "REAL BOTTOM" in sig:
+  if "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
     st.success(f"### Live Signal ({latest_time})\n# {sig}")
-  elif "BEARISH" in sig or "DROP" in sig or "REAL TOP" in sig:
+  elif "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig:
     st.error(f"### Live Signal ({latest_time})\n# {sig}")
   else:
     st.warning(f"### Live Signal ({latest_time})\n# {sig}")
@@ -266,13 +240,13 @@ with col_s2:
   m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
   m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
   m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
-  m7.metric("Kinematic Score", f"{latest['Kinematic_Score']:.4f}")
+  m7.metric("Kinematic Score", f"{latest['Kinematic_Score']:.3f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with updated columns
+# Table display
 clean_cols = [
     "1H_HA_Close_Frozen",
     "HA_Close",
@@ -306,9 +280,11 @@ for c in [
     "15M Live HA-HAM",
     "HAM Diff (1H - 15M)",
     "15M Delta Momentum",
-    "Kinematic Score",
 ]:
-  display_df[c] = display_df[c].round(4)
+  display_df[c] = display_df[c].round(2)
+
+# Strictly 3 digits for Kinematic Score
+display_df["Kinematic Score"] = display_df["Kinematic Score"].round(3)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
