@@ -6,11 +6,11 @@ import yfinance as yf
 # Page Configuration
 st.set_page_config(page_title="BTC HA Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
-st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close & Adaptive Dynamic HA-HAM update every 15 mins.")
+st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Relativistic E=mc² HAM)")
+st.caption("1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-HAM uses Physics Energy Equivalence (E = m * c²).")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (HEIKIN-ASHI, KALMAN & ADAPTIVE FILTERS)
+# MATHEMATICAL ENGINES (HEIKIN-ASHI, KALMAN & RELATIVISTIC ENERGY)
 # =====================================================================
 def compute_heikin_ashi(df_in):
     df_ha = df_in.copy()
@@ -67,33 +67,29 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
             
     return hurst_values
 
-def apply_dynamic_adaptive_filter(series, n=10, fastest=2, slowest=30):
+def apply_e_mc_square_energy(ham_raw, volume_series, close_series, window=20):
     """
-    Kaufman's Adaptive Moving Average (KAMA) Logic:
-    Dynamic sensitivity based on market Efficiency Ratio (ER).
-    Moves FAST during strong market shifts, stays SMOOTH during noise.
+    Applies E = m * c^2 Mass-Energy Equivalence:
+    - Mass (m): Normalized Relative Volume Ratio
+    - Speed of Light Constant (c): Realized Price Velocity / Volatility Ratio
+    - Energy (E): Relativistic Amplified Momentum Output
     """
-    data = np.array(series, dtype=float)
-    size = len(data)
-    if size < n:
-        return data
+    vol = np.array(volume_series, dtype=float)
+    price = np.array(close_series, dtype=float)
+    ham = np.array(ham_raw, dtype=float)
     
-    ama = np.zeros(size)
-    ama[:n] = data[:n]
+    vol_sma = pd.Series(vol).rolling(window=window, min_periods=1).mean().to_numpy()
+    mass_m = np.where(vol_sma > 0, vol / vol_sma, 1.0)
+    mass_m = np.clip(mass_m, 0.5, 3.0)  # Capped Mass bounds
     
-    fastest_sc = 2 / (fastest + 1)
-    slowest_sc = 2 / (slowest + 1)
+    price_returns = pd.Series(price).pct_change().fillna(0.0).to_numpy()
+    volatility_c = pd.Series(price_returns).rolling(window=window, min_periods=1).std().to_numpy()
+    norm_c = volatility_c / (np.mean(volatility_c) + 1e-8)
+    norm_c = np.clip(norm_c, 0.5, 2.5)
     
-    for i in range(n, size):
-        change = abs(data[i] - data[i - n])
-        volatility = np.sum(np.abs(np.diff(data[i - n:i + 1])))
-        
-        er = change / volatility if volatility != 0 else 0
-        sc = (er * (fastest_sc - slowest_sc) + slowest_sc) ** 2
-        
-        ama[i] = ama[i - 1] + sc * (data[i] - ama[i - 1])
-        
-    return ama
+    # E = m * c^2 Physics Momentum Transformation
+    energy_e = ham * mass_m * (norm_c ** 2)
+    return energy_e
 
 def compute_ha_ham_features(df_raw):
     df_ha = compute_heikin_ashi(df_raw)
@@ -118,7 +114,7 @@ with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
         for d in [df_1h_raw, df_15m_raw]:
             if isinstance(d.columns, pd.MultiIndex):
                 d.columns = d.columns.get_level_values(0)
-            d.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
+            d.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
             if d.index.tz is None:
                 d.index = d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
             else:
@@ -131,13 +127,16 @@ with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
-# 1H uses raw calculated HAM for frozen macro base
+# 1H Macro HAM
 df_1h['HA_HAM'] = df_1h['HA_HAM_Raw']
 
-# ⚡ APPLY DYNAMIC ADAPTIVE FILTER (KAMA) DIRECTLY TO 15M HAM
+# ⚛️ APPLY E = mc² TRANSFORM DIRECTLY TO 15M HAM (KAMA REPLACED)
 m15_ham_raw = df_15m['HA_HAM_Raw'].to_numpy().flatten()
-df_15m['HA_HAM_Dynamic'] = apply_dynamic_adaptive_filter(m15_ham_raw, n=10, fastest=2, slowest=30)
-df_15m['HA_HAM'] = df_15m['HA_HAM_Dynamic']  # Main 15M HAM now uses Dynamic Filter
+m15_volume = df_15m['Volume'].to_numpy().flatten()
+m15_close = df_15m['Close'].to_numpy().flatten()
+
+df_15m['HA_HAM_Energy'] = apply_e_mc_square_energy(m15_ham_raw, m15_volume, m15_close, window=20)
+df_15m['HA_HAM'] = df_15m['HA_HAM_Energy']
 
 # =====================================================================
 # ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
@@ -149,13 +148,13 @@ df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index,
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
-# HAM Difference: (1H Locked HA-HAM) minus (15M Live Dynamic HA-HAM)
-df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM_Dynamic']
+# HAM Difference
+df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM_Energy']
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
 h1_prev_arr = df_15m_grid['HA_HAM_1H_Prev'].to_numpy()
-m15_curr_arr = df_15m_grid['HA_HAM_Dynamic'].to_numpy()
+m15_curr_arr = df_15m_grid['HA_HAM_Energy'].to_numpy()
 
 ha_close_vals = df_15m_grid['HA_Close'].to_numpy()
 ha_open_vals = df_15m_grid['HA_Open'].to_numpy()
@@ -189,7 +188,7 @@ for i in range(2, n):
         signals[i] = '🔴 ACCELERATED DROP'
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
-df_15m_grid.dropna(subset=['HA_HAM_Dynamic', 'HA_HAM_1H_Frozen'], inplace=True)
+df_15m_grid.dropna(subset=['HA_HAM_Energy', 'HA_HAM_1H_Frozen'], inplace=True)
 
 latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
@@ -215,17 +214,17 @@ with col_s2:
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Raw HAM", f"{latest['HA_HAM_Raw']:.2f}")
-    m5.metric("15M Dynamic HAM", f"{latest['HA_HAM_Dynamic']:.2f}")
+    m5.metric("15M E=mc² HAM", f"{latest['HA_HAM_Energy']:.2f}")
     m6.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with Raw vs Dynamic 15M HAM Columns
+# Table Output
 clean_cols = [
     '1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 
-    'HA_HAM_Raw', 'HA_HAM_Dynamic', 'HAM_Diff', 'Instant_Kinematic_Signal'
+    'HA_HAM_Raw', 'HA_HAM_Energy', 'HAM_Diff', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
@@ -234,12 +233,12 @@ display_df.rename(columns={
     'HA_Close': '15M HA-Close',
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM_Raw': '15M Raw HAM',
-    'HA_HAM_Dynamic': '15M Dynamic HAM',
+    'HA_HAM_Energy': '15M E=mc² HAM',
     'HAM_Diff': 'HAM Diff (1H - 15M)',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Raw HAM', '15M Dynamic HAM', 'HAM Diff (1H - 15M)']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Raw HAM', '15M E=mc² HAM', 'HAM Diff (1H - 15M)']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
