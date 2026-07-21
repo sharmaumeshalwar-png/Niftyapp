@@ -1,42 +1,58 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import requests
 
-# Page Configuration
-st.set_page_config(page_title="BTC HA Dynamic Engine + Futures Bid/Ask", layout="wide", initial_sidebar_state="collapsed")
+# Page Setup
+st.set_page_config(page_title="BTC Binance Kinematic Engine + Bid-Ask Candles", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Dynamic) + Live Futures Order Book")
-st.caption("Includes Real-Time BTC Perpetual Futures Bid/Ask Depth + Level Invalidation Logic")
+st.title("⚡ BTC Binance Dual Engine + Historical Candle Bid/Ask Data")
+st.caption("100% Pure Binance REST API Pipeline (No Yahoo Finance Limits)")
 
 # =====================================================================
-# 🌐 LIVE BTC FUTURES BID / ASK FETCHING ENGINE (Binance Public API)
+# 🌐 BINANCE API DATA ENGINE (OHLCV + HISTORICAL BID/ASK)
 # =====================================================================
-def fetch_btc_futures_bid_ask():
+def fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=200):
     """
-    Fetches Live BTCUSDT Perpetual Futures Order Book Depth (Bid / Ask Prices and Quantities)
+    Fetches Binance Futures Historical Candlesticks along with 
+    Taker Buy/Sell Volumes to derive Bid/Ask dynamics.
     """
+    url = "https://fapi.binance.com/fapi/v1/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    
     try:
-        url = "https://fapi.binance.com/fapi/v1/depth"
-        params = {"symbol": "BTCUSDT", "limit": 5}
-        response = requests.get(url, timeout=3)
+        response = requests.get(url, timeout=5)
         data = response.json()
         
-        bids = data.get('bids', []) # [[price, qty], ...]
-        asks = data.get('asks', []) # [[price, qty], ...]
+        cols = [
+            'Open Time', 'Open', 'High', 'Low', 'Close', 'Volume',
+            'Close Time', 'Quote Volume', 'Trades', 'Taker Buy Base Vol',
+            'Taker Buy Quote Vol', 'Ignore'
+        ]
+        df = pd.DataFrame(data, columns=cols)
         
-        df_bids = pd.DataFrame(bids, columns=['Bid Price', 'Bid Size (BTC)']).astype(float)
-        df_asks = pd.DataFrame(asks, columns=['Ask Price', 'Ask Size (BTC)']).astype(float)
+        # Datatype Conversions
+        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Taker Buy Base Vol']
+        df[numeric_cols] = df[numeric_cols].astype(float)
         
-        # Calculate Bid-Ask Spread
-        best_bid = df_bids['Bid Price'].iloc[0] if len(df_bids) > 0 else 0
-        best_ask = df_asks['Ask Price'].iloc[0] if len(df_asks) > 0 else 0
-        spread = best_ask - best_bid
+        df['Open Time'] = pd.to_datetime(df['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
+        df.set_index('Open Time', inplace=True)
         
-        return df_bids, df_asks, best_bid, best_ask, spread
+        # Historical Candle Bid-Ask Estimation via Order Flow
+        # Low = Best Available Bid Hit, High = Best Available Ask Cleared
+        df['Candle_Bid_Price'] = df['Low']
+        df['Candle_Ask_Price'] = df['High']
+        df['Candle_Spread'] = df['High'] - df['Low']
+        
+        # Taker Buy Volume = Market Buy Orders hitting Ask
+        # Taker Sell Volume = Market Sell Orders hitting Bid
+        df['Ask_Volume_Buy'] = df['Taker Buy Base Vol']
+        df['Bid_Volume_Sell'] = df['Volume'] - df['Taker Buy Base Vol']
+        
+        return df
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, 0.0
+        st.error(f"Error fetching Binance data: {e}")
+        return pd.DataFrame()
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
@@ -109,53 +125,31 @@ def compute_ha_ham_features(df_raw):
     return df_ha
 
 # =====================================================================
-# DATA INGESTION
+# DATA PIPELINE EXECUTION
 # =====================================================================
-@st.cache_data(ttl=60)
-def load_market_data():
-    df_1h_raw = yf.download(tickers="BTC-USD", period="60d", interval="1h", progress=False)
-    df_15m_raw = yf.download(tickers="BTC-USD", period="14d", interval="15m", progress=False)
-    
-    for d in [df_1h_raw, df_15m_raw]:
-        if isinstance(d.columns, pd.MultiIndex):
-            d.columns = d.columns.get_level_values(0)
-        d.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
-        if d.index.tz is None:
-            d.index = d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-        else:
-            d.index = d.index.tz_convert('Asia/Kolkata')
-            
-    return df_1h_raw, df_15m_raw
+with st.spinner("Fetching Binance Futures OHLCV + Candle Bid/Ask Data..."):
+    df_1h_raw = fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=300)
+    df_15m_raw = fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=300)
 
-with st.spinner("Fetching Live 1-Hour, 15-Minute & Futures Bid/Ask Data..."):
-    try:
-        df_1h_raw, df_15m_raw = load_market_data()
-        df_bids, df_asks, best_bid, best_ask, spread = fetch_btc_futures_bid_ask()
-    except Exception as e:
-        st.error(f"🚨 Data Fetching Error: {e}")
-        st.stop()
+if df_1h_raw.empty or df_15m_raw.empty:
+    st.error("Failed to load Binance market data.")
+    st.stop()
 
-# Compute Heikin-Ashi & HAM Features
+# Compute Features
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
-# =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT & INVALIDATION ENGINE
-# =====================================================================
+# Forward Fill 1-Hour Signals on 15M Grid
 df_15m_grid = df_15m.copy()
-
-# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
 df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
 df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
-# HAM Difference
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
-
-# Delta Momentum
 df_15m_grid['HA_Close_Diff_15M'] = df_15m_grid['HA_Close'] - df_15m_grid['HA_Close'].shift(1)
 df_15m_grid['15M_Delta_Momentum'] = df_15m_grid['HA_Close_Diff_15M'] * df_15m_grid['HA_HAM']
 
+# Kinematic State Engine
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
 h1_prev_arr = df_15m_grid['HA_HAM_1H_Prev'].to_numpy()
@@ -169,8 +163,8 @@ ha_low_vals = df_15m_grid['HA_Low'].to_numpy()
 signals = ['⚪ NEUTRAL'] * n
 barrier_levels = [None] * n
 
-active_state = None  # Tracks 'TOP' or 'BOTTOM'
-last_level = None    # Level to watch for invalidation
+active_state = None
+last_level = None
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
@@ -183,48 +177,26 @@ for i in range(2, n):
     ha_low = ha_low_vals[i]
     
     is_ha_red = ha_close < ha_open
-
-    # Base Strategy Signal Evaluation
     base_signal = '⚪ NEUTRAL'
     
     if h1_curr > 0 and h1_curr < h1_prev:
-        if m15_curr < 0 or is_ha_red:
-            base_signal = '🔴 REAL TOP (1H Drop + 15M Red)'
-        else:
-            base_signal = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
-            
+        base_signal = '🔴 REAL TOP (1H Drop + 15M Red)' if (m15_curr < 0 or is_ha_red) else '🟢 TRAP PASS (15M Bullish)'
     elif h1_curr < 0 and h1_curr > h1_prev:
-        if m15_curr > 0 and not is_ha_red:
-            base_signal = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
-        else:
-            base_signal = '🔴 TRAP PASS (15M Bearish / Fake Rally)'
-            
+        base_signal = '🟢 REAL BOTTOM (1H Rise + 15M Green)' if (m15_curr > 0 and not is_ha_red) else '🔴 TRAP PASS (15M Bearish)'
     elif h1_curr > h1_prev and h1_curr > 0:
         base_signal = '🟢 ACCELERATED RALLY'
     elif h1_curr < h1_prev and h1_curr < 0:
         base_signal = '🔴 ACCELERATED DROP'
 
-    # State & Invalidation Flip Logic
+    # Invalidation Flip Logic
     if 'REAL TOP' in base_signal:
-        active_state = 'TOP'
-        last_level = ha_high
-        signals[i] = base_signal
-
+        active_state, last_level, signals[i] = 'TOP', ha_high, base_signal
     elif 'REAL BOTTOM' in base_signal:
-        active_state = 'BOTTOM'
-        last_level = ha_low
-        signals[i] = base_signal
-
+        active_state, last_level, signals[i] = 'BOTTOM', ha_low, base_signal
     elif active_state == 'TOP' and last_level is not None and ha_close > last_level:
-        active_state = 'BOTTOM'
-        last_level = ha_low
-        signals[i] = '🟢 REAL BOTTOM (Level Breakout Flip)'
-
+        active_state, last_level, signals[i] = 'BOTTOM', ha_low, '🟢 REAL BOTTOM (Breakout Flip)'
     elif active_state == 'BOTTOM' and last_level is not None and ha_close < last_level:
-        active_state = 'TOP'
-        last_level = ha_high
-        signals[i] = '🔴 REAL TOP (Level Breakdown Flip)'
-
+        active_state, last_level, signals[i] = 'TOP', ha_high, '🔴 REAL TOP (Breakdown Flip)'
     else:
         signals[i] = base_signal
 
@@ -233,71 +205,50 @@ for i in range(2, n):
 df_15m_grid['Instant_Kinematic_Signal'] = signals
 df_15m_grid['Barrier_Level'] = barrier_levels
 
-df_15m_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen', '15M_Delta_Momentum'], inplace=True)
-
+df_15m_grid.dropna(subset=['HA_HAM', '15M_Delta_Momentum'], inplace=True)
 latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
 
 # =====================================================================
-# 📊 DISPLAY MATRIX & LIVE FUTURES BID / ASK BOOK
+# 📊 METRICS & TABLE DISPLAY
 # =====================================================================
 st.markdown("---")
-
-# Metrics Display
 m1, m2, m3, m4, m5, m6 = st.columns(6)
-m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
-m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
-m3.metric("Futures Best Bid", f"${best_bid:,.2f}" if best_bid else "N/A")
-m4.metric("Futures Best Ask", f"${best_ask:,.2f}" if best_ask else "N/A")
-m5.metric("Bid-Ask Spread", f"${spread:.2f}")
-m6.metric("Active Barrier Level", f"${latest['Barrier_Level']:,.2f}" if latest['Barrier_Level'] else "N/A")
+m1.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
+m2.metric("Candle Bid Price", f"${latest['Candle_Bid_Price']:,.2f}")
+m3.metric("Candle Ask Price", f"${latest['Candle_Ask_Price']:,.2f}")
+m4.metric("Candle Spread", f"${latest['Candle_Spread']:.2f}")
+m5.metric("Buy Vol (Ask Hits)", f"{latest['Ask_Volume_Buy']:.2f} BTC")
+m6.metric("Sell Vol (Bid Hits)", f"{latest['Bid_Volume_Sell']:.2f} BTC")
 
 st.markdown("---")
 
-col_sig, col_depth = st.columns([1.2, 1])
+st.subheader("📋 Binance Historical Candle Data (Includes Bid, Ask, Spread & Volume Split)")
 
-with col_sig:
-    sig = latest['Instant_Kinematic_Signal']
-    if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
-        st.success(f"### Live Signal ({latest_time})\n# {sig}")
-    elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
-        st.error(f"### Live Signal ({latest_time})\n# {sig}")
-    else:
-        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
-
-with col_depth:
-    st.subheader("📖 BTC Perpetual Futures Order Book (Depth Top 5)")
-    col_b, col_a = st.columns(2)
-    with col_b:
-        st.markdown("**🟢 Bids (Buy Orders)**")
-        st.dataframe(df_bids, use_container_width=True, height=200)
-    with col_a:
-        st.markdown("**🔴 Asks (Sell Orders)**")
-        st.dataframe(df_asks, use_container_width=True, height=200)
-
-st.markdown("---")
-
-# Full Timeline Dataframe
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
-
-clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'Barrier_Level', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', '15M_Delta_Momentum', 'Instant_Kinematic_Signal']
+# Format Columns for Clean Table
+clean_cols = [
+    'HA_Close', 'Candle_Bid_Price', 'Candle_Ask_Price', 'Candle_Spread', 
+    'Ask_Volume_Buy', 'Bid_Volume_Sell', 'Barrier_Level', 
+    '15M_Delta_Momentum', 'Instant_Kinematic_Signal'
+]
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
-    '1H_HA_Close_Frozen': '1H HA-Close',
-    'HA_Close': '15M HA-Close',
-    'Barrier_Level': 'Active Barrier Level',
-    'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
-    'HA_HAM': '15M Live HA-HAM',
-    'HAM_Diff': 'HAM Diff (1H - 15M)',
+    'HA_Close': '15M HA Close',
+    'Candle_Bid_Price': 'Candle Min Bid',
+    'Candle_Ask_Price': 'Candle Max Ask',
+    'Candle_Spread': 'Candle Range/Spread',
+    'Ask_Volume_Buy': 'Market Buy Vol (BTC)',
+    'Bid_Volume_Sell': 'Market Sell Vol (BTC)',
+    'Barrier_Level': 'Active Barrier',
     '15M_Delta_Momentum': '15M Delta Momentum',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', 'Active Barrier Level', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)', '15M Delta Momentum']:
-    display_df[c] = display_df[c].round(2)
+for col in ['15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 'Candle Range/Spread', 'Market Buy Vol (BTC)', 'Market Sell Vol (BTC)', 'Active Barrier', '15M_Delta_Momentum']:
+    display_df[col] = display_df[col].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-st.dataframe(display_df, use_container_width=True, height=600)
+st.dataframe(display_df, use_container_width=True, height=650)
