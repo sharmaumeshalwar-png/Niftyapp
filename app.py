@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 import pytz
 
 # Page Configuration
-st.set_page_config(page_title="BTC Renko Dual-Timeframe Kinematic Engine", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BTC Pure Renko 50-Point Engine", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Renko 50-Point Dual Engine (1H Frozen + Renko Live Dynamic)")
-st.caption("Includes 90 Days Backtest Engine + Completed 50-Point Renko Bricks Invalidation Logic")
+st.title("⚡ BTC Pure 50-Point Renko + 1H Trend Engine")
+st.caption("Exact 50-Point Step Renko Bricks with 1H Kinematic Trend Filter")
 
 # =====================================================================
 # SIDEBAR REFRESH CONTROLS
@@ -24,7 +24,7 @@ if st.sidebar.button("⚡ Force Live Fetch Now"):
 st.sidebar.caption("Auto Refresh: Streamlit reloads on user action or cache expiry (TTL 120s).")
 
 # =====================================================================
-# 1. PURE CACHED DATA FETCHER WITH DYNAMIC TIME BOUNDARY
+# 1. DATA FETCHER WITH DYNAMIC TIME BOUNDARY
 # =====================================================================
 @st.cache_data(ttl=120)
 def fetch_btc_data_pure(days=90):
@@ -38,7 +38,6 @@ def fetch_btc_data_pure(days=90):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
     }
     
-    # Force alignment to Current UTC Time
     now_utc = datetime.now(pytz.utc)
     start_dt = now_utc - timedelta(days=days)
     start_time = int(start_dt.timestamp() * 1000)
@@ -83,7 +82,7 @@ def fetch_btc_data_pure(days=90):
         except Exception:
             continue
 
-    # Yahoo Finance Fallback if Binance is completely blocked
+    # Fallback to Yahoo Finance
     try:
         btc_yf = yf.Ticker("BTC-USD")
         df_yf = btc_yf.history(period="60d", interval="15m")
@@ -97,7 +96,7 @@ def fetch_btc_data_pure(days=90):
     return pd.DataFrame(), "None"
 
 # =====================================================================
-# 2. RENKO BRICK BUILDER (STRICT 50-POINT COMPLETED BRICKS ONLY)
+# 2. PURE 50-POINT RENKO BRICK BUILDER (NO HA DISTORTION)
 # =====================================================================
 def build_pure_renko_bricks(df_in, brick_size=50.0):
     closes = df_in['Close'].to_numpy()
@@ -150,33 +149,8 @@ def build_pure_renko_bricks(df_in, brick_size=50.0):
     return df_renko
 
 # =====================================================================
-# 3. MATHEMATICAL ENGINES (HEIKIN-ASHI ON RENKO, KALMAN & HURST)
+# 3. KINEMATIC INDICATOR ENGINES (1H MOMENTUM & FILTERS)
 # =====================================================================
-def compute_heikin_ashi(df_in):
-    df_ha = df_in.copy()
-    
-    op = df_ha['Open'].to_numpy().flatten()
-    hi = df_ha['High'].to_numpy().flatten()
-    lo = df_ha['Low'].to_numpy().flatten()
-    cl = df_ha['Close'].to_numpy().flatten()
-    
-    ha_close = (op + hi + lo + cl) / 4.0
-    ha_open = np.zeros(len(df_in))
-    ha_open[0] = (op[0] + cl[0]) / 2.0
-    
-    for i in range(1, len(df_in)):
-        ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
-        
-    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
-    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
-    
-    df_ha['HA_Open'] = ha_open
-    df_ha['HA_High'] = ha_high
-    df_ha['HA_Low'] = ha_low
-    df_ha['HA_Close'] = ha_close
-    
-    return df_ha
-
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0: return []
     x, p = data_array[0], initial_p  
@@ -207,20 +181,21 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
             
     return hurst_values
 
-def compute_ha_ham_features(df_raw):
-    df_ha = compute_heikin_ashi(df_raw)
-    ha_close = df_ha['HA_Close'].to_numpy().flatten()
+def compute_kinematic_momentum(df_raw):
+    df_out = df_raw.copy()
+    closes = df_out['Close'].to_numpy()
     
-    df_ha['Hurst'] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    kalman = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
-    momentum = apply_kalman_filter_custom(ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1)
+    hurst = calculate_rolling_hurst_leak_free(closes, window=30)
+    kalman = apply_kalman_filter_custom(closes, initial_p=50.0, q_val=0.0005, r_val=0.2)
+    momentum = apply_kalman_filter_custom(closes - kalman, initial_p=0.50, q_val=0.001, r_val=0.1)
     
-    df_ha['Kalman_Price'] = kalman
-    df_ha['HA_HAM'] = np.array(momentum) * (df_ha['Hurst'].to_numpy() * 2.0)
-    return df_ha
+    df_out['Hurst'] = hurst
+    df_out['Kalman_Price'] = kalman
+    df_out['Kinematic_HAM'] = np.array(momentum) * (hurst * 2.0)
+    return df_out
 
 # =====================================================================
-# DATA INGESTION & UI NOTIFICATION
+# DATA INGESTION
 # =====================================================================
 df_15m_raw, data_source = fetch_btc_data_pure(days=90)
 
@@ -231,93 +206,86 @@ else:
     latest_candle_time = df_15m_raw.index[-1].strftime('%Y-%m-%d %H:%M IST')
     st.toast(f"✅ Data Synced ({data_source}) | Latest Candle: {latest_candle_time}", icon="⚡")
 
-# Build Completed 50-Point Renko Bricks
-df_renko_raw = build_pure_renko_bricks(df_15m_raw, brick_size=50.0)
+# Build Pure 50-Point Renko Bricks
+df_renko = build_pure_renko_bricks(df_15m_raw, brick_size=50.0)
 
-if df_renko_raw.empty:
+if df_renko.empty:
     st.error("🚨 Renko Brick Calculation Failure.")
     st.stop()
 
-# Build 1H Data Baseline
+# Build 1H Data Baseline & Momentum
 df_1h_raw = df_15m_raw.resample('1h').agg({
     'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
 }).dropna()
 
-df_1h = compute_ha_ham_features(df_1h_raw)
-df_renko = compute_ha_ham_features(df_renko_raw)
+df_1h = compute_kinematic_momentum(df_1h_raw)
+df_renko = compute_kinematic_momentum(df_renko)
 
 # =====================================================================
-# ⚙️ 1H FREEZE + LEVEL INVALIDATION FLIP ENGINE (ON RENKO BRICKS)
+# ⚙️ PURE RENKO BRICK LEVEL INVALIDATION & SIGNAL ENGINE
 # =====================================================================
 df_renko_grid = df_renko.copy()
 
-df_renko_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_renko_grid.index, method='ffill')
-df_renko_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_renko_grid.index, method='ffill')
-df_renko_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_renko_grid.index, method='ffill')
-
-df_renko_grid['HAM_Diff'] = df_renko_grid['HA_HAM_1H_Frozen'] - df_renko_grid['HA_HAM']
+# Lock 1H Kinematic Momentum onto Renko Bricks
+df_renko_grid['1H_Close_Frozen'] = df_1h['Close'].reindex(df_renko_grid.index, method='ffill')
+df_renko_grid['1H_HAM_Frozen'] = df_1h['Kinematic_HAM'].reindex(df_renko_grid.index, method='ffill')
+df_renko_grid['1H_HAM_Prev'] = df_1h['Kinematic_HAM'].shift(1).reindex(df_renko_grid.index, method='ffill')
 
 n = len(df_renko_grid)
-h1_curr_arr = df_renko_grid['HA_HAM_1H_Frozen'].to_numpy()
-h1_prev_arr = df_renko_grid['HA_HAM_1H_Prev'].to_numpy()
-renko_curr_arr = df_renko_grid['HA_HAM'].to_numpy()
+renko_close = df_renko_grid['Close'].to_numpy()
+renko_open = df_renko_grid['Open'].to_numpy()
+renko_type = df_renko_grid['Type'].to_numpy()
 
-ha_close_vals = df_renko_grid['HA_Close'].to_numpy()
-ha_open_vals = df_renko_grid['HA_Open'].to_numpy()
-ha_high_vals = df_renko_grid['HA_High'].to_numpy()
-ha_low_vals = df_renko_grid['HA_Low'].to_numpy()
+h1_curr_arr = df_renko_grid['1H_HAM_Frozen'].to_numpy()
+h1_prev_arr = df_renko_grid['1H_HAM_Prev'].to_numpy()
 
 signals = ['⚪ NEUTRAL'] * n
 barrier_levels = [None] * n
 
 active_state = None       # 'TOP' or 'BOTTOM'
-last_level = None         # Level Barrier Price
+last_level = None         # Barrier Price Level
 
 for i in range(2, n):
+    r_close = renko_close[i]
+    r_open = renko_open[i]
+    r_is_green = (renko_type[i] == 'GREEN')
+    
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
-    renko_curr = renko_curr_arr[i]
-    
-    ha_close = ha_close_vals[i]
-    ha_open = ha_open_vals[i]
-    ha_high = ha_high_vals[i]
-    ha_low = ha_low_vals[i]
-    
-    is_renko_red = ha_close < ha_open
 
-    # STEP 1: INSTANT LEVEL FLIP LOGIC
+    # STEP 1: INSTANT RENKO LEVEL BREAK LOGIC
     if active_state == 'TOP' and last_level is not None:
-        if ha_close > last_level:
+        if r_close > last_level:
             active_state = 'BOTTOM'
-            last_level = ha_low
-            signals[i] = '🟢 REAL BOTTOM (Instant Flip / Renko Level Break)'
+            last_level = r_open
+            signals[i] = '🟢 REAL BOTTOM (Instant Renko Level Break)'
             barrier_levels[i] = last_level
             continue
 
     elif active_state == 'BOTTOM' and last_level is not None:
-        if ha_close < last_level:
+        if r_close < last_level:
             active_state = 'TOP'
-            last_level = ha_high
-            signals[i] = '🔴 REAL TOP (Instant Flip / Renko Level Break)'
+            last_level = r_open
+            signals[i] = '🔴 REAL TOP (Instant Renko Level Break)'
             barrier_levels[i] = last_level
             continue
 
-    # STEP 2: BASE DUAL-TIMEFRAME ENGINE
+    # STEP 2: DUAL TIMEFRAME CONFIRMATION LOGIC
     if h1_curr > 0 and h1_curr < h1_prev:
-        if renko_curr < 0 or is_renko_red:
-            signals[i] = '🔴 REAL TOP (1H Drop + Renko Red)'
+        if not r_is_green:
+            signals[i] = '🔴 REAL TOP (1H Weakness + Red Renko Brick)'
             active_state = 'TOP'
-            last_level = ha_high
+            last_level = r_open
         else:
-            signals[i] = '🟢 TRAP PASS (Renko Bullish / Dip Buy)'
+            signals[i] = '🟢 TRAP PASS (Green Renko Brick / Dip Buy)'
             
     elif h1_curr < 0 and h1_curr > h1_prev:
-        if renko_curr > 0 and not is_renko_red:
-            signals[i] = '🟢 REAL BOTTOM (1H Rise + Renko Green)'
+        if r_is_green:
+            signals[i] = '🟢 REAL BOTTOM (1H Recovery + Green Renko Brick)'
             active_state = 'BOTTOM'
-            last_level = ha_low
+            last_level = r_open
         else:
-            signals[i] = '🔴 TRAP PASS (Renko Bearish / Fake Rally)'
+            signals[i] = '🔴 TRAP PASS (Red Renko Brick / Fake Rally)'
             
     elif h1_curr > h1_prev and h1_curr > 0:
         signals[i] = '🟢 ACCELERATED RALLY'
@@ -329,7 +297,7 @@ for i in range(2, n):
 df_renko_grid['Instant_Kinematic_Signal'] = signals
 df_renko_grid['Barrier_Level'] = barrier_levels
 
-df_renko_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen'], inplace=True)
+df_renko_grid.dropna(subset=['Kinematic_HAM', '1H_HAM_Frozen'], inplace=True)
 
 latest = df_renko_grid.iloc[-1]
 latest_renko_time = df_renko_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
@@ -342,39 +310,39 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest['Instant_Kinematic_Signal']
-    if 'REAL BOTTOM' in sig or 'TRAP PASS (Renko Bullish' in sig or 'RALLY' in sig:
-        st.success(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
-    elif 'REAL TOP' in sig or 'TRAP PASS (Renko Bearish' in sig or 'DROP' in sig:
-        st.error(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
+    if 'REAL BOTTOM' in sig or 'TRAP PASS (Green' in sig or 'RALLY' in sig:
+        st.success(f"### Live Pure Renko Brick ({latest_renko_time})\n# {sig}")
+    elif 'REAL TOP' in sig or 'TRAP PASS (Red' in sig or 'DROP' in sig:
+        st.error(f"### Live Pure Renko Brick ({latest_renko_time})\n# {sig}")
     else:
-        st.warning(f"### Live Completed Renko Signal ({latest_renko_time})\n# {sig}")
+        st.warning(f"### Live Pure Renko Brick ({latest_renko_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
-    m2.metric("Renko HA-Close", f"${latest['HA_Close']:,.2f}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Renko Brick Open", f"${latest['Open']:,.2f}")
+    m2.metric("Renko Brick Close", f"${latest['Close']:,.2f}")
     m3.metric("Barrier Level", f"${latest['Barrier_Level']:,.2f}" if pd.notna(latest['Barrier_Level']) else "N/A")
-    m4.metric("Renko HA-HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff (1H - Renko)", f"{latest['HAM_Diff']:.2f}")
+    m4.metric("Brick Type", f"{latest['Type']}")
 
 st.markdown("---")
 
-st.subheader("📋 50-Point Completed Renko Bricks Timeline")
+st.subheader("📋 Pure 50-Point Renko Bricks Timeline")
 
-clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'Barrier_Level', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
+clean_cols = ['Open', 'Close', 'Type', 'Barrier_Level', '1H_Close_Frozen', 'Kinematic_HAM', '1H_HAM_Frozen', 'Instant_Kinematic_Signal']
 display_df = df_renko_grid[clean_cols].copy()
 
 display_df.rename(columns={
-    '1H_HA_Close_Frozen': '1H HA-Close',
-    'HA_Close': 'Renko HA-Close',
+    'Open': 'Renko Open',
+    'Close': 'Renko Close',
+    'Type': 'Brick Type',
     'Barrier_Level': 'Barrier Level',
-    'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
-    'HA_HAM': 'Renko Live HA-HAM',
-    'HAM_Diff': 'HAM Diff (1H - Renko)',
+    '1H_Close_Frozen': '1H Locked Close',
+    'Kinematic_HAM': 'Renko Momentum',
+    '1H_HAM_Frozen': '1H Locked Momentum',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', 'Renko HA-Close', 'Barrier Level', '1H Locked HA-HAM', 'Renko Live HA-HAM', 'HAM Diff (1H - Renko)']:
+for c in ['Renko Open', 'Renko Close', 'Barrier Level', '1H Locked Close', 'Renko Momentum', '1H Locked Momentum']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
