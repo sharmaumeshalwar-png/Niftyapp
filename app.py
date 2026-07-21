@@ -162,11 +162,15 @@ df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
 )
 
-# Scaled Kinematic Score (/ 100,000)
+# Kinematic Score
 df_15m_grid["Kinematic_Score"] = (
-    (df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"])
-    * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
-) / 100000.0
+    df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"]
+) * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
+
+# Naya Column: Kinematic Score Divided by 100,000 (1 Lakh)
+df_15m_grid["Kinematic_Score_100k"] = (
+    df_15m_grid["Kinematic_Score"] / 100000.0
+)
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
@@ -210,6 +214,7 @@ df_15m_grid.dropna(
         "HA_HAM_1H_Frozen",
         "15M_Delta_Momentum",
         "Kinematic_Score",
+        "Kinematic_Score_100k",
     ],
     inplace=True,
 )
@@ -240,7 +245,7 @@ with col_s2:
   m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
   m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
   m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
-  m7.metric("Kinematic Score", f"{latest['Kinematic_Score']:.3f}")
+  m7.metric("Score (/100k)", f"{latest['Kinematic_Score_100k']:.3f}")
 
 st.markdown("---")
 
@@ -255,6 +260,7 @@ clean_cols = [
     "HAM_Diff",
     "15M_Delta_Momentum",
     "Kinematic_Score",
+    "Kinematic_Score_100k",
     "Instant_Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -268,6 +274,7 @@ display_df.rename(
         "HAM_Diff": "HAM Diff (1H - 15M)",
         "15M_Delta_Momentum": "15M Delta Momentum",
         "Kinematic_Score": "Kinematic Score",
+        "Kinematic_Score_100k": "Kinematic Score (/100k)",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
@@ -280,11 +287,14 @@ for c in [
     "15M Live HA-HAM",
     "HAM Diff (1H - 15M)",
     "15M Delta Momentum",
+    "Kinematic Score",
 ]:
   display_df[c] = display_df[c].round(2)
 
-# Strictly 3 digits for Kinematic Score
-display_df["Kinematic Score"] = display_df["Kinematic Score"].round(3)
+# Format the 100k column strictly to 3 decimal places
+display_df["Kinematic Score (/100k)"] = display_df[
+    "Kinematic Score (/100k)"
+].round(3)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
