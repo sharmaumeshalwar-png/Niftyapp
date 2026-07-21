@@ -82,19 +82,25 @@ def compute_ha_ham_features(df_raw):
 # =====================================================================
 # DATA INGESTION
 # =====================================================================
+@st.cache_data(ttl=60)
+def load_market_data():
+    df_1h_raw = yf.download(tickers="BTC-USD", period="60d", interval="1h", progress=False)
+    df_15m_raw = yf.download(tickers="BTC-USD", period="14d", interval="15m", progress=False)
+    
+    for d in [df_1h_raw, df_15m_raw]:
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        d.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
+        if d.index.tz is None:
+            d.index = d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
+        else:
+            d.index = d.index.tz_convert('Asia/Kolkata')
+            
+    return df_1h_raw, df_15m_raw
+
 with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
     try:
-        df_1h_raw = yf.download(tickers="BTC-USD", period="60d", interval="1h")
-        df_15m_raw = yf.download(tickers="BTC-USD", period="14d", interval="15m")
-        
-        for d in [df_1h_raw, df_15m_raw]:
-            if isinstance(d.columns, pd.MultiIndex):
-                d.columns = d.columns.get_level_values(0)
-            d.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
-            if d.index.tz is None:
-                d.index = d.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
-            else:
-                d.index = d.index.tz_convert('Asia/Kolkata')
+        df_1h_raw, df_15m_raw = load_market_data()
     except Exception as e:
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
@@ -115,6 +121,10 @@ df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.ind
 
 # HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
+
+# EXACT FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
+df_15m_grid['HA_Close_Diff_15M'] = df_15m_grid['HA_Close'] - df_15m_grid['HA_Close'].shift(1)
+df_15m_grid['15M_Delta_Momentum'] = df_15m_grid['HA_Close_Diff_15M'] * df_15m_grid['HA_HAM']
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
@@ -153,7 +163,7 @@ for i in range(2, n):
         signals[i] = '🔴 ACCELERATED DROP'
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
-df_15m_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen'], inplace=True)
+df_15m_grid.dropna(subset=['HA_HAM', 'HA_HAM_1H_Frozen', '15M_Delta_Momentum'], inplace=True)
 
 latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
@@ -174,19 +184,20 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
     m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
-    m3.metric("1H Locked HA-HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
-    m4.metric("15M Live HA-HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff (1H - 15M)", f"{latest['HAM_Diff']:.2f}")
+    m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+    m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
+    m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
+    m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
 
 st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with HAM Difference Column
-clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', 'Instant_Kinematic_Signal']
+# Table with Delta Momentum Column
+clean_cols = ['1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 'HAM_Diff', '15M_Delta_Momentum', 'Instant_Kinematic_Signal']
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(columns={
@@ -195,10 +206,11 @@ display_df.rename(columns={
     'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
     'HA_HAM': '15M Live HA-HAM',
     'HAM_Diff': 'HAM Diff (1H - 15M)',
+    '15M_Delta_Momentum': '15M Delta Momentum',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)']:
+for c in ['1H HA-Close', '15M HA-Close', '1H Locked HA-HAM', '15M Live HA-HAM', 'HAM Diff (1H - 15M)', '15M Delta Momentum']:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
