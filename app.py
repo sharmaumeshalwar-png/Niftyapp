@@ -4,55 +4,67 @@ import pandas as pd
 import requests
 
 # Page Setup
-st.set_page_config(page_title="BTC Kinematic Engine + Bid-Ask Candles", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BTC Kinematic Engine + Real Binance Volume", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("⚡ BTC Dual Engine + Historical Candle Bid/Ask Data")
-st.caption("CoinGecko Public API Pipeline (Zero ISP/VPN Restrictions)")
+st.title("⚡ BTC Dual Engine + Real Binance Market Volume Data")
+st.caption("Direct Binance Public API Pipeline (100% Real Taker Orderflow - Zero Synthetic Math)")
 
 # =====================================================================
-# 🌐 COINGECKO / PUBLIC API ENGINE (FREQ FORMAT FIXED)
+# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (100% REAL VOLUME SPLIT)
 # =====================================================================
-def fetch_btc_data_coingecko():
+def fetch_btc_data_binance():
     """
-    Fetches BTC Historical Candles via CoinGecko & Derives Order Flow Bid/Ask Estimates.
-    Fixed Pandas frequency strings ('15min' & '1h').
+    Fetches 100% REAL BTC Historical Candles & Taker Buy/Sell Volumes from Binance.
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
-    # Fetch OHLC Data
-    url = "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=30"
+    url = "https://api.binance.com/api/v3/klines"
+    
+    # 15M Interval Fetch (Limit 1000 candles)
+    params_15m = {'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 1000}
+    # 1H Interval Fetch (Limit 500 candles)
+    params_1h = {'symbol': 'BTCUSDT', 'interval': '1h', 'limit': 500}
+    
+    cols = [
+        'Open Time', 'Open', 'High', 'Low', 'Close', 'Volume',
+        'Close Time', 'Quote Volume', 'Trades', 
+        'Taker_Buy_Base_Vol', 'Taker_Buy_Quote_Vol', 'Ignore'
+    ]
     
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        data = res.json()
+        # Fetch 15M Data
+        res_15m = requests.get(url, params=params_15m, headers=headers, timeout=10)
+        df_15m = pd.DataFrame(res_15m.json(), columns=cols)
         
-        if not isinstance(data, list):
-            return pd.DataFrame(), pd.DataFrame()
+        # Fetch 1H Data
+        res_1h = requests.get(url, params=params_1h, headers=headers, timeout=10)
+        df_1h = pd.DataFrame(res_1h.json(), columns=cols)
+        
+        def process_df(df_raw):
+            if df_raw.empty or not isinstance(df_raw, pd.DataFrame):
+                return pd.DataFrame()
+                
+            float_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Taker_Buy_Base_Vol']
+            for c in float_cols:
+                df_raw[c] = df_raw[c].astype(float)
+                
+            df_raw['Open Time'] = pd.to_datetime(df_raw['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
+            df_raw.set_index('Open Time', inplace=True)
             
-        df = pd.DataFrame(data, columns=['Timestamp', 'Open', 'High', 'Low', 'Close'])
-        df['Open Time'] = pd.to_datetime(df['Timestamp'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
-        df.set_index('Open Time', inplace=True)
-        df.drop(columns=['Timestamp'], inplace=True)
-        
-        # Synthetic Order Flow Estimates for Bid/Ask Spread & Volume
-        df['Candle_Bid_Price'] = df['Low']
-        df['Candle_Ask_Price'] = df['High']
-        df['Candle_Spread'] = df['High'] - df['Low']
-        
-        # Simulated Volume Split
-        range_diff = (df['High'] - df['Low']) / df['Close']
-        df['Ask_Volume_Buy'] = np.round(100 * (1 + range_diff), 2)
-        df['Bid_Volume_Sell'] = np.round(100 * (1 - range_diff), 2)
-        
-        # 1H & 15M Resampled Grid (Updated to Pandas-compatible frequency aliases)
-        df_1h = df.resample('1h').interpolate(method='linear')
-        df_15m = df.resample('15min').interpolate(method='linear')
-        
-        return df_1h, df_15m
+            # 🟢 100% REAL MARKET TAKER VOLUME SPLIT
+            df_raw['Market_Buy_Vol'] = df_raw['Taker_Buy_Base_Vol']                         # Actual Market Buy Orders
+            df_raw['Market_Sell_Vol'] = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']     # Actual Market Sell Orders
+            df_raw['Total_Volume'] = df_raw['Volume']
+            df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
+            
+            return df_raw
+
+        return process_df(df_1h), process_df(df_15m)
+
     except Exception as e:
-        st.error(f"Error fetching CoinGecko data: {e}")
+        st.error(f"Error fetching Binance data: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # =====================================================================
@@ -128,11 +140,11 @@ def compute_ha_ham_features(df_raw):
 # =====================================================================
 # DATA PIPELINE EXECUTION
 # =====================================================================
-with st.spinner("Fetching Market Data & Computing Indicators..."):
-    df_1h_raw, df_15m_raw = fetch_btc_data_coingecko()
+with st.spinner("Fetching Real Market Data from Binance & Computing Indicators..."):
+    df_1h_raw, df_15m_raw = fetch_btc_data_binance()
 
 if df_1h_raw.empty or df_15m_raw.empty:
-    st.error("🚨 Failed to fetch market data. Please check network connection.")
+    st.error("🚨 Failed to fetch Binance market data. Please check network connection.")
     st.stop()
 
 # Compute Features
@@ -228,20 +240,20 @@ st.markdown("---")
 # Metrics Display
 m1, m2, m3, m4, m5, m6 = st.columns(6)
 m1.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
-m2.metric("Candle Min Bid", f"${latest['Candle_Bid_Price']:,.2f}")
-m3.metric("Candle Max Ask", f"${latest['Candle_Ask_Price']:,.2f}")
-m4.metric("Candle Range", f"${latest['Candle_Spread']:.2f}")
-m5.metric("Buy Vol (Est)", f"{latest['Ask_Volume_Buy']:.2f}")
-m6.metric("Sell Vol (Est)", f"{latest['Bid_Volume_Sell']:.2f}")
+m2.metric("Candle Low (Price)", f"${latest['Low']:,.2f}")
+m3.metric("Candle High (Price)", f"${latest['High']:,.2f}")
+m4.metric("Candle Range ($)", f"${latest['Candle_Range']:.2f}")
+m5.metric("Real Buy Vol (BTC)", f"{latest['Market_Buy_Vol']:,.2f}")
+m6.metric("Real Sell Vol (BTC)", f"{latest['Market_Sell_Vol']:,.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Historical Candle Data (Includes Bid, Ask, Spread & Volume Split)")
+st.subheader("📋 Historical Candle Data (Includes 100% Real Binance Buy/Sell Orderflow)")
 
 # Format Columns for Clean Table
 clean_cols = [
-    '1H_HA_Close_Frozen', 'HA_Close', 'Candle_Bid_Price', 'Candle_Ask_Price', 'Candle_Spread', 
-    'Ask_Volume_Buy', 'Bid_Volume_Sell', 'Barrier_Level', 
+    '1H_HA_Close_Frozen', 'HA_Close', 'Low', 'High', 'Candle_Range', 
+    'Market_Buy_Vol', 'Market_Sell_Vol', 'Total_Volume', 'Barrier_Level', 
     '15M_Delta_Momentum', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -249,21 +261,22 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(columns={
     '1H_HA_Close_Frozen': '1H HA Close',
     'HA_Close': '15M HA Close',
-    'Candle_Bid_Price': 'Candle Min Bid',
-    'Candle_Ask_Price': 'Candle Max Ask',
-    'Candle_Spread': 'Candle Range/Spread',
-    'Ask_Volume_Buy': 'Market Buy Vol',
-    'Bid_Volume_Sell': 'Market Sell Vol',
+    'Low': 'Candle Low',
+    'High': 'Candle High',
+    'Candle_Range': 'Candle Range ($)',
+    'Market_Buy_Vol': 'Real Buy Vol (BTC)',
+    'Market_Sell_Vol': 'Real Sell Vol (BTC)',
+    'Total_Volume': 'Total Vol (BTC)',
     'Barrier_Level': 'Active Barrier',
     '15M_Delta_Momentum': '15M Delta Momentum',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-# Safe Rounding Fix: Convert None/NaN to 0.0 before rounding to prevent TypeError
+# Safe Numeric Rounding
 num_cols = [
-    '1H HA Close', '15M HA Close', 'Candle Min Bid', 'Candle Max Ask', 
-    'Candle Range/Spread', 'Market Buy Vol', 'Market Sell Vol', 
-    'Active Barrier', '15M Delta Momentum'
+    '1H HA Close', '15M HA Close', 'Candle Low', 'Candle High', 
+    'Candle Range ($)', 'Real Buy Vol (BTC)', 'Real Sell Vol (BTC)', 
+    'Total Vol (BTC)', 'Active Barrier', '15M Delta Momentum'
 ]
 
 for col in num_cols:
