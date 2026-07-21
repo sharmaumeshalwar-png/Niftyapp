@@ -11,15 +11,15 @@ st.set_page_config(
 )
 
 st.title("⚡ BTC Dual Engine + Real Binance Market Volume Data")
-st.caption("Direct Binance Public API Pipeline (100% Real Taker Orderflow - Zero Synthetic Math)")
+st.caption("Direct Binance Public API Pipeline (Dynamic EMA Volume Smoothing & Net Delta)")
 
 # =====================================================================
-# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (WITH FALLBACK MIRRORS)
+# 🌐 BINANCE OFFICIAL REAL DATA ENGINE (WITH DYNAMIC SMOOTHING)
 # =====================================================================
 def fetch_btc_data_binance():
     """
     Fetches 100% REAL BTC Historical Candles & Taker Buy/Sell Volumes from Binance.
-    Includes multi-endpoint fallback to bypass ISP/Geo-blocking seamlessly.
+    Applies Dynamic Smoothing (EMA) & Net Volume Delta calculation.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -76,9 +76,18 @@ def fetch_btc_data_binance():
         df_raw.set_index('Open Time', inplace=True)
         
         # 🟢 100% REAL MARKET TAKER VOLUME SPLIT
-        df_raw['Market_Buy_Vol'] = df_raw['Taker_Buy_Base_Vol']                         # Actual Market Buy Orders
-        df_raw['Market_Sell_Vol'] = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']     # Actual Market Sell Orders
-        df_raw['Total_Volume'] = df_raw['Volume']
+        raw_buy = df_raw['Taker_Buy_Base_Vol']
+        raw_sell = df_raw['Volume'] - df_raw['Taker_Buy_Base_Vol']
+        
+        # ⚡ DYNAMIC SMOOTHING (EMA Window = 5 for low-lag, smooth trend)
+        df_raw['Market_Buy_Vol'] = raw_buy.ewm(span=5, adjust=False).mean()
+        df_raw['Market_Sell_Vol'] = raw_sell.ewm(span=5, adjust=False).mean()
+        
+        # Dynamic Delta Ratio (% Buyer Dominance)
+        total_smoothed = df_raw['Market_Buy_Vol'] + df_raw['Market_Sell_Vol']
+        df_raw['Volume_Delta_%'] = ((df_raw['Market_Buy_Vol'] - df_raw['Market_Sell_Vol']) / total_smoothed) * 100
+        
+        df_raw['Total_Volume'] = df_raw['Volume'].ewm(span=5, adjust=False).mean()
         df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
         
         return df_raw
@@ -261,17 +270,17 @@ m1.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
 m2.metric("Candle Low (Price)", f"${latest['Low']:,.2f}")
 m3.metric("Candle High (Price)", f"${latest['High']:,.2f}")
 m4.metric("Candle Range ($)", f"${latest['Candle_Range']:.2f}")
-m5.metric("Real Buy Vol (BTC)", f"{latest['Market_Buy_Vol']:,.2f}")
-m6.metric("Real Sell Vol (BTC)", f"{latest['Market_Sell_Vol']:,.2f}")
+m5.metric("Smooth Buy Vol (BTC)", f"{latest['Market_Buy_Vol']:,.2f}")
+m6.metric("Smooth Sell Vol (BTC)", f"{latest['Market_Sell_Vol']:,.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Historical Candle Data (Includes 100% Real Binance Buy/Sell Orderflow)")
+st.subheader("📋 Historical Candle Data (Includes Smoothed & Dynamic Orderflow)")
 
 # Format Columns for Clean Table
 clean_cols = [
     '1H_HA_Close_Frozen', 'HA_Close', 'Low', 'High', 'Candle_Range', 
-    'Market_Buy_Vol', 'Market_Sell_Vol', 'Total_Volume', 'Barrier_Level', 
+    'Market_Buy_Vol', 'Market_Sell_Vol', 'Volume_Delta_%', 'Barrier_Level', 
     '15M_Delta_Momentum', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -282,19 +291,19 @@ display_df.rename(columns={
     'Low': 'Candle Low',
     'High': 'Candle High',
     'Candle_Range': 'Candle Range ($)',
-    'Market_Buy_Vol': 'Real Buy Vol (BTC)',
-    'Market_Sell_Vol': 'Real Sell Vol (BTC)',
-    'Total_Volume': 'Total Vol (BTC)',
+    'Market_Buy_Vol': 'Smooth Buy Vol',
+    'Market_Sell_Vol': 'Smooth Sell Vol',
+    'Volume_Delta_%': 'Net Vol Delta (%)',
     'Barrier_Level': 'Active Barrier',
     '15M_Delta_Momentum': '15M Delta Momentum',
     'Instant_Kinematic_Signal': 'Kinematic Signal'
 }, inplace=True)
 
-# Safe Numeric Rounding Fix (Prevents TypeError on None/NaNs)
+# Safe Numeric Rounding
 num_cols = [
     '1H HA Close', '15M HA Close', 'Candle Low', 'Candle High', 
-    'Candle Range ($)', 'Real Buy Vol (BTC)', 'Real Sell Vol (BTC)', 
-    'Total Vol (BTC)', 'Active Barrier', '15M Delta Momentum'
+    'Candle Range ($)', 'Smooth Buy Vol', 'Smooth Sell Vol', 
+    'Net Vol Delta (%)', 'Active Barrier', '15M Delta Momentum'
 ]
 
 for col in num_cols:
