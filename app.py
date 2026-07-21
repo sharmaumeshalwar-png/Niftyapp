@@ -68,26 +68,20 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
     return hurst_values
 
 def apply_e_mc_square_energy(ham_raw, volume_series, close_series, window=20):
-    """
-    Applies E = m * c^2 Mass-Energy Equivalence:
-    - Mass (m): Normalized Relative Volume Ratio
-    - Speed of Light Constant (c): Realized Price Velocity / Volatility Ratio
-    - Energy (E): Relativistic Amplified Momentum Output
-    """
     vol = np.array(volume_series, dtype=float)
     price = np.array(close_series, dtype=float)
     ham = np.array(ham_raw, dtype=float)
     
     vol_sma = pd.Series(vol).rolling(window=window, min_periods=1).mean().to_numpy()
     mass_m = np.where(vol_sma > 0, vol / vol_sma, 1.0)
-    mass_m = np.clip(mass_m, 0.5, 3.0)  # Capped Mass bounds
+    mass_m = np.clip(mass_m, 0.5, 3.0) 
     
     price_returns = pd.Series(price).pct_change().fillna(0.0).to_numpy()
     volatility_c = pd.Series(price_returns).rolling(window=window, min_periods=1).std().to_numpy()
-    norm_c = volatility_c / (np.mean(volatility_c) + 1e-8)
+    mean_vol = np.mean(volatility_c) if np.mean(volatility_c) > 0 else 1e-8
+    norm_c = volatility_c / mean_vol
     norm_c = np.clip(norm_c, 0.5, 2.5)
     
-    # E = m * c^2 Physics Momentum Transformation
     energy_e = ham * mass_m * (norm_c ** 2)
     return energy_e
 
@@ -127,10 +121,9 @@ with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
-# 1H Macro HAM
 df_1h['HA_HAM'] = df_1h['HA_HAM_Raw']
 
-# ⚛️ APPLY E = mc² TRANSFORM DIRECTLY TO 15M HAM (KAMA REPLACED)
+# E = mc² 15M HAM
 m15_ham_raw = df_15m['HA_HAM_Raw'].to_numpy().flatten()
 m15_volume = df_15m['Volume'].to_numpy().flatten()
 m15_close = df_15m['Close'].to_numpy().flatten()
@@ -139,16 +132,18 @@ df_15m['HA_HAM_Energy'] = apply_e_mc_square_energy(m15_ham_raw, m15_volume, m15_
 df_15m['HA_HAM'] = df_15m['HA_HAM_Energy']
 
 # =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
+# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE (SAFE ALIGNMENT)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
-df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
-df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
-df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
+# Safe Alignment using reindex with ffill and bfill
+full_index = df_15m_grid.index.union(df_1h.index).sort_values()
+df_1h_reindexed = df_1h.reindex(full_index).ffill()
 
-# HAM Difference
+df_15m_grid['1H_HA_Close_Frozen'] = df_1h_reindexed['HA_Close'].reindex(df_15m_grid.index).ffill().bfill()
+df_15m_grid['HA_HAM_1H_Frozen'] = df_1h_reindexed['HA_HAM'].reindex(df_15m_grid.index).ffill().bfill()
+df_15m_grid['HA_HAM_1H_Prev'] = df_1h_reindexed['HA_HAM'].shift(1).reindex(df_15m_grid.index).ffill().bfill()
+
 df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM_Energy']
 
 n = len(df_15m_grid)
@@ -168,14 +163,12 @@ for i in range(2, n):
     
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
     
-    # Case A: 1H Macro HAM is declining
     if h1_curr > 0 and h1_curr < h1_prev:
         if m15_curr < 0 or is_ha_red:
             signals[i] = '🔴 REAL TOP (1H Drop + 15M Red)'
         else:
             signals[i] = '🟢 TRAP PASS (15M Bullish / Dip Buy)'
             
-    # Case B: 1H Macro HAM is recovering
     elif h1_curr < 0 and h1_curr > h1_prev:
         if m15_curr > 0 and not is_ha_red:
             signals[i] = '🟢 REAL BOTTOM (1H Rise + 15M Green)'
@@ -188,7 +181,13 @@ for i in range(2, n):
         signals[i] = '🔴 ACCELERATED DROP'
 
 df_15m_grid['Instant_Kinematic_Signal'] = signals
-df_15m_grid.dropna(subset=['HA_HAM_Energy', 'HA_HAM_1H_Frozen'], inplace=True)
+
+# Handle empty grid safely
+df_15m_grid.dropna(subset=['HA_HAM_Energy', 'HA_HAM_1H_Frozen', '1H_HA_Close_Frozen'], inplace=True)
+
+if df_15m_grid.empty:
+    st.error("🚨 Filtered DataFrame is empty. Please check data source connection.")
+    st.stop()
 
 latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
@@ -221,7 +220,6 @@ st.markdown("---")
 
 st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table Output
 clean_cols = [
     '1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 
     'HA_HAM_Raw', 'HA_HAM_Energy', 'HAM_Diff', 'Instant_Kinematic_Signal'
