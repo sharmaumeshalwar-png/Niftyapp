@@ -5,15 +5,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty HA Dual-Timeframe Kinematic Engine",
+    page_title="Nifty HA Triple-Timeframe Kinematic Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
+st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine (1H Locked + 15M + 5M Live HAM)")
 st.caption(
-    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
-    " HA-HAM update dynamically every 15 mins."
+    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min & 5-Min HA-HAM update dynamically."
 )
 
 
@@ -99,20 +98,22 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# DATA INGESTION (NIFTY 50 -> ^NSEI)
+# DATA INGESTION (NIFTY 50 -> 1H, 15M, 5M)
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
-    # ^NSEI is the official Yahoo Finance symbol for Nifty 50
     df_1h_raw = yf.download(
         tickers="^NSEI", period="60d", interval="1h", progress=False
     )
     df_15m_raw = yf.download(
         tickers="^NSEI", period="14d", interval="15m", progress=False
     )
+    df_5m_raw = yf.download(
+        tickers="^NSEI", period="7d", interval="5m", progress=False
+    )
 
     processed_dfs = []
-    for d in [df_1h_raw, df_15m_raw]:
+    for d in [df_1h_raw, df_15m_raw, df_5m_raw]:
         if isinstance(d.columns, pd.MultiIndex):
             d.columns = d.columns.get_level_values(0)
 
@@ -125,12 +126,12 @@ def load_market_data():
 
         processed_dfs.append(d)
 
-    return processed_dfs[0], processed_dfs[1]
+    return processed_dfs[0], processed_dfs[1], processed_dfs[2]
 
 
-with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi Nifty Data..."):
+with st.spinner("Fetching Live 1-Hour, 15-Minute & 5-Minute Nifty Data..."):
     try:
-        df_1h_raw, df_15m_raw = load_market_data()
+        df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
     except Exception as e:
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
@@ -138,9 +139,10 @@ with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi Nifty Data..."):
 # Compute Heikin-Ashi & HAM Features
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
+df_5m = compute_ha_ham_features(df_5m_raw)
 
 # =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
+# ⚙️ MULTI-TIMEFRAME ALIGNMENT ENGINE
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
@@ -155,6 +157,11 @@ df_15m_grid["HA_HAM_1H_Prev"] = (
     df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
+# Align 5-Minute HA-HAM to 15M grid
+df_15m_grid["5M_HA_HAM"] = (
+    df_5m["HA_HAM"].reindex(df_15m_grid.index, method="ffill")
+)
+
 # HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
 df_15m_grid["HAM_Diff"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
@@ -166,15 +173,6 @@ df_15m_grid["HA_Close_Diff_15M"] = (
 )
 df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
-)
-
-# Kinematic Score Calculation
-df_15m_grid["Kinematic_Score"] = (
-    df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"]
-) * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
-
-df_15m_grid["Kinematic_Score_100B"] = (
-    df_15m_grid["Kinematic_Score"] / 100000000000.0
 )
 
 n = len(df_15m_grid)
@@ -216,9 +214,8 @@ df_15m_grid.dropna(
     subset=[
         "HA_HAM",
         "HA_HAM_1H_Frozen",
+        "5M_HA_HAM",
         "15M_Delta_Momentum",
-        "Kinematic_Score",
-        "Kinematic_Score_100B",
     ],
     inplace=True,
 )
@@ -247,23 +244,22 @@ with col_s2:
     m2.metric("15M HA-Close", f"{latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
-    m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
-    m7.metric("Score (/100B)", f"{latest['Kinematic_Score_100B']:.6f}")
+    m5.metric("5M Live HAM", f"{latest['5M_HA_HAM']:.2f}")
+    m6.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
+    m7.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Heikin-Ashi Dual Timeframe Timeline")
+st.subheader("📋 Nifty 50 Heikin-Ashi Triple Timeframe Timeline")
 
 clean_cols = [
     "1H_HA_Close_Frozen",
     "HA_Close",
     "HA_HAM_1H_Frozen",
     "HA_HAM",
+    "5M_HA_HAM",
     "HAM_Diff",
     "15M_Delta_Momentum",
-    "Kinematic_Score",
-    "Kinematic_Score_100B",
     "Instant_Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -274,10 +270,9 @@ display_df.rename(
         "HA_Close": "15M HA-Close",
         "HA_HAM_1H_Frozen": "1H Locked HA-HAM",
         "HA_HAM": "15M Live HA-HAM",
+        "5M_HA_HAM": "5M Live HA-HAM",
         "HAM_Diff": "HAM Diff (1H - 15M)",
         "15M_Delta_Momentum": "15M Delta Momentum",
-        "Kinematic_Score": "Kinematic Score",
-        "Kinematic_Score_100B": "Kinematic Score (/100B)",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
@@ -288,15 +283,11 @@ for c in [
     "15M HA-Close",
     "1H Locked HA-HAM",
     "15M Live HA-HAM",
+    "5M Live HA-HAM",
     "HAM Diff (1H - 15M)",
     "15M Delta Momentum",
-    "Kinematic Score",
 ]:
     display_df[c] = display_df[c].round(2)
-
-display_df["Kinematic Score (/100B)"] = display_df[
-    "Kinematic Score (/100B)"
-].round(6)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
