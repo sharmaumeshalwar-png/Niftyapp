@@ -1,16 +1,16 @@
-import streamlit as st
 import numpy as np
 import pandas as pd
+import streamlit as st
 import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC HA Dual-Timeframe Kinematic Engine",
+    page_title="Nifty HA Dual-Timeframe Kinematic Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
+st.title("⚡ NIFTY 50 Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption(
     "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
     " HA-HAM update dynamically every 15 mins."
@@ -99,30 +99,36 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# DATA INGESTION
+# DATA INGESTION (NIFTY 50 -> ^NSEI)
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
+    # ^NSEI is the official Yahoo Finance symbol for Nifty 50
     df_1h_raw = yf.download(
-        tickers="BTC-USD", period="60d", interval="1h", progress=False
+        tickers="^NSEI", period="60d", interval="1h", progress=False
     )
     df_15m_raw = yf.download(
-        tickers="BTC-USD", period="14d", interval="15m", progress=False
+        tickers="^NSEI", period="14d", interval="15m", progress=False
     )
 
+    processed_dfs = []
     for d in [df_1h_raw, df_15m_raw]:
         if isinstance(d.columns, pd.MultiIndex):
             d.columns = d.columns.get_level_values(0)
-        d.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
+
+        d = d.dropna(subset=["Open", "High", "Low", "Close"])
+
         if d.index.tz is None:
             d.index = d.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
         else:
             d.index = d.index.tz_convert("Asia/Kolkata")
 
-    return df_1h_raw, df_15m_raw
+        processed_dfs.append(d)
+
+    return processed_dfs[0], processed_dfs[1]
 
 
-with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
+with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi Nifty Data..."):
     try:
         df_1h_raw, df_15m_raw = load_market_data()
     except Exception as e:
@@ -138,12 +144,12 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
-df_15m_grid["1H_HA_Close_Frozen"] = df_1h["HA_Close"].reindex(
-    df_15m_grid.index, method="ffill"
+# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps safely
+df_15m_grid["1H_HA_Close_Frozen"] = (
+    df_1h["HA_Close"].reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["HA_HAM_1H_Frozen"] = df_1h["HA_HAM"].reindex(
-    df_15m_grid.index, method="ffill"
+df_15m_grid["HA_HAM_1H_Frozen"] = (
+    df_1h["HA_HAM"].reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["HA_HAM_1H_Prev"] = (
     df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
@@ -154,12 +160,21 @@ df_15m_grid["HAM_Diff"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
 )
 
-# EXACT FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
+# Delta Momentum
 df_15m_grid["HA_Close_Diff_15M"] = (
     df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
 )
 df_15m_grid["15M_Delta_Momentum"] = (
     df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
+)
+
+# Kinematic Score Calculation
+df_15m_grid["Kinematic_Score"] = (
+    df_15m_grid["HA_HAM_1H_Frozen"] * df_15m_grid["HA_HAM"]
+) * (df_15m_grid["HAM_Diff"] * df_15m_grid["15M_Delta_Momentum"])
+
+df_15m_grid["Kinematic_Score_100B"] = (
+    df_15m_grid["Kinematic_Score"] / 100000000000.0
 )
 
 n = len(df_15m_grid)
@@ -179,20 +194,18 @@ for i in range(2, n):
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Case A: 1H Macro HAM is declining
     if h1_curr > 0 and h1_curr < h1_prev:
-        if m15_curr < 0 or is_ha_red:
-            signals[i] = "🔴 REAL TOP (1H Drop + 15M Red)"
-        else:
-            signals[i] = "🟢 TRAP PASS (15M Bullish / Dip Buy)"
-
-    # Case B: 1H Macro HAM is recovering
+        signals[i] = (
+            "🔴 REAL TOP (1H Drop + 15M Red)"
+            if (m15_curr < 0 or is_ha_red)
+            else "🟢 TRAP PASS (15M Bullish / Dip Buy)"
+        )
     elif h1_curr < 0 and h1_curr > h1_prev:
-        if m15_curr > 0 and not is_ha_red:
-            signals[i] = "🟢 REAL BOTTOM (1H Rise + 15M Green)"
-        else:
-            signals[i] = "🔴 TRAP PASS (15M Bearish / Fake Rally)"
-
+        signals[i] = (
+            "🟢 REAL BOTTOM (1H Rise + 15M Green)"
+            if (m15_curr > 0 and not is_ha_red)
+            else "🔴 TRAP PASS (15M Bearish / Fake Rally)"
+        )
     elif h1_curr > h1_prev and h1_curr > 0:
         signals[i] = "🟢 ACCELERATED RALLY"
     elif h1_curr < h1_prev and h1_curr < 0:
@@ -200,7 +213,14 @@ for i in range(2, n):
 
 df_15m_grid["Instant_Kinematic_Signal"] = signals
 df_15m_grid.dropna(
-    subset=["HA_HAM", "HA_HAM_1H_Frozen", "15M_Delta_Momentum"], inplace=True
+    subset=[
+        "HA_HAM",
+        "HA_HAM_1H_Frozen",
+        "15M_Delta_Momentum",
+        "Kinematic_Score",
+        "Kinematic_Score_100B",
+    ],
+    inplace=True,
 )
 
 latest = df_15m_grid.iloc[-1]
@@ -214,33 +234,27 @@ col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
-    if (
-        "REAL BOTTOM" in sig
-        or "TRAP PASS (15M Bullish" in sig
-        or "RALLY" in sig
-    ):
+    if "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
-    elif (
-        "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig
-    ):
+    elif "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig:
         st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
-    m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
+    m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+    m1.metric("1H HA-Close", f"{latest['1H_HA_Close_Frozen']:,.2f}")
+    m2.metric("15M HA-Close", f"{latest['HA_Close']:,.2f}")
     m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
     m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
     m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
     m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
+    m7.metric("Score (/100B)", f"{latest['Kinematic_Score_100B']:.6f}")
 
 st.markdown("---")
 
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
+st.subheader("📋 Nifty 50 Heikin-Ashi Dual Timeframe Timeline")
 
-# Table with Delta Momentum Column
 clean_cols = [
     "1H_HA_Close_Frozen",
     "HA_Close",
@@ -248,6 +262,8 @@ clean_cols = [
     "HA_HAM",
     "HAM_Diff",
     "15M_Delta_Momentum",
+    "Kinematic_Score",
+    "Kinematic_Score_100B",
     "Instant_Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
@@ -260,6 +276,8 @@ display_df.rename(
         "HA_HAM": "15M Live HA-HAM",
         "HAM_Diff": "HAM Diff (1H - 15M)",
         "15M_Delta_Momentum": "15M Delta Momentum",
+        "Kinematic_Score": "Kinematic Score",
+        "Kinematic_Score_100B": "Kinematic Score (/100B)",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
@@ -272,8 +290,13 @@ for c in [
     "15M Live HA-HAM",
     "HAM Diff (1H - 15M)",
     "15M Delta Momentum",
+    "Kinematic Score",
 ]:
     display_df[c] = display_df[c].round(2)
+
+display_df["Kinematic Score (/100B)"] = display_df[
+    "Kinematic Score (/100B)"
+].round(6)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
