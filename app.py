@@ -10,9 +10,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine (1H Locked + 15M + 5M Live HAM)")
+st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine (1H Locked + 15M + 5M Live)")
 st.caption(
-    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min & 5-Min HA-HAM update dynamically."
+    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min & 5-Min HA-Close and HA-HAM update dynamically."
 )
 
 
@@ -157,7 +157,10 @@ df_15m_grid["HA_HAM_1H_Prev"] = (
     df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
-# Align 5-Minute HA-HAM to 15M grid
+# Align 5-Minute HA-Close & 5-Minute HA-HAM to 15M grid
+df_15m_grid["5M_HA_Close"] = (
+    df_5m["HA_Close"].reindex(df_15m_grid.index, method="ffill")
+)
 df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].reindex(df_15m_grid.index, method="ffill")
 )
@@ -214,6 +217,7 @@ df_15m_grid.dropna(
     subset=[
         "HA_HAM",
         "HA_HAM_1H_Frozen",
+        "5M_HA_Close",
         "5M_HA_HAM",
         "15M_Delta_Momentum",
     ],
@@ -227,7 +231,7 @@ latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
 # 📊 DISPLAY MATRIX
 # =====================================================================
 st.markdown("---")
-col_s1, col_s2 = st.columns([1, 2])
+col_s1, col_s2 = st.columns([1, 2.5])
 
 with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
@@ -239,14 +243,15 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+    m1, m2, m3, m4, m5, m6, m7, m8 = st.columns(8)
     m1.metric("1H HA-Close", f"{latest['1H_HA_Close_Frozen']:,.2f}")
     m2.metric("15M HA-Close", f"{latest['HA_Close']:,.2f}")
-    m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
-    m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("5M Live HAM", f"{latest['5M_HA_HAM']:.2f}")
-    m6.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
-    m7.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
+    m3.metric("5M HA-Close", f"{latest['5M_HA_Close']:,.2f}")
+    m4.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+    m5.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
+    m6.metric("5M Live HAM", f"{latest['5M_HA_HAM']:.2f}")
+    m7.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
+    m8.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
 
 st.markdown("---")
 
@@ -255,6 +260,7 @@ st.subheader("📋 Nifty 50 Heikin-Ashi Triple Timeframe Timeline")
 clean_cols = [
     "1H_HA_Close_Frozen",
     "HA_Close",
+    "5M_HA_Close",
     "HA_HAM_1H_Frozen",
     "HA_HAM",
     "5M_HA_HAM",
@@ -268,6 +274,7 @@ display_df.rename(
     columns={
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
+        "5M_HA_Close": "5M HA-Close",
         "HA_HAM_1H_Frozen": "1H Locked HA-HAM",
         "HA_HAM": "15M Live HA-HAM",
         "5M_HA_HAM": "5M Live HA-HAM",
@@ -281,6 +288,7 @@ display_df.rename(
 for c in [
     "1H HA-Close",
     "15M HA-Close",
+    "5M HA-Close",
     "1H Locked HA-HAM",
     "15M Live HA-HAM",
     "5M Live HA-HAM",
