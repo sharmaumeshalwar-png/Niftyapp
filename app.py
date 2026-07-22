@@ -98,18 +98,19 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# DATA INGESTION (NIFTY 50 -> 1H, 15M, 5M)
+# DATA INGESTION (FETCHING MAXIMUM 60 DAYS HISTORICAL INTRADAY DATA)
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
+    # Maximum allowed period for intraday intervals on Yahoo Finance is 60d
     df_1h_raw = yf.download(
         tickers="^NSEI", period="60d", interval="1h", progress=False
     )
     df_15m_raw = yf.download(
-        tickers="^NSEI", period="14d", interval="15m", progress=False
+        tickers="^NSEI", period="60d", interval="15m", progress=False
     )
     df_5m_raw = yf.download(
-        tickers="^NSEI", period="7d", interval="5m", progress=False
+        tickers="^NSEI", period="60d", interval="5m", progress=False
     )
 
     processed_dfs = []
@@ -129,7 +130,7 @@ def load_market_data():
     return processed_dfs[0], processed_dfs[1], processed_dfs[2]
 
 
-with st.spinner("Fetching Live 1-Hour, 15-Minute & 5-Minute Nifty Data..."):
+with st.spinner("Fetching Extended (60-Day) Nifty 50 Intraday Data..."):
     try:
         df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
     except Exception as e:
@@ -231,7 +232,7 @@ latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
 # 📊 DISPLAY MATRIX
 # =====================================================================
 st.markdown("---")
-col_s1, col_s2 = st.columns([1, 2.5])
+col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
@@ -243,15 +244,33 @@ with col_s1:
         st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
-    m1, m2, m3, m4, m5, m6, m7, m8 = st.columns(8)
-    m1.metric("1H HA-Close", f"{latest['1H_HA_Close_Frozen']:,.2f}")
-    m2.metric("15M HA-Close", f"{latest['HA_Close']:,.2f}")
-    m3.metric("5M HA-Close", f"{latest['5M_HA_Close']:,.2f}")
-    m4.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
-    m5.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
-    m6.metric("5M Live HAM", f"{latest['5M_HA_HAM']:.2f}")
-    m7.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
-    m8.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
+    summary_data = {
+        "Metric": [
+            "HA Close Price",
+            "HA HAM Momentum",
+            "HAM Diff (1H-15M)",
+            "15M Delta Momentum",
+        ],
+        "1-Hour (Locked)": [
+            f"{latest['1H_HA_Close_Frozen']:,.2f}",
+            f"{latest['HA_HAM_1H_Frozen']:.2f}",
+            f"{latest['HAM_Diff']:.2f}",
+            "-",
+        ],
+        "15-Min (Live)": [
+            f"{latest['HA_Close']:,.2f}",
+            f"{latest['HA_HAM']:.2f}",
+            "-",
+            f"{latest['15M_Delta_Momentum']:.2f}",
+        ],
+        "5-Min (Live)": [
+            f"{latest['5M_HA_Close']:,.2f}",
+            f"{latest['5M_HA_HAM']:.2f}",
+            "-",
+            "-",
+        ],
+    }
+    st.table(pd.DataFrame(summary_data))
 
 st.markdown("---")
 
@@ -275,11 +294,11 @@ display_df.rename(
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
         "5M_HA_Close": "5M HA-Close",
-        "HA_HAM_1H_Frozen": "1H Locked HA-HAM",
-        "HA_HAM": "15M Live HA-HAM",
-        "5M_HA_HAM": "5M Live HA-HAM",
-        "HAM_Diff": "HAM Diff (1H - 15M)",
-        "15M_Delta_Momentum": "15M Delta Momentum",
+        "HA_HAM_1H_Frozen": "1H HAM",
+        "HA_HAM": "15M HAM",
+        "5M_HA_HAM": "5M HAM",
+        "HAM_Diff": "HAM Diff",
+        "15M_Delta_Momentum": "15M Delta Mom.",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
@@ -289,11 +308,11 @@ for c in [
     "1H HA-Close",
     "15M HA-Close",
     "5M HA-Close",
-    "1H Locked HA-HAM",
-    "15M Live HA-HAM",
-    "5M Live HA-HAM",
-    "HAM Diff (1H - 15M)",
-    "15M Delta Momentum",
+    "1H HAM",
+    "15M HAM",
+    "5M HAM",
+    "HAM Diff",
+    "15M Delta Mom.",
 ]:
     display_df[c] = display_df[c].round(2)
 
