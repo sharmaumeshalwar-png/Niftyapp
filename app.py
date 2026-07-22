@@ -98,11 +98,10 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# DATA INGESTION (FETCHING MAXIMUM 60 DAYS HISTORICAL INTRADAY DATA)
+# DATA INGESTION
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
-    # Maximum allowed period for intraday intervals on Yahoo Finance is 60d
     df_1h_raw = yf.download(
         tickers="^NSEI", period="60d", interval="1h", progress=False
     )
@@ -143,7 +142,7 @@ df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
 
 # =====================================================================
-# ⚙️ MULTI-TIMEFRAME ALIGNMENT ENGINE
+# ⚙️ MULTI-TIMEFRAME ALIGNMENT ENGINE (LEAK-FREE)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
@@ -158,12 +157,12 @@ df_15m_grid["HA_HAM_1H_Prev"] = (
     df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
-# Align 5-Minute HA-Close & 5-Minute HA-HAM to 15M grid
+# FIXED: Shift 5M data by 1 bar before reindexing to avoid lookahead bias
 df_15m_grid["5M_HA_Close"] = (
-    df_5m["HA_Close"].reindex(df_15m_grid.index, method="ffill")
+    df_5m["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["5M_HA_HAM"] = (
-    df_5m["HA_HAM"].reindex(df_15m_grid.index, method="ffill")
+    df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
 # HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
