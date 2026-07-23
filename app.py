@@ -10,10 +10,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Bounded Channel Engine (Kalman Q=0.80 on Scaled E)")
+st.title("⚡ NIFTY 50 Bounded Channel Engine (Kalman Q=0.50 on Scaled E)")
 st.caption(
     "A: 1-5 Channel | B: Kalman(0.50) | C: Hurst(B) | D: Momentum(A-B) | E: (C * D)"
-    " * 1000 | E_Kalman: Kalman(0.80) on E"
+    " * 1000 | E_Kalman: Kalman(0.50) on E"
 )
 
 
@@ -214,9 +214,9 @@ df_5m["Col_E_Raw"] = (
     df_5m["Col_C_Hurst"] * df_5m["Col_D_Weighted_Momentum"]
 ) * 1000.0
 
-# E Kalman Smoothed = KALMAN FILTER (Q = 0.80) ON COLUMN E  <--- NEW ADDITION
+# E Kalman Smoothed = KALMAN FILTER UPDATED TO (Q = 0.50) ON COLUMN E
 df_5m["Col_E_Composite"] = apply_kalman_filter_q(
-    df_5m["Col_E_Raw"].to_numpy(), q_val=0.80, r_val=0.1
+    df_5m["Col_E_Raw"].to_numpy(), q_val=0.50, r_val=0.1
 )
 
 # Supertrend on Kalman-Smoothed Column E
@@ -318,7 +318,7 @@ with col_s2:
             "B: Kalman on A (Q = 0.50)",
             "C: Hurst of B",
             "D: Weighted Momentum (A - B)",
-            "E: Kalman Filter (Q=0.80) on (C*D*1000)",
+            "E: Kalman Filter (Q=0.50) on (C*D*1000)",
             "Supertrend (7,3) on Filtered E",
         ],
         "Live Value": [
@@ -334,7 +334,7 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline Grid (Kalman 0.80 on Scaled E)")
+st.subheader("📋 Nifty 50 Timeline Grid (Kalman 0.50 on Scaled E)")
 
 clean_cols = [
     "Market_Regime",
@@ -357,7 +357,7 @@ display_df.rename(
         "5M_Col_B_Kalman": "B (Kalman Q=0.50)",
         "5M_Col_C_Hurst": "C (Hurst of B)",
         "5M_Col_D_Weighted_Momentum": "D (Momentum A-B)",
-        "5M_Col_E_Composite": "E (Kalman Q=0.80)",
+        "5M_Col_E_Composite": "E (Kalman Q=0.50)",
         "5M_Supertrend_on_E": "Supertrend(E)",
         "Kinematic_Signal": "Kinematic Signal",
     },
@@ -370,7 +370,7 @@ for c in [
     "B (Kalman Q=0.50)",
     "C (Hurst of B)",
     "D (Momentum A-B)",
-    "E (Kalman Q=0.80)",
+    "E (Kalman Q=0.50)",
     "Supertrend(E)",
 ]:
     display_df[c] = display_df[c].round(2)
