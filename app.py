@@ -12,7 +12,7 @@ st.set_page_config(
 
 st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Anti-Chop Radar")
 st.caption(
-    "100% Leak-Free Grid with Live Hurst Exponent & Market Efficiency Ratio (Chop Detectors)"
+    "100% Leak-Free Grid with 5M Hurst-Price & Supertrend (7,3)"
 )
 
 
@@ -86,6 +86,54 @@ def calculate_efficiency_ratio(price_series, window=14):
     sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
     er = net_change / (sum_individual_changes + 1e-8)
     return er.fillna(0.0).to_numpy()
+
+
+def calculate_supertrend_custom(series, period=7, multiplier=3.0):
+    """Calculates Supertrend (7, 3) on custom price series"""
+    s = pd.Series(series)
+    diff = s.diff().abs()
+    atr = diff.rolling(window=period).mean().fillna(0.0).to_numpy()
+    vals = s.to_numpy()
+
+    n = len(vals)
+    upper_band = vals + (multiplier * atr)
+    lower_band = vals - (multiplier * atr)
+
+    final_upper = np.zeros(n)
+    final_lower = np.zeros(n)
+    supertrend = np.zeros(n)
+    direction = np.ones(n)  # 1 for Bullish, -1 for Bearish
+
+    for i in range(1, n):
+        # Final Upper Band
+        if upper_band[i] < final_upper[i - 1] or vals[i - 1] > final_upper[i - 1]:
+            final_upper[i] = upper_band[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
+
+        # Final Lower Band
+        if lower_band[i] > final_lower[i - 1] or vals[i - 1] < final_lower[i - 1]:
+            final_lower[i] = lower_band[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
+
+        # Direction Trailing Logic
+        if direction[i - 1] == 1:
+            if vals[i] < final_lower[i]:
+                direction[i] = -1
+                supertrend[i] = final_upper[i]
+            else:
+                direction[i] = 1
+                supertrend[i] = final_lower[i]
+        else:
+            if vals[i] > final_upper[i]:
+                direction[i] = 1
+                supertrend[i] = final_lower[i]
+            else:
+                direction[i] = -1
+                supertrend[i] = final_upper[i]
+
+    return supertrend, direction
 
 
 def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -175,6 +223,25 @@ df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
+# ---------------------------------------------------------------------
+# EXACT USER FORMULA: (5M HA-Close * Hurst) -> Supertrend (7, 3)
+# ---------------------------------------------------------------------
+df_15m_grid["Composite_Signal"] = (
+    df_15m_grid["Hurst"] * df_15m_grid["5M_HA_HAM"]
+)
+
+# 5M HA Close * Hurst
+df_15m_grid["5M_Hurst_Price"] = (
+    df_15m_grid["5M_HA_Close"] * df_15m_grid["Hurst"]
+)
+
+# Supertrend (7,3) on (5M HA Close * Hurst)
+st_vals, st_dirs = calculate_supertrend_custom(
+    df_15m_grid["5M_Hurst_Price"].to_numpy(), period=7, multiplier=3.0
+)
+df_15m_grid["Supertrend_7_3"] = st_vals
+df_15m_grid["Supertrend_Dir"] = st_dirs
+
 # HAM Difference
 df_15m_grid["HAM_Diff"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
@@ -211,7 +278,7 @@ for i in range(2, n):
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Chop Detection Rule: If Hurst is low OR Efficiency Ratio is poor
+    # Chop Detection Rule
     if h_val < 0.48 or e_val < 0.18:
         regime[i] = "⚠️ CHOPPY ZONE"
         signals[i] = "🛑 NO TRADE (SideWays Market)"
@@ -244,7 +311,9 @@ df_15m_grid.dropna(
         "HA_HAM_1H_Frozen",
         "5M_HA_Close",
         "5M_HA_HAM",
-        "15M_Delta_Momentum",
+        "Composite_Signal",
+        "5M_Hurst_Price",
+        "Supertrend_7_3",
     ],
     inplace=True,
 )
@@ -280,10 +349,16 @@ with col_s2:
             "HA HAM Momentum",
             "Hurst Exponent (Chop Filter)",
             "Efficiency Ratio (ER)",
+            "Composite Signal (Hurst * 5M HAM)",
+            "5M Close * Hurst",
+            "Supertrend (7, 3)",
         ],
         "1-Hour (Locked)": [
             f"{latest['1H_HA_Close_Frozen']:,.2f}",
             f"{latest['HA_HAM_1H_Frozen']:.2f}",
+            "-",
+            "-",
+            "-",
             "-",
             "-",
         ],
@@ -292,10 +367,16 @@ with col_s2:
             f"{latest['HA_HAM']:.2f}",
             f"{latest['Hurst']:.2f}",
             f"{latest['ER']:.2f}",
+            f"{latest['Composite_Signal']:.2f}",
+            f"{latest['5M_Hurst_Price']:,.2f}",
+            f"{latest['Supertrend_7_3']:,.2f}",
         ],
         "5-Min (Live)": [
             f"{latest['5M_HA_Close']:,.2f}",
             f"{latest['5M_HA_HAM']:.2f}",
+            "-",
+            "-",
+            "-",
             "-",
             "-",
         ],
@@ -304,15 +385,21 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline with Live Hurst & Chop Anti-Filter")
+st.subheader(
+    "📋 Nifty 50 Timeline with 5M Close * Hurst & Supertrend (7,3)"
+)
 
+# Column ordering: 5M HA-Close -> (5M Close * Hurst) -> Supertrend (7,3)
 clean_cols = [
     "Market_Regime",
     "Hurst",
     "ER",
+    "Composite_Signal",
     "1H_HA_Close_Frozen",
     "HA_Close",
     "5M_HA_Close",
+    "5M_Hurst_Price",  # <--- 5M Close ke theek NEXT column
+    "Supertrend_7_3",  # <--- Supertrend (7,3)
     "HA_HAM_1H_Frozen",
     "HA_HAM",
     "5M_HA_HAM",
@@ -325,9 +412,12 @@ display_df.rename(
         "Market_Regime": "Regime",
         "Hurst": "Hurst Exponent",
         "ER": "Eff. Ratio",
+        "Composite_Signal": "Composite (Hurst * 5M)",
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
         "5M_HA_Close": "5M HA-Close",
+        "5M_Hurst_Price": "5M Close * Hurst",
+        "Supertrend_7_3": "Supertrend (7,3)",
         "HA_HAM_1H_Frozen": "1H HAM",
         "HA_HAM": "15M HAM",
         "5M_HA_HAM": "5M HAM",
@@ -339,9 +429,12 @@ display_df.rename(
 for c in [
     "Hurst Exponent",
     "Eff. Ratio",
+    "Composite (Hurst * 5M)",
     "1H HA-Close",
     "15M HA-Close",
     "5M HA-Close",
+    "5M Close * Hurst",
+    "Supertrend (7,3)",
     "1H HAM",
     "15M HAM",
     "5M HAM",
