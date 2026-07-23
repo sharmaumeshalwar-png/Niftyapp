@@ -10,10 +10,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Bounded Channel Engine (Scaled E = C * D * 1000)")
+st.title("⚡ NIFTY 50 Bounded Channel Engine (Kalman Q=0.80 on Scaled E)")
 st.caption(
     "A: 1-5 Channel | B: Kalman(0.50) | C: Hurst(B) | D: Momentum(A-B) | E: (C * D)"
-    " * 1000"
+    " * 1000 | E_Kalman: Kalman(0.80) on E"
 )
 
 
@@ -58,9 +58,9 @@ def scale_to_1_to_5_channel(series: pd.Series, window: int = 30) -> pd.Series:
 
 
 def apply_kalman_filter_q(data_array, q_val=0.50, r_val=0.1, initial_p=1.0):
-    """Column B: Kalman Filter on 1-5 Channel with Q = 0.50."""
+    """Kalman Filter Implementation."""
     if len(data_array) == 0:
-        return []
+        return np.array([])
     x, p = data_array[0], initial_p
     filtered = []
     for z in data_array:
@@ -209,12 +209,17 @@ df_5m["Col_C_Hurst"] = calculate_rolling_hurst_leak_free(
 raw_diff = df_5m["Col_A_Channel"] - df_5m["Col_B_Kalman"]
 df_5m["Col_D_Weighted_Momentum"] = raw_diff.ewm(span=5, adjust=False).mean()
 
-# E = (C * D) * 1000  <--- BADA NUMBER DENE KE LIYE 1000 SE MULTIPLY KIYA
-df_5m["Col_E_Composite"] = (
+# E Raw Scaled = (C * D) * 1000
+df_5m["Col_E_Raw"] = (
     df_5m["Col_C_Hurst"] * df_5m["Col_D_Weighted_Momentum"]
 ) * 1000.0
 
-# Supertrend on Scaled Column E
+# E Kalman Smoothed = KALMAN FILTER (Q = 0.80) ON COLUMN E  <--- NEW ADDITION
+df_5m["Col_E_Composite"] = apply_kalman_filter_q(
+    df_5m["Col_E_Raw"].to_numpy(), q_val=0.80, r_val=0.1
+)
+
+# Supertrend on Kalman-Smoothed Column E
 st_vals, st_dirs = calculate_supertrend_custom(
     df_5m["Col_E_Composite"].to_numpy(), period=7, multiplier=3.0
 )
@@ -262,10 +267,10 @@ for i in range(2, n):
         signals[i] = "🛑 NO TRADE (Low Hurst / Sideways)"
     elif e_val > st_val:
         regime[i] = "🟢 BULLISH RALLY"
-        signals[i] = "🟢 STRONG BUY (Composite > Supertrend)"
+        signals[i] = "🟢 STRONG BUY (Filtered E > Supertrend)"
     elif e_val < st_val:
         regime[i] = "🔴 BEARISH DROP"
-        signals[i] = "🔴 STRONG SELL (Composite < Supertrend)"
+        signals[i] = "🔴 STRONG SELL (Filtered E < Supertrend)"
 
 df_15m_grid["Market_Regime"] = regime
 df_15m_grid["Kinematic_Signal"] = signals
@@ -313,8 +318,8 @@ with col_s2:
             "B: Kalman on A (Q = 0.50)",
             "C: Hurst of B",
             "D: Weighted Momentum (A - B)",
-            "E: Composite Signal (C * D * 1000)",
-            "Supertrend (7,3) on E",
+            "E: Kalman Filter (Q=0.80) on (C*D*1000)",
+            "Supertrend (7,3) on Filtered E",
         ],
         "Live Value": [
             f"{latest['5M_Col_A_Channel']:.3f}",
@@ -329,7 +334,7 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline Grid (Scaled E)")
+st.subheader("📋 Nifty 50 Timeline Grid (Kalman 0.80 on Scaled E)")
 
 clean_cols = [
     "Market_Regime",
@@ -352,7 +357,7 @@ display_df.rename(
         "5M_Col_B_Kalman": "B (Kalman Q=0.50)",
         "5M_Col_C_Hurst": "C (Hurst of B)",
         "5M_Col_D_Weighted_Momentum": "D (Momentum A-B)",
-        "5M_Col_E_Composite": "E (C * D * 1000)",
+        "5M_Col_E_Composite": "E (Kalman Q=0.80)",
         "5M_Supertrend_on_E": "Supertrend(E)",
         "Kinematic_Signal": "Kinematic Signal",
     },
@@ -365,7 +370,7 @@ for c in [
     "B (Kalman Q=0.50)",
     "C (Hurst of B)",
     "D (Momentum A-B)",
-    "E (C * D * 1000)",
+    "E (Kalman Q=0.80)",
     "Supertrend(E)",
 ]:
     display_df[c] = display_df[c].round(2)
