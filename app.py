@@ -10,14 +10,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine (1H Locked + 15M + 5M Live)")
+st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Anti-Chop Radar")
 st.caption(
-    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min & 5-Min HA-Close and HA-HAM update dynamically."
+    "100% Leak-Free Grid with Live Hurst Exponent & Market Efficiency Ratio (Chop Detectors)"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
+# MATHEMATICAL ENGINES & CHOPMETRICS
 # =====================================================================
 def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
@@ -45,9 +45,7 @@ def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_ha
 
 
-def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
-):
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0:
         return []
     x, p = data_array[0], initial_p
@@ -68,16 +66,26 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
     for i in range(window, len(price_series)):
         window_data = log_returns[i - window + 1 : i + 1]
-        cum_dev = np.cumsum(window_data - np.mean(window_data))
+        mean_val = np.mean(window_data)
+        cum_dev = np.cumsum(window_data - mean_val)
         r_val = np.max(cum_dev) - np.min(cum_dev)
-        s_val = np.std(window_data) + 1e-10
+        s_val = np.std(window_data)
 
-        rs_ratio = r_val / s_val
-        if rs_ratio > 0:
+        if s_val > 1e-8 and r_val > 0:
+            rs_ratio = r_val / s_val
             h = np.log(rs_ratio) / np.log(window)
             hurst_values[i] = np.clip(h, 0.0, 1.0)
 
     return hurst_values
+
+
+def calculate_efficiency_ratio(price_series, window=14):
+    """Efficiency Ratio (Kaufman ER): Net Change / Total Sum of Individual Changes"""
+    s = pd.Series(price_series)
+    net_change = (s - s.shift(window)).abs()
+    sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
+    er = net_change / (sum_individual_changes + 1e-8)
+    return er.fillna(0.0).to_numpy()
 
 
 def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -85,6 +93,8 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
     df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
+    df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
+
     kalman = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
@@ -136,28 +146,28 @@ with st.spinner("Fetching Extended (60-Day) Nifty 50 Intraday Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Heikin-Ashi & HAM Features
+# Compute Heikin-Ashi, HAM & Chop Metrics
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
 
 # =====================================================================
-# ⚙️ MULTI-TIMEFRAME ALIGNMENT ENGINE (LEAK-FREE)
+# MULTI-TIMEFRAME ALIGNMENT ENGINE (100% LEAK-FREE)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps safely
+# 1H Data shifted by 1 bar BEFORE forward fill
 df_15m_grid["1H_HA_Close_Frozen"] = (
-    df_1h["HA_Close"].reindex(df_15m_grid.index, method="ffill")
+    df_1h["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["HA_HAM_1H_Frozen"] = (
-    df_1h["HA_HAM"].reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["HA_HAM_1H_Prev"] = (
     df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
+df_15m_grid["HA_HAM_1H_Prev"] = (
+    df_1h["HA_HAM"].shift(2).reindex(df_15m_grid.index, method="ffill")
+)
 
-# FIXED: Shift 5M data by 1 bar before reindexing to avoid lookahead bias
+# 5M Data shifted by 1 bar before reindexing
 df_15m_grid["5M_HA_Close"] = (
     df_5m["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
@@ -165,7 +175,7 @@ df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
-# HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
+# HAM Difference
 df_15m_grid["HAM_Diff"] = (
     df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
 )
@@ -186,14 +196,28 @@ m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
 ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
+hurst_vals = df_15m_grid["Hurst"].to_numpy()
+er_vals = df_15m_grid["ER"].to_numpy()
+
 signals = ["⚪ NEUTRAL"] * n
+regime = ["⚡ TRENDING"] * n
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
+    h_val = hurst_vals[i]
+    e_val = er_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
+
+    # Chop Detection Rule: If Hurst is low OR Efficiency Ratio is poor
+    if h_val < 0.48 or e_val < 0.18:
+        regime[i] = "⚠️ CHOPPY ZONE"
+        signals[i] = "🛑 NO TRADE (SideWays Market)"
+        continue
+
+    regime[i] = "⚡ TRENDING"
 
     if h1_curr > 0 and h1_curr < h1_prev:
         signals[i] = (
@@ -212,6 +236,7 @@ for i in range(2, n):
     elif h1_curr < h1_prev and h1_curr < 0:
         signals[i] = "🔴 ACCELERATED DROP"
 
+df_15m_grid["Market_Regime"] = regime
 df_15m_grid["Instant_Kinematic_Signal"] = signals
 df_15m_grid.dropna(
     subset=[
@@ -228,39 +253,45 @@ latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
 
 # =====================================================================
-# 📊 DISPLAY MATRIX
+# DISPLAY MATRIX
 # =====================================================================
 st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
-    if "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
+    reg = latest["Market_Regime"]
+
+    if reg == "⚠️ CHOPPY ZONE":
+        st.warning(
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Low Hurst {latest['Hurst']:.2f} / Low ER {latest['ER']:.2f})*"
+        )
+    elif "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
     elif "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig:
         st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
-        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
+        st.info(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
     summary_data = {
         "Metric": [
             "HA Close Price",
             "HA HAM Momentum",
-            "HAM Diff (1H-15M)",
-            "15M Delta Momentum",
+            "Hurst Exponent (Chop Filter)",
+            "Efficiency Ratio (ER)",
         ],
         "1-Hour (Locked)": [
             f"{latest['1H_HA_Close_Frozen']:,.2f}",
             f"{latest['HA_HAM_1H_Frozen']:.2f}",
-            f"{latest['HAM_Diff']:.2f}",
+            "-",
             "-",
         ],
         "15-Min (Live)": [
             f"{latest['HA_Close']:,.2f}",
             f"{latest['HA_HAM']:.2f}",
-            "-",
-            f"{latest['15M_Delta_Momentum']:.2f}",
+            f"{latest['Hurst']:.2f}",
+            f"{latest['ER']:.2f}",
         ],
         "5-Min (Live)": [
             f"{latest['5M_HA_Close']:,.2f}",
@@ -273,45 +304,47 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Heikin-Ashi Triple Timeframe Timeline")
+st.subheader("📋 Nifty 50 Timeline with Live Hurst & Chop Anti-Filter")
 
 clean_cols = [
+    "Market_Regime",
+    "Hurst",
+    "ER",
     "1H_HA_Close_Frozen",
     "HA_Close",
     "5M_HA_Close",
     "HA_HAM_1H_Frozen",
     "HA_HAM",
     "5M_HA_HAM",
-    "HAM_Diff",
-    "15M_Delta_Momentum",
     "Instant_Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(
     columns={
+        "Market_Regime": "Regime",
+        "Hurst": "Hurst Exponent",
+        "ER": "Eff. Ratio",
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
         "5M_HA_Close": "5M HA-Close",
         "HA_HAM_1H_Frozen": "1H HAM",
         "HA_HAM": "15M HAM",
         "5M_HA_HAM": "5M HAM",
-        "HAM_Diff": "HAM Diff",
-        "15M_Delta_Momentum": "15M Delta Mom.",
         "Instant_Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
 )
 
 for c in [
+    "Hurst Exponent",
+    "Eff. Ratio",
     "1H HA-Close",
     "15M HA-Close",
     "5M HA-Close",
     "1H HAM",
     "15M HAM",
     "5M HAM",
-    "HAM Diff",
-    "15M Delta Mom.",
 ]:
     display_df[c] = display_df[c].round(2)
 
