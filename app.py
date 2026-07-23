@@ -10,9 +10,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Dynamic Adaptive Kalman Hurst")
+st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Anti-Chop Radar")
 st.caption(
-    "100% Leak-Free Grid with Dynamic Volatility-Adaptive Kalman Hurst Exponent, Market ER & Composite Signal"
+    "100% Leak-Free Grid with Live Hurst Exponent & Market Efficiency Ratio (Chop Detectors)"
 )
 
 
@@ -59,37 +59,7 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 
-def apply_dynamic_kalman_hurst(hurst_series, volatility_ratio_series):
-    """
-    Fully Dynamic & Adaptive Kalman Filter for Hurst Exponent
-    - Adjusts Process Noise (Q) & Measurement Noise (R) dynamically based on market volatility.
-    """
-    if len(hurst_series) == 0:
-        return []
-
-    x = hurst_series[0]
-    p = 1.0
-    kalman_hurst = []
-
-    for z, vol_ratio in zip(hurst_series, volatility_ratio_series):
-        base_q = 0.0002
-        base_r = 0.05
-
-        q_dynamic = base_q * np.clip(vol_ratio, 0.5, 3.0)
-        r_dynamic = base_r / np.clip(vol_ratio, 0.5, 3.0)
-
-        p = p + q_dynamic
-        k = p / (p + r_dynamic)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-
-        kalman_hurst.append(np.clip(x, 0.0, 1.0))
-
-    return kalman_hurst
-
-
-def calculate_rolling_hurst_leak_free(df_ha, window=30):
-    price_series = df_ha["HA_Close"].to_numpy()
+def calculate_rolling_hurst_leak_free(price_series, window=30):
     hurst_values = np.full(len(price_series), 0.5)
     s = pd.Series(price_series)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
@@ -106,18 +76,11 @@ def calculate_rolling_hurst_leak_free(df_ha, window=30):
             h = np.log(rs_ratio) / np.log(window)
             hurst_values[i] = np.clip(h, 0.0, 1.0)
 
-    high_low = df_ha["HA_High"] - df_ha["HA_Low"]
-    atr_short = high_low.rolling(5).mean()
-    atr_long = high_low.rolling(20).mean()
-    volatility_ratio = (atr_short / (atr_long + 1e-8)).fillna(1.0).to_numpy()
-
-    smooth_kalman_hurst = apply_dynamic_kalman_hurst(
-        hurst_values, volatility_ratio
-    )
-    return np.array(smooth_kalman_hurst)
+    return hurst_values
 
 
 def calculate_efficiency_ratio(price_series, window=14):
+    """Efficiency Ratio (Kaufman ER): Net Change / Total Sum of Individual Changes"""
     s = pd.Series(price_series)
     net_change = (s - s.shift(window)).abs()
     sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
@@ -129,7 +92,7 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    df_ha["Hurst_Kalman"] = calculate_rolling_hurst_leak_free(df_ha, window=30)
+    df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
     df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
 
     kalman = apply_kalman_filter_custom(
@@ -140,9 +103,7 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
 
     df_ha["Kalman_Price"] = kalman
-    df_ha["HA_HAM"] = np.array(momentum) * (
-        df_ha["Hurst_Kalman"].to_numpy() * 2.0
-    )
+    df_ha["HA_HAM"] = np.array(momentum) * (df_ha["Hurst"].to_numpy() * 2.0)
     return df_ha
 
 
@@ -185,7 +146,7 @@ with st.spinner("Fetching Extended (60-Day) Nifty 50 Intraday Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Heikin-Ashi, HAM & Dynamic Adaptive Kalman Chop Metrics
+# Compute Heikin-Ashi, HAM & Chop Metrics
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
@@ -214,12 +175,18 @@ df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
-# ---------------------------------------------------------------------
-# NEW COLUMN CALCULATION: (Hurst * ER) * 5M HAM
-# ---------------------------------------------------------------------
-df_15m_grid["Composite_Signal"] = (
-    df_15m_grid["Hurst_Kalman"] * df_15m_grid["ER"]
-) * df_15m_grid["5M_HA_HAM"]
+# HAM Difference
+df_15m_grid["HAM_Diff"] = (
+    df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
+)
+
+# Delta Momentum
+df_15m_grid["HA_Close_Diff_15M"] = (
+    df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
+)
+df_15m_grid["15M_Delta_Momentum"] = (
+    df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
+)
 
 n = len(df_15m_grid)
 h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
@@ -229,7 +196,7 @@ m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
 ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
-hurst_kalman_vals = df_15m_grid["Hurst_Kalman"].to_numpy()
+hurst_vals = df_15m_grid["Hurst"].to_numpy()
 er_vals = df_15m_grid["ER"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
@@ -239,12 +206,13 @@ for i in range(2, n):
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
-    h_kalman = hurst_kalman_vals[i]
+    h_val = hurst_vals[i]
     e_val = er_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    if h_kalman < 0.48 or e_val < 0.18:
+    # Chop Detection Rule: If Hurst is low OR Efficiency Ratio is poor
+    if h_val < 0.48 or e_val < 0.18:
         regime[i] = "⚠️ CHOPPY ZONE"
         signals[i] = "🛑 NO TRADE (SideWays Market)"
         continue
@@ -276,7 +244,7 @@ df_15m_grid.dropna(
         "HA_HAM_1H_Frozen",
         "5M_HA_Close",
         "5M_HA_HAM",
-        "Composite_Signal",
+        "15M_Delta_Momentum",
     ],
     inplace=True,
 )
@@ -296,7 +264,7 @@ with col_s1:
 
     if reg == "⚠️ CHOPPY ZONE":
         st.warning(
-            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Dynamic Kalman Hurst {latest['Hurst_Kalman']:.2f} / ER {latest['ER']:.2f})*"
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Low Hurst {latest['Hurst']:.2f} / Low ER {latest['ER']:.2f})*"
         )
     elif "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
@@ -310,28 +278,24 @@ with col_s2:
         "Metric": [
             "HA Close Price",
             "HA HAM Momentum",
-            "Dynamic Kalman Hurst",
+            "Hurst Exponent (Chop Filter)",
             "Efficiency Ratio (ER)",
-            "Composite Signal [(H*ER)*5M]",
         ],
         "1-Hour (Locked)": [
             f"{latest['1H_HA_Close_Frozen']:,.2f}",
             f"{latest['HA_HAM_1H_Frozen']:.2f}",
             "-",
             "-",
-            "-",
         ],
         "15-Min (Live)": [
             f"{latest['HA_Close']:,.2f}",
             f"{latest['HA_HAM']:.2f}",
-            f"{latest['Hurst_Kalman']:.2f}",
+            f"{latest['Hurst']:.2f}",
             f"{latest['ER']:.2f}",
-            f"{latest['Composite_Signal']:.2f}",
         ],
         "5-Min (Live)": [
             f"{latest['5M_HA_Close']:,.2f}",
             f"{latest['5M_HA_HAM']:.2f}",
-            "-",
             "-",
             "-",
         ],
@@ -340,13 +304,12 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline with Dynamic Adaptive Kalman & Composite Signal")
+st.subheader("📋 Nifty 50 Timeline with Live Hurst & Chop Anti-Filter")
 
 clean_cols = [
     "Market_Regime",
-    "Hurst_Kalman",
+    "Hurst",
     "ER",
-    "Composite_Signal",
     "1H_HA_Close_Frozen",
     "HA_Close",
     "5M_HA_Close",
@@ -360,9 +323,8 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(
     columns={
         "Market_Regime": "Regime",
-        "Hurst_Kalman": "Dyn-Kalman Hurst",
+        "Hurst": "Hurst Exponent",
         "ER": "Eff. Ratio",
-        "Composite_Signal": "Composite [(H*ER)*5M]",
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
         "5M_HA_Close": "5M HA-Close",
@@ -375,9 +337,8 @@ display_df.rename(
 )
 
 for c in [
-    "Dyn-Kalman Hurst",
+    "Hurst Exponent",
     "Eff. Ratio",
-    "Composite [(H*ER)*5M]",
     "1H HA-Close",
     "15M HA-Close",
     "5M HA-Close",
