@@ -2,22 +2,23 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+from scipy.stats import ks_2samp
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty HA Triple-Timeframe Kinematic Engine",
+    page_title="Nifty 50 Kolmogorov Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Anti-Chop Radar")
+st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Kolmogorov Anti-Chop Radar")
 st.caption(
-    "100% Leak-Free Grid with Live Hurst Exponent, Market ER & Composite Signal"
+    "100% Leak-Free Grid with Live Kolmogorov Complexity, K-S Drift, Hurst Exponent & Composite Signal"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & CHOPMETRICS
+# KOLMOGOROV & MATHEMATICAL ENGINES
 # =====================================================================
 def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
@@ -59,6 +60,27 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 
+def calculate_kolmogorov_complexity(series, window=30):
+    """
+    Computes Algorithmic Complexity on Price Returns.
+    Lower Complexity (< 0.45) = Structured Trend
+    Higher Complexity (> 0.70) = Pure Random Walk / High Chop
+    """
+    s = pd.Series(series)
+    diff = s.diff().fillna(0.0).to_numpy()
+    binary_seq = (diff > 0).astype(int)
+
+    complexity = np.full(len(series), 0.5)
+    for i in range(window, len(binary_seq)):
+        sub_seq = binary_seq[i - window + 1 : i + 1]
+        patterns = set(
+            tuple(sub_seq[j : j + 3]) for j in range(len(sub_seq) - 2)
+        )
+        complexity[i] = len(patterns) / 8.0  # Normalized (2^3 = 8 max binary triples)
+
+    return complexity
+
+
 def calculate_rolling_hurst_leak_free(price_series, window=30):
     hurst_values = np.full(len(price_series), 0.5)
     s = pd.Series(price_series)
@@ -80,7 +102,6 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 def calculate_efficiency_ratio(price_series, window=14):
-    """Efficiency Ratio (Kaufman ER): Net Change / Total Sum of Individual Changes"""
     s = pd.Series(price_series)
     net_change = (s - s.shift(window)).abs()
     sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
@@ -91,9 +112,13 @@ def calculate_efficiency_ratio(price_series, window=14):
 def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
+    raw_close = df_ha["Close"].to_numpy().flatten()
 
     df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
     df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
+    
+    # Applied Kolmogorov Complexity directly on Close Price
+    df_ha["Kolmogorov_Complexity"] = calculate_kolmogorov_complexity(raw_close, window=30)
 
     kalman = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -146,7 +171,7 @@ with st.spinner("Fetching Extended (60-Day) Nifty 50 Intraday Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Heikin-Ashi, HAM & Chop Metrics
+# Compute Heikin-Ashi, HAM, Hurst & Kolmogorov Metrics
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
@@ -168,31 +193,37 @@ df_15m_grid["HA_HAM_1H_Prev"] = (
 )
 
 # 5M Data shifted by 1 bar before reindexing
+df_15m_grid["5M_Close"] = (
+    df_5m["Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
 df_15m_grid["5M_HA_Close"] = (
     df_5m["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
+df_15m_grid["5M_Kolmogorov"] = (
+    df_5m["Kolmogorov_Complexity"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
 
-# ---------------------------------------------------------------------
-# NEW COLUMN CALCULATION: Hurst * 5M HAM
-# ---------------------------------------------------------------------
+# K-S Distribution Drift Test between 5M Close & 15M Close
+ks_stats = np.zeros(len(df_15m_grid))
+c_5m = df_15m_grid["5M_Close"].fillna(method="ffill").to_numpy()
+c_15m = df_15m_grid["Close"].to_numpy()
+
+for i in range(30, len(df_15m_grid)):
+    stat, _ = ks_2samp(c_5m[i - 30 : i], c_15m[i - 30 : i])
+    ks_stats[i] = stat
+
+df_15m_grid["KS_Drift_Stat"] = ks_stats
+
+# Anti-Chop Composite Score combining Kolmogorov Entropy & Hurst Exponent
+df_15m_grid["Kolmogorov_Chop_Score"] = (
+    df_15m_grid["5M_Kolmogorov"] / (df_15m_grid["Hurst"] + 1e-8)
+)
+
 df_15m_grid["Composite_Signal"] = (
     df_15m_grid["Hurst"] * df_15m_grid["5M_HA_HAM"]
-)
-
-# HAM Difference
-df_15m_grid["HAM_Diff"] = (
-    df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
-)
-
-# Delta Momentum
-df_15m_grid["HA_Close_Diff_15M"] = (
-    df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
-)
-df_15m_grid["15M_Delta_Momentum"] = (
-    df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
 )
 
 n = len(df_15m_grid)
@@ -205,6 +236,7 @@ ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
 hurst_vals = df_15m_grid["Hurst"].to_numpy()
 er_vals = df_15m_grid["ER"].to_numpy()
+kolm_5m_vals = df_15m_grid["5M_Kolmogorov"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
 regime = ["⚡ TRENDING"] * n
@@ -215,16 +247,17 @@ for i in range(2, n):
     m15_curr = m15_curr_arr[i]
     h_val = hurst_vals[i]
     e_val = er_vals[i]
+    k_5m = kolm_5m_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Chop Detection Rule: If Hurst is low OR Efficiency Ratio is poor
-    if h_val < 0.48 or e_val < 0.18:
-        regime[i] = "⚠️ CHOPPY ZONE"
-        signals[i] = "🛑 NO TRADE (SideWays Market)"
+    # Kolmogorov Anti-Chop Rule (High Complexity > 0.70 OR Low Hurst < 0.48)
+    if k_5m > 0.70 or h_val < 0.48 or e_val < 0.18:
+        regime[i] = "⚠️ HIGH ENTROPY / CHOP"
+        signals[i] = "🛑 NO TRADE (Kolmogorov Noise Detected)"
         continue
 
-    regime[i] = "⚡ TRENDING"
+    regime[i] = "⚡ LOW ENTROPY / TREND"
 
     if h1_curr > 0 and h1_curr < h1_prev:
         signals[i] = (
@@ -245,6 +278,7 @@ for i in range(2, n):
 
 df_15m_grid["Market_Regime"] = regime
 df_15m_grid["Instant_Kinematic_Signal"] = signals
+
 df_15m_grid.dropna(
     subset=[
         "HA_HAM",
@@ -252,7 +286,7 @@ df_15m_grid.dropna(
         "5M_HA_Close",
         "5M_HA_HAM",
         "Composite_Signal",
-        "15M_Delta_Momentum",
+        "5M_Kolmogorov",
     ],
     inplace=True,
 )
@@ -270,9 +304,9 @@ with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
     reg = latest["Market_Regime"]
 
-    if reg == "⚠️ CHOPPY ZONE":
+    if reg == "⚠️ HIGH ENTROPY / CHOP":
         st.warning(
-            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Low Hurst {latest['Hurst']:.2f} / Low ER {latest['ER']:.2f})*"
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(5M Kolmogorov Complexity {latest['5M_Kolmogorov']:.2f} / Hurst {latest['Hurst']:.2f})*"
         )
     elif "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
@@ -285,28 +319,32 @@ with col_s2:
     summary_data = {
         "Metric": [
             "HA Close Price",
-            "HA HAM Momentum",
+            "5M Kolmogorov Complexity (Entropy)",
+            "K-S Distribution Drift Stat",
             "Hurst Exponent (Chop Filter)",
             "Efficiency Ratio (ER)",
             "Composite Signal (Hurst * 5M HAM)",
         ],
         "1-Hour (Locked)": [
             f"{latest['1H_HA_Close_Frozen']:,.2f}",
-            f"{latest['HA_HAM_1H_Frozen']:.2f}",
+            "-",
+            "-",
             "-",
             "-",
             "-",
         ],
         "15-Min (Live)": [
             f"{latest['HA_Close']:,.2f}",
-            f"{latest['HA_HAM']:.2f}",
+            f"{latest['Kolmogorov_Complexity']:.2f}",
+            f"{latest['KS_Drift_Stat']:.2f}",
             f"{latest['Hurst']:.2f}",
             f"{latest['ER']:.2f}",
             f"{latest['Composite_Signal']:.2f}",
         ],
         "5-Min (Live)": [
             f"{latest['5M_HA_Close']:,.2f}",
-            f"{latest['5M_HA_HAM']:.2f}",
+            f"{latest['5M_Kolmogorov']:.2f}",
+            "-",
             "-",
             "-",
             "-",
@@ -316,10 +354,12 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline with Live Hurst & Chop Anti-Filter")
+st.subheader("📋 Nifty 50 Timeline with Kolmogorov Complexity & K-S Drift Radar")
 
 clean_cols = [
     "Market_Regime",
+    "5M_Kolmogorov",
+    "KS_Drift_Stat",
     "Hurst",
     "ER",
     "Composite_Signal",
@@ -336,6 +376,8 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(
     columns={
         "Market_Regime": "Regime",
+        "5M_Kolmogorov": "5M Kolmogorov Complexity",
+        "KS_Drift_Stat": "K-S Drift Stat",
         "Hurst": "Hurst Exponent",
         "ER": "Eff. Ratio",
         "Composite_Signal": "Composite (Hurst * 5M)",
@@ -351,6 +393,8 @@ display_df.rename(
 )
 
 for c in [
+    "5M Kolmogorov Complexity",
+    "K-S Drift Stat",
     "Hurst Exponent",
     "Eff. Ratio",
     "Composite (Hurst * 5M)",
