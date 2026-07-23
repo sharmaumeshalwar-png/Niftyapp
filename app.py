@@ -116,7 +116,7 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
     df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
-    
+
     # Applied Kolmogorov Complexity directly on Close Price
     df_ha["Kolmogorov_Complexity"] = calculate_kolmogorov_complexity(raw_close, window=30)
 
@@ -208,12 +208,17 @@ df_15m_grid["5M_Kolmogorov"] = (
 
 # K-S Distribution Drift Test between 5M Close & 15M Close
 ks_stats = np.zeros(len(df_15m_grid))
-c_5m = df_15m_grid["5M_Close"].fillna(method="ffill").to_numpy()
+
+# FIXED: Replaced method="ffill" with .ffill() for Pandas 2.0+ compatibility
+c_5m = df_15m_grid["5M_Close"].ffill().to_numpy()
 c_15m = df_15m_grid["Close"].to_numpy()
 
 for i in range(30, len(df_15m_grid)):
-    stat, _ = ks_2samp(c_5m[i - 30 : i], c_15m[i - 30 : i])
-    ks_stats[i] = stat
+    if np.isnan(c_5m[i - 30 : i]).any() or np.isnan(c_15m[i - 30 : i]).any():
+        ks_stats[i] = 0.0
+    else:
+        stat, _ = ks_2samp(c_5m[i - 30 : i], c_15m[i - 30 : i])
+        ks_stats[i] = stat
 
 df_15m_grid["KS_Drift_Stat"] = ks_stats
 
