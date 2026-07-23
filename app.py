@@ -5,15 +5,13 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty HA Triple-Timeframe Kinematic Engine",
+    page_title="Nifty 1-to-5 Bounded Channel Kinematic Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine")
-st.caption(
-    "Grid with (5M Close * Hurst) & Supertrend (7,3)"
-)
+st.title("⚡ NIFTY 50 Bounded Channel Engine (1-5 Scale)")
+st.caption("A: 1-5 Channel | B: Kalman(0.50) | C: Hurst(B) | D: Momentum(A-B) | E: C * D")
 
 
 # =====================================================================
@@ -45,26 +43,39 @@ def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_ha
 
 
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+def scale_to_1_to_5_channel(series: pd.Series, window: int = 30) -> pd.Series:
+    """Column A: Scale Price into strictly [1.0, 5.0] channel."""
+    roll_min = series.rolling(window=window).min()
+    roll_max = series.rolling(window=window).max()
+    diff = (roll_max - roll_min).replace(0, 1e-8)
+
+    norm = (series - roll_min) / diff
+    scaled = 1.0 + (norm * 4.0)
+    return scaled.fillna(3.0)
+
+
+def apply_kalman_filter_q(data_array, q_val=0.50, r_val=0.1, initial_p=1.0):
+    """Column B: Kalman Filter on 1-5 Channel with Q = 0.50."""
     if len(data_array) == 0:
         return []
     x, p = data_array[0], initial_p
-    filtered_values = []
+    filtered = []
     for z in data_array:
         p = p + q_val
         k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered_values.append(x)
-    return filtered_values
+        filtered.append(x)
+    return np.array(filtered)
 
 
-def calculate_rolling_hurst_leak_free(price_series, window=30):
-    hurst_values = np.full(len(price_series), 0.5)
-    s = pd.Series(price_series)
-    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+def calculate_rolling_hurst_leak_free(series_in, window=30):
+    """Column C: Rolling Hurst Exponent calculated on series B."""
+    s = pd.Series(series_in)
+    hurst_values = np.full(len(s), 0.5)
+    log_returns = np.log((s / s.shift(1)).replace(0, 1e-8)).fillna(0.0).to_numpy()
 
-    for i in range(window, len(price_series)):
+    for i in range(window, len(s)):
         window_data = log_returns[i - window + 1 : i + 1]
         mean_val = np.mean(window_data)
         cum_dev = np.cumsum(window_data - mean_val)
@@ -79,16 +90,7 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
     return hurst_values
 
 
-def calculate_efficiency_ratio(price_series, window=14):
-    s = pd.Series(price_series)
-    net_change = (s - s.shift(window)).abs()
-    sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
-    er = net_change / (sum_individual_changes + 1e-8)
-    return er.fillna(0.0).to_numpy()
-
-
 def calculate_supertrend_custom(series, period=7, multiplier=3.0):
-    """Calculates Supertrend (7, 3) directly on the given series"""
     s = pd.Series(series)
     diff = s.diff().abs()
     atr = diff.rolling(window=period).mean().fillna(0.0).to_numpy()
@@ -132,39 +134,14 @@ def calculate_supertrend_custom(series, period=7, multiplier=3.0):
     return supertrend, direction
 
 
-def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
-    df_ha = compute_heikin_ashi(df_raw)
-    ha_close = df_ha["HA_Close"].to_numpy().flatten()
-
-    df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
-
-    kalman = apply_kalman_filter_custom(
-        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-    )
-    momentum = apply_kalman_filter_custom(
-        ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1
-    )
-
-    df_ha["Kalman_Price"] = kalman
-    df_ha["HA_HAM"] = np.array(momentum) * (df_ha["Hurst"].to_numpy() * 2.0)
-    return df_ha
-
-
 # =====================================================================
 # DATA INGESTION
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
-    df_1h_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="1h", progress=False
-    )
-    df_15m_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="15m", progress=False
-    )
-    df_5m_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="5m", progress=False
-    )
+    df_1h_raw = yf.download(tickers="^NSEI", period="60d", interval="1h", progress=False)
+    df_15m_raw = yf.download(tickers="^NSEI", period="60d", interval="15m", progress=False)
+    df_5m_raw = yf.download(tickers="^NSEI", period="60d", interval="5m", progress=False)
 
     processed_dfs = []
     for d in [df_1h_raw, df_15m_raw, df_5m_raw]:
@@ -190,102 +167,97 @@ with st.spinner("Fetching Nifty 50 Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Features
-df_1h = compute_ha_ham_features(df_1h_raw)
-df_15m = compute_ha_ham_features(df_15m_raw)
-df_5m = compute_ha_ham_features(df_5m_raw)
+# HA Processing
+df_1h = compute_heikin_ashi(df_1h_raw)
+df_15m = compute_heikin_ashi(df_15m_raw)
+df_5m = compute_heikin_ashi(df_5m_raw)
 
 # =====================================================================
-# MULTI-TIMEFRAME ALIGNMENT
+# CUSTOM ENGINE IMPLEMENTATION ON 5M TIMEFRAME
+# =====================================================================
+# A = 5M Close mapped to [1, 5] Channel
+df_5m["Col_A_Channel"] = scale_to_1_to_5_channel(df_5m["HA_Close"], window=30)
+
+# B = Kalman Filter on A with Q = 0.50
+df_5m["Col_B_Kalman"] = apply_kalman_filter_q(
+    df_5m["Col_A_Channel"].to_numpy(), q_val=0.50, r_val=0.1
+)
+
+# C = Hurst Exponent on B
+df_5m["Col_C_Hurst"] = calculate_rolling_hurst_leak_free(
+    df_5m["Col_B_Kalman"].to_numpy(), window=30
+)
+
+# D = Weighted Momentum (A - B)
+raw_diff = df_5m["Col_A_Channel"] - df_5m["Col_B_Kalman"]
+df_5m["Col_D_Weighted_Momentum"] = raw_diff.ewm(span=5, adjust=False).mean()
+
+# E = C * D
+df_5m["Col_E_Composite"] = df_5m["Col_C_Hurst"] * df_5m["Col_D_Weighted_Momentum"]
+
+# Supertrend on Column E
+st_vals, st_dirs = calculate_supertrend_custom(
+    df_5m["Col_E_Composite"].to_numpy(), period=7, multiplier=3.0
+)
+df_5m["Supertrend_on_E"] = st_vals
+
+# =====================================================================
+# MULTI-TIMEFRAME ALIGNMENT (15M MAIN GRID)
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-df_15m_grid["1H_HA_Close_Frozen"] = (
+# Forward freeze 5M metrics into 15M grid
+for col in [
+    "HA_Close",
+    "Col_A_Channel",
+    "Col_B_Kalman",
+    "Col_C_Hurst",
+    "Col_D_Weighted_Momentum",
+    "Col_E_Composite",
+    "Supertrend_on_E",
+]:
+    df_15m_grid[f"5M_{col}"] = (
+        df_5m[col].shift(1).reindex(df_15m_grid.index, method="ffill")
+    )
+
+df_15m_grid["1H_HA_Close"] = (
     df_1h["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["HA_HAM_1H_Frozen"] = (
-    df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["HA_HAM_1H_Prev"] = (
-    df_1h["HA_HAM"].shift(2).reindex(df_15m_grid.index, method="ffill")
-)
 
-df_15m_grid["5M_HA_Close"] = (
-    df_5m["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_HA_HAM"] = (
-    df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-
-# ---------------------------------------------------------------------
-# EXACT FORMULA: (5M HA-Close * Hurst) -> Supertrend (7, 3)
-# ---------------------------------------------------------------------
-df_15m_grid["5M_Close_x_Hurst"] = (
-    df_15m_grid["5M_HA_Close"] * df_15m_grid["Hurst"]
-)
-
-st_vals, st_dirs = calculate_supertrend_custom(
-    df_15m_grid["5M_Close_x_Hurst"].to_numpy(), period=7, multiplier=3.0
-)
-df_15m_grid["Supertrend_7_3"] = st_vals
-
+# Signal Regime Rules
 n = len(df_15m_grid)
-h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
-h1_prev_arr = df_15m_grid["HA_HAM_1H_Prev"].to_numpy()
-m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
-
-ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
-ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
-
-hurst_vals = df_15m_grid["Hurst"].to_numpy()
-er_vals = df_15m_grid["ER"].to_numpy()
-
 signals = ["⚪ NEUTRAL"] * n
 regime = ["⚡ TRENDING"] * n
 
+comp_vals = df_15m_grid["5M_Col_E_Composite"].to_numpy()
+st_e_vals = df_15m_grid["5M_Supertrend_on_E"].to_numpy()
+hurst_vals = df_15m_grid["5M_Col_C_Hurst"].to_numpy()
+
 for i in range(2, n):
-    h1_curr = h1_curr_arr[i]
-    h1_prev = h1_prev_arr[i]
-    m15_curr = m15_curr_arr[i]
+    e_val = comp_vals[i]
+    st_val = st_e_vals[i]
     h_val = hurst_vals[i]
-    e_val = er_vals[i]
 
-    is_ha_red = ha_close_vals[i] < ha_open_vals[i]
-
-    if h_val < 0.48 or e_val < 0.18:
+    if h_val < 0.48:
         regime[i] = "⚠️ CHOPPY ZONE"
-        signals[i] = "🛑 NO TRADE (SideWays Market)"
-        continue
-
-    regime[i] = "⚡ TRENDING"
-
-    if h1_curr > 0 and h1_curr < h1_prev:
-        signals[i] = (
-            "🔴 REAL TOP (1H Drop + 15M Red)"
-            if (m15_curr < 0 or is_ha_red)
-            else "🟢 TRAP PASS (15M Bullish / Dip Buy)"
-        )
-    elif h1_curr < 0 and h1_curr > h1_prev:
-        signals[i] = (
-            "🟢 REAL BOTTOM (1H Rise + 15M Green)"
-            if (m15_curr > 0 and not is_ha_red)
-            else "🔴 TRAP PASS (15M Bearish / Fake Rally)"
-        )
-    elif h1_curr > h1_prev and h1_curr > 0:
-        signals[i] = "🟢 ACCELERATED RALLY"
-    elif h1_curr < h1_prev and h1_curr < 0:
-        signals[i] = "🔴 ACCELERATED DROP"
+        signals[i] = "🛑 NO TRADE (Low Hurst / Sideways)"
+    elif e_val > st_val:
+        regime[i] = "🟢 BULLISH RALLY"
+        signals[i] = "🟢 STRONG BUY (Composite > Supertrend)"
+    elif e_val < st_val:
+        regime[i] = "🔴 BEARISH DROP"
+        signals[i] = "🔴 STRONG SELL (Composite < Supertrend)"
 
 df_15m_grid["Market_Regime"] = regime
-df_15m_grid["Instant_Kinematic_Signal"] = signals
+df_15m_grid["Kinematic_Signal"] = signals
+
 df_15m_grid.dropna(
     subset=[
-        "HA_HAM",
-        "HA_HAM_1H_Frozen",
-        "5M_HA_Close",
-        "5M_HA_HAM",
-        "5M_Close_x_Hurst",
-        "Supertrend_7_3",
+        "5M_Col_A_Channel",
+        "5M_Col_B_Kalman",
+        "5M_Col_C_Hurst",
+        "5M_Col_D_Weighted_Momentum",
+        "5M_Col_E_Composite",
     ],
     inplace=True,
 )
@@ -300,111 +272,83 @@ st.markdown("---")
 col_s1, col_s2 = st.columns([1, 2])
 
 with col_s1:
-    sig = latest["Instant_Kinematic_Signal"]
+    sig = latest["Kinematic_Signal"]
     reg = latest["Market_Regime"]
 
     if reg == "⚠️ CHOPPY ZONE":
         st.warning(
-            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Low Hurst {latest['Hurst']:.2f} / Low ER {latest['ER']:.2f})*"
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Hurst on B = {latest['5M_Col_C_Hurst']:.2f})*"
         )
-    elif "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
+    elif "BUY" in sig or "BULLISH" in reg:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
-    elif "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig:
+    elif "SELL" in sig or "BEARISH" in reg:
         st.error(f"### Live Signal ({latest_time})\n# {sig}")
     else:
         st.info(f"### Live Signal ({latest_time})\n# {sig}")
 
 with col_s2:
     summary_data = {
-        "Metric": [
-            "HA Close Price",
-            "HA HAM Momentum",
-            "Hurst Exponent",
-            "Efficiency Ratio (ER)",
-            "5M Close * Hurst",
-            "Supertrend (7, 3)",
+        "Custom Formula Column": [
+            "A: 5M Close (1-5 Channel)",
+            "B: Kalman on A (Q = 0.50)",
+            "C: Hurst of B",
+            "D: Weighted Momentum (A - B)",
+            "E: Composite Signal (C * D)",
+            "Supertrend (7,3) on E",
         ],
-        "1-Hour (Locked)": [
-            f"{latest['1H_HA_Close_Frozen']:,.2f}",
-            f"{latest['HA_HAM_1H_Frozen']:.2f}",
-            "-",
-            "-",
-            "-",
-            "-",
-        ],
-        "15-Min (Live)": [
-            f"{latest['HA_Close']:,.2f}",
-            f"{latest['HA_HAM']:.2f}",
-            f"{latest['Hurst']:.2f}",
-            f"{latest['ER']:.2f}",
-            f"{latest['5M_Close_x_Hurst']:,.2f}",
-            f"{latest['Supertrend_7_3']:,.2f}",
-        ],
-        "5-Min (Live)": [
-            f"{latest['5M_HA_Close']:,.2f}",
-            f"{latest['5M_HA_HAM']:.2f}",
-            "-",
-            "-",
-            "-",
-            "-",
+        "Live Value": [
+            f"{latest['5M_Col_A_Channel']:.3f}",
+            f"{latest['5M_Col_B_Kalman']:.3f}",
+            f"{latest['5M_Col_C_Hurst']:.3f}",
+            f"{latest['5M_Col_D_Weighted_Momentum']:.4f}",
+            f"{latest['5M_Col_E_Composite']:.4f}",
+            f"{latest['5M_Supertrend_on_E']:.4f}",
         ],
     }
     st.table(pd.DataFrame(summary_data))
 
 st.markdown("---")
 
-st.subheader(
-    "📋 Nifty 50 Timeline Grid"
-)
+st.subheader("📋 Nifty 50 Custom Column Timeline Grid")
 
-# Columns strictly ordered: 5M HA-Close -> 5M Close * Hurst -> Supertrend (7,3)
 clean_cols = [
     "Market_Regime",
-    "Hurst",
-    "ER",
-    "1H_HA_Close_Frozen",
-    "HA_Close",
     "5M_HA_Close",
-    "5M_Close_x_Hurst",  # <--- 5M Close ke theek NEXT column
-    "Supertrend_7_3",     # <--- Supertrend (7,3)
-    "HA_HAM_1H_Frozen",
-    "HA_HAM",
-    "5M_HA_HAM",
-    "Instant_Kinematic_Signal",
+    "5M_Col_A_Channel",
+    "5M_Col_B_Kalman",
+    "5M_Col_C_Hurst",
+    "5M_Col_D_Weighted_Momentum",
+    "5M_Col_E_Composite",
+    "5M_Supertrend_on_E",
+    "Kinematic_Signal",
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
 display_df.rename(
     columns={
         "Market_Regime": "Regime",
-        "Hurst": "Hurst Exponent",
-        "ER": "Eff. Ratio",
-        "1H_HA_Close_Frozen": "1H HA-Close",
-        "HA_Close": "15M HA-Close",
-        "5M_HA_Close": "5M HA-Close",
-        "5M_Close_x_Hurst": "5M Close * Hurst",
-        "Supertrend_7_3": "Supertrend (7,3)",
-        "HA_HAM_1H_Frozen": "1H HAM",
-        "HA_HAM": "15M HAM",
-        "5M_HA_HAM": "5M HAM",
-        "Instant_Kinematic_Signal": "Kinematic Signal",
+        "5M_HA_Close": "5M Price",
+        "5M_Col_A_Channel": "A (1-5 Channel)",
+        "5M_Col_B_Kalman": "B (Kalman Q=0.50)",
+        "5M_Col_C_Hurst": "C (Hurst of B)",
+        "5M_Col_D_Weighted_Momentum": "D (Momentum A-B)",
+        "5M_Col_E_Composite": "E (C * D)",
+        "5M_Supertrend_on_E": "Supertrend(E)",
+        "Kinematic_Signal": "Kinematic Signal",
     },
     inplace=True,
 )
 
 for c in [
-    "Hurst Exponent",
-    "Eff. Ratio",
-    "1H HA-Close",
-    "15M HA-Close",
-    "5M HA-Close",
-    "5M Close * Hurst",
-    "Supertrend (7,3)",
-    "1H HAM",
-    "15M HAM",
-    "5M HAM",
+    "5M Price",
+    "A (1-5 Channel)",
+    "B (Kalman Q=0.50)",
+    "C (Hurst of B)",
+    "D (Momentum A-B)",
+    "E (C * D)",
+    "Supertrend(E)",
 ]:
-    display_df[c] = display_df[c].round(2)
+    display_df[c] = display_df[c].round(4)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
