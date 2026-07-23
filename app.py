@@ -10,8 +10,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Bounded Channel Engine (1-5 Scale)")
-st.caption("A: 1-5 Channel | B: Kalman(0.50) | C: Hurst(B) | D: Momentum(A-B) | E: C * D")
+st.title("⚡ NIFTY 50 Bounded Channel Engine (Scaled E = C * D * 1000)")
+st.caption(
+    "A: 1-5 Channel | B: Kalman(0.50) | C: Hurst(B) | D: Momentum(A-B) | E: (C * D)"
+    " * 1000"
+)
 
 
 # =====================================================================
@@ -73,7 +76,9 @@ def calculate_rolling_hurst_leak_free(series_in, window=30):
     """Column C: Rolling Hurst Exponent calculated on series B."""
     s = pd.Series(series_in)
     hurst_values = np.full(len(s), 0.5)
-    log_returns = np.log((s / s.shift(1)).replace(0, 1e-8)).fillna(0.0).to_numpy()
+    log_returns = (
+        np.log((s / s.shift(1)).replace(0, 1e-8)).fillna(0.0).to_numpy()
+    )
 
     for i in range(window, len(s)):
         window_data = log_returns[i - window + 1 : i + 1]
@@ -106,12 +111,18 @@ def calculate_supertrend_custom(series, period=7, multiplier=3.0):
     direction = np.ones(n)
 
     for i in range(1, n):
-        if upper_band[i] < final_upper[i - 1] or vals[i - 1] > final_upper[i - 1]:
+        if (
+            upper_band[i] < final_upper[i - 1]
+            or vals[i - 1] > final_upper[i - 1]
+        ):
             final_upper[i] = upper_band[i]
         else:
             final_upper[i] = final_upper[i - 1]
 
-        if lower_band[i] > final_lower[i - 1] or vals[i - 1] < final_lower[i - 1]:
+        if (
+            lower_band[i] > final_lower[i - 1]
+            or vals[i - 1] < final_lower[i - 1]
+        ):
             final_lower[i] = lower_band[i]
         else:
             final_lower[i] = final_lower[i - 1]
@@ -139,9 +150,15 @@ def calculate_supertrend_custom(series, period=7, multiplier=3.0):
 # =====================================================================
 @st.cache_data(ttl=60)
 def load_market_data():
-    df_1h_raw = yf.download(tickers="^NSEI", period="60d", interval="1h", progress=False)
-    df_15m_raw = yf.download(tickers="^NSEI", period="60d", interval="15m", progress=False)
-    df_5m_raw = yf.download(tickers="^NSEI", period="60d", interval="5m", progress=False)
+    df_1h_raw = yf.download(
+        tickers="^NSEI", period="60d", interval="1h", progress=False
+    )
+    df_15m_raw = yf.download(
+        tickers="^NSEI", period="60d", interval="15m", progress=False
+    )
+    df_5m_raw = yf.download(
+        tickers="^NSEI", period="60d", interval="5m", progress=False
+    )
 
     processed_dfs = []
     for d in [df_1h_raw, df_15m_raw, df_5m_raw]:
@@ -192,10 +209,12 @@ df_5m["Col_C_Hurst"] = calculate_rolling_hurst_leak_free(
 raw_diff = df_5m["Col_A_Channel"] - df_5m["Col_B_Kalman"]
 df_5m["Col_D_Weighted_Momentum"] = raw_diff.ewm(span=5, adjust=False).mean()
 
-# E = C * D
-df_5m["Col_E_Composite"] = df_5m["Col_C_Hurst"] * df_5m["Col_D_Weighted_Momentum"]
+# E = (C * D) * 1000  <--- BADA NUMBER DENE KE LIYE 1000 SE MULTIPLY KIYA
+df_5m["Col_E_Composite"] = (
+    df_5m["Col_C_Hurst"] * df_5m["Col_D_Weighted_Momentum"]
+) * 1000.0
 
-# Supertrend on Column E
+# Supertrend on Scaled Column E
 st_vals, st_dirs = calculate_supertrend_custom(
     df_5m["Col_E_Composite"].to_numpy(), period=7, multiplier=3.0
 )
@@ -277,7 +296,8 @@ with col_s1:
 
     if reg == "⚠️ CHOPPY ZONE":
         st.warning(
-            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Hurst on B = {latest['5M_Col_C_Hurst']:.2f})*"
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(Hurst on B ="
+            f" {latest['5M_Col_C_Hurst']:.2f})*"
         )
     elif "BUY" in sig or "BULLISH" in reg:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
@@ -293,7 +313,7 @@ with col_s2:
             "B: Kalman on A (Q = 0.50)",
             "C: Hurst of B",
             "D: Weighted Momentum (A - B)",
-            "E: Composite Signal (C * D)",
+            "E: Composite Signal (C * D * 1000)",
             "Supertrend (7,3) on E",
         ],
         "Live Value": [
@@ -301,15 +321,15 @@ with col_s2:
             f"{latest['5M_Col_B_Kalman']:.3f}",
             f"{latest['5M_Col_C_Hurst']:.3f}",
             f"{latest['5M_Col_D_Weighted_Momentum']:.4f}",
-            f"{latest['5M_Col_E_Composite']:.4f}",
-            f"{latest['5M_Supertrend_on_E']:.4f}",
+            f"{latest['5M_Col_E_Composite']:.2f}",
+            f"{latest['5M_Supertrend_on_E']:.2f}",
         ],
     }
     st.table(pd.DataFrame(summary_data))
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Custom Column Timeline Grid")
+st.subheader("📋 Nifty 50 Timeline Grid (Scaled E)")
 
 clean_cols = [
     "Market_Regime",
@@ -332,7 +352,7 @@ display_df.rename(
         "5M_Col_B_Kalman": "B (Kalman Q=0.50)",
         "5M_Col_C_Hurst": "C (Hurst of B)",
         "5M_Col_D_Weighted_Momentum": "D (Momentum A-B)",
-        "5M_Col_E_Composite": "E (C * D)",
+        "5M_Col_E_Composite": "E (C * D * 1000)",
         "5M_Supertrend_on_E": "Supertrend(E)",
         "Kinematic_Signal": "Kinematic Signal",
     },
@@ -345,10 +365,10 @@ for c in [
     "B (Kalman Q=0.50)",
     "C (Hurst of B)",
     "D (Momentum A-B)",
-    "E (C * D)",
+    "E (C * D * 1000)",
     "Supertrend(E)",
 ]:
-    display_df[c] = display_df[c].round(4)
+    display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
