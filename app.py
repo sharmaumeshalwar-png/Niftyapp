@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Dual HAM + Spread Engine",
+    page_title="BTC-USD 1H Dual HAM (7x Cascaded 30 EMA Base)",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ BTC-USD 1H Pure Bar-Closed HAM Engine (+ Spread Column)")
+st.title("⚡ BTC-USD 1H Dual HAM Engine (7x Cascaded 30 EMA Base)")
 st.caption(
-    "Strict Freeze-on-Bar-Close | 1-Hour Direct Physics | HAM 30 vs 200 Difference Spread"
+    "7-Level Recursive 30 EMA on HA_Close | Causal Kalman | Strict Bar-Close Freeze | 50:50 Split"
 )
 
 
@@ -90,27 +90,42 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 4. STRICT DUAL HAM FEATURE GENERATOR (+ SPREAD CALCULATOR)
+# 4. STRICT DUAL HAM FEATURE GENERATOR (7x CASCADED 30 EMA BASE)
 # =====================================================================
 def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
-    ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # Direct 1-Hour Velocity
+    # 1. Base Series Preparation: 7-Level Cascaded 30 EMA on HA_Close
+    ema_lvl = df_ha["HA_Close"].copy()
+    for _ in range(7):
+        ema_lvl = ema_lvl.ewm(span=30, adjust=False).mean()
+
+    df_ha["HA_Close_EMA30_L7"] = ema_lvl
+
+    ha_close = df_ha["HA_Close"].to_numpy().flatten()
+    ha_close_ema30_l7 = df_ha["HA_Close_EMA30_L7"].to_numpy().flatten()
+
+    # Direct 1-Hour Physics (window = 1)
     df_ha["Velocity_Speed"] = df_ha["Close"].diff(1)
     df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(1)
 
-    # HAM Window 30
-    df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    kalman_30 = apply_kalman_filter_causal(
-        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
+    # -----------------------------------------------------------------
+    # HAM Fast: Applied strictly on '7-Level Cascaded 30 EMA'
+    # -----------------------------------------------------------------
+    df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(
+        ha_close_ema30_l7, window=30
     )
-    mom_30 = apply_kalman_filter_causal(
-        ha_close - kalman_30, initial_p=0.50, q_val=0.001, r_val=0.1
+    kalman_30_l7 = apply_kalman_filter_causal(
+        ha_close_ema30_l7, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    df_ha["HA_HAM_30"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
+    mom_30_l7 = apply_kalman_filter_causal(
+        ha_close_ema30_l7 - kalman_30_l7, initial_p=0.50, q_val=0.001, r_val=0.1
+    )
+    df_ha["HA_HAM_30_EMA7"] = mom_30_l7 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # HAM Window 200
+    # -----------------------------------------------------------------
+    # HAM 200: Applied on Structural Base HA_Close
+    # -----------------------------------------------------------------
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
@@ -122,22 +137,22 @@ def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
-    # STRICT FREEZE ON BAR CLOSE
-    df_ha["HAM_30_Frozen"] = df_ha["HA_HAM_30"].shift(1)
+    # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar for ZERO live leakage)
+    df_ha["HAM_30_EMA7_Frozen"] = df_ha["HA_HAM_30_EMA7"].shift(1)
     df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
     df_ha["Hurst_30_Frozen"] = df_ha["Hurst_30"].shift(1)
     df_ha["Hurst_200_Frozen"] = df_ha["Hurst_200"].shift(1)
 
-    # NAYA COLUMN: (HAM 30 - HAM 200) Difference
-    df_ha["HAM_Spread_30_200"] = (
-        df_ha["HAM_30_Frozen"] - df_ha["HAM_200_Frozen"]
+    # Difference Spread Column (HAM 30 EMA(x7) - HAM 200 Base)
+    df_ha["HAM_Spread_30EMA7_200"] = (
+        df_ha["HAM_30_EMA7_Frozen"] - df_ha["HAM_200_Frozen"]
     )
 
     return df_ha
 
 
 # =====================================================================
-# 5. DATA INGESTION
+# 5. DATA INGESTION (2 YEARS BTC-USD 1H DATA)
 # =====================================================================
 @st.cache_data(ttl=3600)
 def load_btc_2year_1h_data():
@@ -170,7 +185,7 @@ df_btc_processed = compute_strict_btc_ham_features(df_btc_raw)
 
 # Clean and bfill
 df_btc_clean = df_btc_processed.dropna(
-    subset=["HAM_30_Frozen", "HAM_200_Frozen", "HAM_Spread_30_200"]
+    subset=["HAM_30_EMA7_Frozen", "HAM_200_Frozen", "HAM_Spread_30EMA7_200"]
 ).copy()
 df_btc_clean = df_btc_clean.bfill()
 
@@ -189,7 +204,7 @@ latest_bar = df_btc_clean.iloc[-1]
 # 7. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader("📌 BTC-USD Live State + HAM Difference Metric")
+st.subheader("📌 Live State: 7x Cascaded 30 EMA on HA_Close Base vs 200 HAM")
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
@@ -199,21 +214,21 @@ with m1:
     )
 with m2:
     st.metric(
-        label="Frozen HAM (W-30)",
-        value=f"{latest_bar['HAM_30_Frozen']:+.2f}",
+        label="Frozen HAM (30 EMA x7)",
+        value=f"{latest_bar['HAM_30_EMA7_Frozen']:+.2f}",
     )
 with m3:
     st.metric(
-        label="Frozen HAM (W-200)",
+        label="Frozen HAM (200 Base)",
         value=f"{latest_bar['HAM_200_Frozen']:+.2f}",
     )
 with m4:
     st.metric(
-        label="HAM Spread (30 - 200)",
-        value=f"{latest_bar['HAM_Spread_30_200']:+.2f}",
+        label="Spread (30 EMA x7 - 200)",
+        value=f"{latest_bar['HAM_Spread_30EMA7_200']:+.2f}",
         delta=(
             "Bullish Divergence"
-            if latest_bar["HAM_Spread_30_200"] > 0
+            if latest_bar["HAM_Spread_30EMA7_200"] > 0
             else "Bearish Divergence"
         ),
     )
@@ -223,28 +238,31 @@ tab1, tab2 = st.tabs(
     ["🔮 50% Prediction Set (Out-of-Sample)", "📚 50% Learning Set (In-Sample)"]
 )
 
-# Display Columns Including New Difference Spread
+# Display Columns
 display_cols = [
     "Close",
     "HA_Close",
-    "HAM_30_Frozen",
+    "HA_Close_EMA30_L7",
+    "HAM_30_EMA7_Frozen",
     "HAM_200_Frozen",
-    "HAM_Spread_30_200",
+    "HAM_Spread_30EMA7_200",
     "Hurst_30_Frozen",
     "Hurst_200_Frozen",
 ]
+
 col_renames = {
     "Close": "BTC Close ($)",
     "HA_Close": "HA Close ($)",
-    "HAM_30_Frozen": "Frozen HAM (W-30)",
+    "HA_Close_EMA30_L7": "HA Close 30 EMA (x7) ($)",
+    "HAM_30_EMA7_Frozen": "Frozen HAM (30 EMA x7)",
     "HAM_200_Frozen": "Frozen HAM (W-200)",
-    "HAM_Spread_30_200": "HAM (30 - 200) Difference",
+    "HAM_Spread_30EMA7_200": "HAM (30 EMA x7 - 200) Spread",
     "Hurst_30_Frozen": "Frozen Hurst (W-30)",
     "Hurst_200_Frozen": "Frozen Hurst (W-200)",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table")
+    st.markdown("#### Out-of-Sample Prediction Table (7x Cascaded 30 EMA Base)")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
