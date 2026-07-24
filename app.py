@@ -5,19 +5,19 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty 50 Speed & Chaos Engine",
+    page_title="Nifty 50 Dual 5M HAM Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("🚀 NIFTY 50 Market Speed, Acceleration & Chaos Engine")
+st.title("🚀 NIFTY 50 Dual 5M HAM (Window 10 & Window 30) + Speed Engine")
 st.caption(
-    "Live Physics-Based Velocity, Acceleration (G-Force), Lyapunov Chaos & Heikin-Ashi Signals"
+    "100% Leak-Free Grid with Fast 10-Window HAM, Hurst-Scaled 30-Window HAM & Physics Speed Radar"
 )
 
 
 # =====================================================================
-# KINEMATIC & CHAOS MATHEMATICAL ENGINES
+# MATHEMATICAL ENGINES (HA, KALMAN & HURST)
 # =====================================================================
 def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
@@ -59,44 +59,6 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 
-def compute_lyapunov_chaos_exponent(series, window=30):
-    s = pd.Series(series)
-    returns = np.abs(np.log(s / s.shift(1)).fillna(0.0).to_numpy())
-
-    lle = np.full(len(series), 0.5)
-    for i in range(window, len(returns)):
-        sub = returns[i - window + 1 : i + 1]
-        std_val = np.std(sub)
-        mean_val = np.mean(sub) + 1e-8
-        divergence = std_val / mean_val
-        lle[i] = np.clip(divergence / (1.0 + divergence), 0.0, 1.0)
-
-    return lle
-
-
-def compute_fractal_dimension(series, window=30):
-    s = pd.Series(series).to_numpy()
-    df_val = np.full(len(series), 1.5)
-
-    for i in range(window, len(series)):
-        sub = s[i - window + 1 : i + 1]
-        max_p = np.max(sub)
-        min_p = np.min(sub)
-
-        if max_p - min_p < 1e-8:
-            df_val[i] = 1.0
-            continue
-
-        norm_sub = (sub - min_p) / (max_p - min_p)
-        path_length = np.sum(
-            np.sqrt(np.diff(norm_sub) ** 2 + (1.0 / (window - 1)) ** 2)
-        )
-        d = 1.0 + (np.log(path_length) + np.log(2.0)) / np.log(2.0 * (window - 1))
-        df_val[i] = np.clip(d, 1.0, 2.0)
-
-    return df_val
-
-
 def calculate_rolling_hurst_leak_free(price_series, window=30):
     hurst_values = np.full(len(price_series), 0.5)
     s = pd.Series(price_series)
@@ -122,28 +84,32 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
     raw_close = df_ha["Close"].to_numpy().flatten()
 
-    # Physics Metrics: Speed (Velocity) & Acceleration
+    # Physics Velocity & Acceleration
     window = 5
     df_ha["Velocity_Speed"] = df_ha["Close"].diff(window) / window
     df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(window) / window
-    volatility = df_ha["Close"].rolling(window).std()
-    df_ha["Kinetic_Force"] = df_ha["Velocity_Speed"] * volatility
 
-    df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    df_ha["Lyapunov_Chaos"] = compute_lyapunov_chaos_exponent(
-        raw_close, window=30
-    )
-    df_ha["Fractal_Dimension"] = compute_fractal_dimension(raw_close, window=30)
+    # Hurst Exponent on 30 Window
+    df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
 
-    kalman = apply_kalman_filter_custom(
+    # 1. HAM Baseline (Window 30 with Hurst Scaling)
+    kalman_30 = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    momentum = apply_kalman_filter_custom(
-        ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1
+    mom_30 = apply_kalman_filter_custom(
+        ha_close - kalman_30, initial_p=0.50, q_val=0.001, r_val=0.1
     )
+    df_ha["HA_HAM_30"] = np.array(mom_30) * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    df_ha["Kalman_Price"] = kalman
-    df_ha["HA_HAM"] = np.array(momentum) * (df_ha["Hurst"].to_numpy() * 2.0)
+    # 2. HAM Fast (Window 10 on 5M Close / HA_Close)
+    kalman_10 = apply_kalman_filter_custom(
+        ha_close, initial_p=20.0, q_val=0.005, r_val=0.05
+    )
+    mom_10 = apply_kalman_filter_custom(
+        ha_close - kalman_10, initial_p=0.50, q_val=0.005, r_val=0.05
+    )
+    df_ha["HA_HAM_10"] = np.array(mom_10)
+
     return df_ha
 
 
@@ -179,98 +145,95 @@ def load_market_data():
     return processed_dfs[0], processed_dfs[1], processed_dfs[2]
 
 
-with st.spinner("Fetching Extended Nifty 50 Data & Calculating Speed Vectors..."):
+with st.spinner("Loading Nifty Data & Calculating Dual 5M HAM..."):
     try:
         df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
     except Exception as e:
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Features
+# Features Compute
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
 
 # =====================================================================
-# MULTI-TIMEFRAME ALIGNMENT
+# MULTI-TIMEFRAME ALIGNMENT & SIGNAL ENGINE
 # =====================================================================
 df_15m_grid = df_15m.copy()
 
-# Shift inputs by 1 bar for leak-free accuracy
+# Shift 1H & 5M values by 1 bar for leak-free accuracy
 df_15m_grid["1H_HA_Close_Frozen"] = (
     df_1h["HA_Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["HA_HAM_1H_Frozen"] = (
-    df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
+df_15m_grid["1H_HAM"] = (
+    df_1h["HA_HAM_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["HA_HAM_1H_Prev"] = (
-    df_1h["HA_HAM"].shift(2).reindex(df_15m_grid.index, method="ffill")
+df_15m_grid["1H_HAM_Prev"] = (
+    df_1h["HA_HAM_30"].shift(2).reindex(df_15m_grid.index, method="ffill")
 )
 
 df_15m_grid["5M_Close"] = (
     df_5m["Close"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
+df_15m_grid["5M_Hurst_30"] = (
+    df_5m["Hurst_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
+df_15m_grid["5M_HAM_30"] = (
+    df_5m["HA_HAM_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
+df_15m_grid["5M_HAM_10"] = (
+    df_5m["HA_HAM_10"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
 df_15m_grid["5M_Velocity"] = (
     df_5m["Velocity_Speed"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["5M_Acceleration"] = (
-    df_5m["Acceleration_GForce"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_Lyapunov_Chaos"] = (
-    df_5m["Lyapunov_Chaos"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_Fractal_Dimension"] = (
-    df_5m["Fractal_Dimension"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
 
 n = len(df_15m_grid)
-h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
-h1_prev_arr = df_15m_grid["HA_HAM_1H_Prev"].to_numpy()
-m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
+h1_curr_arr = df_15m_grid["1H_HAM"].to_numpy()
+h1_prev_arr = df_15m_grid["1H_HAM_Prev"].to_numpy()
+m15_curr_arr = df_15m_grid["HA_HAM_30"].to_numpy()
 
 ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
-hurst_vals = df_15m_grid["Hurst"].to_numpy()
-chaos_5m_vals = df_15m_grid["5M_Lyapunov_Chaos"].to_numpy()
-fractal_5m_vals = df_15m_grid["5M_Fractal_Dimension"].to_numpy()
-vel_5m_vals = df_15m_grid["5M_Velocity"].to_numpy()
-acc_5m_vals = df_15m_grid["5M_Acceleration"].to_numpy()
+hurst_5m_vals = df_15m_grid["5M_Hurst_30"].to_numpy()
+ham_5m_30_vals = df_15m_grid["5M_HAM_30"].to_numpy()
+ham_5m_10_vals = df_15m_grid["5M_HAM_10"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
-regime = ["⚡ ORDERED / TRENDING"] * n
-speed_status = ["🚀 REGULAR"] * n
+regime = ["⚡ ORDERED TREND"] * n
+ham_alignment = ["⚪ MIXED"] * n
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
-    h_val = hurst_vals[i]
-    ch_5m = chaos_5m_vals[i]
-    f_5m = fractal_5m_vals[i]
-    v_5m = vel_5m_vals[i]
-    a_5m = acc_5m_vals[i]
+    h_5m = hurst_5m_vals[i]
+    h5_30 = ham_5m_30_vals[i]
+    h5_10 = ham_5m_10_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Speed & Acceleration Logic
-    if v_5m > 2.0 and a_5m > 0:
-        speed_status[i] = "⚡ ROCKET ACCELERATION UP"
-    elif v_5m < -2.0 and a_5m < 0:
-        speed_status[i] = "🔥 FAST DROP ACCELERATION"
-    elif abs(v_5m) > 2.0 and abs(a_5m) < 0.1:
-        speed_status[i] = "⚠️ BRAKES APPLIED (Speed Peak)"
+    # Dual 5M HAM Alignment Check
+    if h5_10 > 0 and h5_30 > 0:
+        ham_alignment[i] = "🟢 DUAL BULLISH (10 & 30 HAM > 0)"
+    elif h5_10 < 0 and h5_30 < 0:
+        ham_alignment[i] = "🔴 DUAL BEARISH (10 & 30 HAM < 0)"
+    elif h5_10 > 0 and h5_30 < 0:
+        ham_alignment[i] = "⚡ FAST RECOVERY (10 HAM Turned Green)"
     else:
-        speed_status[i] = "🐢 NORMAL / CHOP SPEED"
+        ham_alignment[i] = "⚠️ FAST SLIP (10 HAM Turned Red)"
 
-    # Chaos Rule
-    if ch_5m > 0.65 or f_5m > 1.55 or h_val < 0.48:
-        regime[i] = "🌀 TURBULENT CHAOS ZONE"
-        signals[i] = "🛑 NO TRADE (Choppy Market)"
+    # Hurst Filter (Anti-Chop Rule: Hurst < 0.48 -> No Trade)
+    if h_5m < 0.48:
+        regime[i] = "🌀 CHOPPY / MEAN-REVERTING"
+        signals[i] = "🛑 NO TRADE (Low Hurst < 0.48)"
         continue
 
     regime[i] = "⚡ ORDERED / TRENDING"
 
+    # Kinematic Trend Signals
     if h1_curr > 0 and h1_curr < h1_prev:
         signals[i] = (
             "🔴 REAL TOP (1H Drop)"
@@ -283,55 +246,52 @@ for i in range(2, n):
             if (m15_curr > 0 and not is_ha_red)
             else "🔴 FAKE RALLY PASS"
         )
-    elif h1_curr > h1_prev and h1_curr > 0:
+    elif h1_curr > h1_prev and h1_curr > 0 and h5_10 > 0:
         signals[i] = "🟢 ACCELERATED RALLY 🚀"
-    elif h1_curr < h1_prev and h1_curr < 0:
+    elif h1_curr < h1_prev and h1_curr < 0 and h5_10 < 0:
         signals[i] = "🔴 ACCELERATED DROP 🔥"
 
 df_15m_grid["Market_Regime"] = regime
+df_15m_grid["5M_HAM_Alignment"] = ham_alignment
 df_15m_grid["Kinematic_Signal"] = signals
-df_15m_grid["Speed_State"] = speed_status
 
 df_15m_grid.dropna(inplace=True)
 latest = df_15m_grid.iloc[-1]
 latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
 
 # =====================================================================
-# LIVE SPEEDOMETER & DASHBOARD DISPLAY
+# DISPLAY RADAR & TIMELINE
 # =====================================================================
 st.markdown("---")
-st.subheader("🏎️ Live Market Speed & Acceleration Radar")
+st.subheader("📊 Live Dual 5M HAM Momentum Dashboard")
 
 m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
 with m_c1:
-    v_val = latest["5M_Velocity"]
     st.metric(
-        label="5M Market Speed (Velocity)",
-        value=f"{v_val:+.2f} Pts/Bar",
-        delta="Fast Move" if abs(v_val) > 2 else "Normal",
+        label="5M HAM (Fast W-10)",
+        value=f"{latest['5M_HAM_10']:+.2f}",
+        delta="Positive" if latest["5M_HAM_10"] > 0 else "Negative",
     )
 
 with m_c2:
-    a_val = latest["5M_Acceleration"]
     st.metric(
-        label="5M Market G-Force (Acceleration)",
-        value=f"{a_val:+.2f}",
-        delta="Accelerating" if a_val > 0 else "Decelerating",
+        label="5M HAM (Scaled W-30)",
+        value=f"{latest['5M_HAM_30']:+.2f}",
+        delta="Positive" if latest["5M_HAM_30"] > 0 else "Negative",
     )
 
 with m_c3:
     st.metric(
-        label="Speed State",
-        value=f"{latest['Speed_State']}",
+        label="5M Hurst Exponent (W-30)",
+        value=f"{latest['5M_Hurst_30']:.2f}",
+        delta="Trending" if latest["5M_Hurst_30"] >= 0.50 else "Choppy",
     )
 
 with m_c4:
     st.metric(
-        label="Lyapunov Chaos",
-        value=f"{latest['5M_Lyapunov_Chaos']:.2f}",
-        delta="Safe" if latest["5M_Lyapunov_Chaos"] < 0.65 else "High Chaos",
-        delta_color="inverse",
+        label="5M Speed (Velocity)",
+        value=f"{latest['5M_Velocity']:+.2f} Pts",
     )
 
 st.markdown("---")
@@ -342,55 +302,47 @@ with col_s1:
     sig = latest["Kinematic_Signal"]
     reg = latest["Market_Regime"]
 
-    if reg == "🌀 TURBULENT CHAOS ZONE":
+    if reg == "🌀 CHOPPY / MEAN-REVERTING":
         st.warning(
-            f"### Market State: {reg}\n# 🛑 AVOID TRADING\n*(High Chaos / Low Hurst)*"
+            f"### Market State: {reg}\n# 🛑 AVOID TRADING\n*(Hurst {latest['5M_Hurst_30']:.2f} < 0.48)*"
         )
     elif "RALLY" in sig or "BOTTOM" in sig:
-        st.success(f"### Signal ({latest_time})\n# {sig}")
+        st.success(f"### Signal ({latest_time})\n# {sig}\n`{latest['5M_HAM_Alignment']}`")
     elif "DROP" in sig or "TOP" in sig:
-        st.error(f"### Signal ({latest_time})\n# {sig}")
+        st.error(f"### Signal ({latest_time})\n# {sig}\n`{latest['5M_HAM_Alignment']}`")
     else:
-        st.info(f"### Signal ({latest_time})\n# {sig}")
+        st.info(f"### Signal ({latest_time})\n# {sig}\n`{latest['5M_HAM_Alignment']}`")
 
 with col_s2:
     summary_table = pd.DataFrame(
         {
-            "Kinematic Metric": [
-                "15M Price",
-                "5M Speed (Velocity Pts/Bar)",
-                "5M Acceleration (G-Force)",
-                "Hurst Exponent",
-                "Chaos Exponent",
+            "Metric": [
+                "15M HA-Close",
+                "5M HAM (Window 10 - Fast)",
+                "5M HAM (Window 30 - Baseline)",
+                "5M Hurst Exponent (Window 30)",
+                "5M Momentum Alignment State",
             ],
             "Live Value": [
                 f"{latest['HA_Close']:,.2f}",
-                f"{latest['5M_Velocity']:+.2f}",
-                f"{latest['5M_Acceleration']:+.2f}",
-                f"{latest['Hurst']:.2f}",
-                f"{latest['5M_Lyapunov_Chaos']:.2f}",
-            ],
-            "Interpretation": [
-                "Current Level",
-                "High Speed > |2.0|",
-                "> 0 Acceleration / < 0 Brake",
-                "> 0.5 Trend / < 0.5 Chop",
-                "< 0.65 Safe / > 0.65 Chaos",
+                f"{latest['5M_HAM_10']:+.2f}",
+                f"{latest['5M_HAM_30']:+.2f}",
+                f"{latest['5M_Hurst_30']:.2f}",
+                f"{latest['5M_HAM_Alignment']}",
             ],
         }
     )
     st.table(summary_table)
 
 st.markdown("---")
-st.subheader("📋 Nifty 50 Speed & Signal Timeline")
+st.subheader("📋 Timeline with Dual 5M HAM Grid")
 
 clean_cols = [
     "Market_Regime",
-    "Speed_State",
-    "5M_Velocity",
-    "5M_Acceleration",
-    "5M_Lyapunov_Chaos",
-    "Hurst",
+    "5M_HAM_Alignment",
+    "5M_HAM_10",
+    "5M_HAM_30",
+    "5M_Hurst_30",
     "HA_Close",
     "Kinematic_Signal",
 ]
@@ -399,18 +351,17 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(
     columns={
         "Market_Regime": "Regime",
-        "Speed_State": "Speed Status",
-        "5M_Velocity": "5M Speed",
-        "5M_Acceleration": "5M Acceleration",
-        "5M_Lyapunov_Chaos": "Chaos",
-        "Hurst": "Hurst",
+        "5M_HAM_Alignment": "5M HAM State",
+        "5M_HAM_10": "5M HAM (W-10)",
+        "5M_HAM_30": "5M HAM (W-30)",
+        "5M_Hurst_30": "5M Hurst",
         "HA_Close": "15M HA-Close",
         "Kinematic_Signal": "Signal",
     },
     inplace=True,
 )
 
-for c in ["5M Speed", "5M Acceleration", "Chaos", "Hurst", "15M HA-Close"]:
+for c in ["5M HAM (W-10)", "5M HAM (W-30)", "5M Hurst", "15M HA-Close"]:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
