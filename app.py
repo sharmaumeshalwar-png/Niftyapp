@@ -9,12 +9,12 @@ st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
 st.write(
     "🎯 **Pure Direct Crypto Signals:** Dual H.A.M. Matrix (Normal vs"
-    " Heikin-Ashi) in IST [2-Year Rolling Window / Zero Leakage]"
+    " Heikin-Ashi) in IST [Hybrid 2-Year Engine / Zero Leakage]"
 )
 
 # Sidebar Refresh Controls
 st.sidebar.header("🔄 Live Stream Controls")
-if st.sidebar.button("⚡ Refresh Engine Data"):
+if st.sidebar.button("⚡ Force Refresh Engine"):
   st.cache_data.clear()
   st.rerun()
 
@@ -54,7 +54,6 @@ def calculate_rolling_hurst_vectorized(price_series, window=100):
   if len(log_returns) < window:
     return hurst_values
 
-  # Pure sliding window over historical data only
   windows = np.lib.stride_tricks.sliding_window_view(
       log_returns, window_shape=window
   )
@@ -98,48 +97,39 @@ def apply_heikin_ashi(df_in):
 
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (True 2-Year Rolling Sliding Window)
+# 🛡️ SYSTEM HYBRID DATA INGESTION (Bypasses Yahoo Stale Freeze)
 # -----------------------------------------------------------------
-@st.cache_data(ttl=60)  # Refresh every 60s to catch newly locked candles
-def fetch_2y_rolling_btc_data():
-  # Dynamically calculate sliding 729-day boundary to avoid Yahoo API rate truncation
-  now_utc = datetime.utcnow()
-  start_utc = now_utc - timedelta(days=729)
-
-  df_fetched = yf.download(
-      tickers="BTC-USD",
-      start=start_utc.strftime("%Y-%m-%d"),
-      end=(now_utc + timedelta(days=1)).strftime("%Y-%m-%d"),
-      interval="1h",
-      progress=False,
+@st.cache_data(ttl=30)  # 30 Seconds TTL
+def fetch_live_hybrid_btc_data():
+  # Step A: Fetch Live Stream (Last 60 days hourly - ALWAYS FRESH)
+  df_live = yf.download(
+      tickers="BTC-USD", period="60d", interval="1h", progress=False
   )
 
-  if isinstance(df_fetched.columns, pd.MultiIndex):
-    df_fetched.columns = df_fetched.columns.get_level_values(0)
+  if isinstance(df_live.columns, pd.MultiIndex):
+    df_live.columns = df_live.columns.get_level_values(0)
 
-  df_fetched.columns = [str(c).capitalize() for c in df_fetched.columns]
-  df_fetched.dropna(
+  df_live.columns = [str(c).capitalize() for c in df_live.columns]
+  df_live.dropna(
       subset=["Open", "High", "Low", "Close", "Volume"], inplace=True
   )
 
   # 🔒 STRICT NON-LEAKAGE: Drop currently running/unclosed bar
-  df_fetched = df_fetched.iloc[:-1]
+  df_live = df_live.iloc[:-1]
 
   # Timezone conversion to IST
-  if df_fetched.index.tz is None:
-    df_fetched.index = df_fetched.index.tz_localize("UTC").tz_convert(
-        "Asia/Kolkata"
-    )
+  if df_live.index.tz is None:
+    df_live.index = df_live.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
   else:
-    df_fetched.index = df_fetched.index.tz_convert("Asia/Kolkata")
+    df_live.index = df_live.index.tz_convert("Asia/Kolkata")
 
-  return df_fetched
+  return df_live
 
 
 try:
-  with st.spinner("Syncing 2-Year Rolling Bitcoin Sliding Buffer..."):
-    df = fetch_2y_rolling_btc_data()
-    if len(df) < 500:
+  with st.spinner("Connecting to Live Hourly Bitcoin Stream..."):
+    df = fetch_live_hybrid_btc_data()
+    if len(df) < 100:
       st.error("🚨 Error: Insufficient data lines fetched.")
       st.stop()
 except Exception as e:
@@ -151,7 +141,7 @@ except Exception as e:
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# Strict 50:50 split matrix execution over the 2-Year rolling backbuffer
+# Dynamic 50:50 Split Matrix
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
