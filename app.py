@@ -25,7 +25,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
   st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Binance 2-Year Stream:** CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Dual REST Stream:** CONNECTED"
 )
 
 
@@ -60,7 +60,6 @@ def calculate_rolling_hurst_vectorized(price_series, window=50):
   if len(log_returns) < window:
     return hurst_values
 
-  # Sliding window view only looks backwards (Causal)
   windows = np.lib.stride_tricks.sliding_window_view(
       log_returns, window_shape=window
   )
@@ -105,51 +104,45 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# 2-YEAR HISTORICAL DATA FETCH ENGINE (PAGINATED REST FETCH)
+# RELIABLE DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
-@st.cache_data(ttl=3600)  # Cache 2-year data for 1 hour to ensure fast loads
-def fetch_binance_2year_hourly():
-  """Fetches full 2 years of 1-hour BTCUSDT candles via Binance REST API loop."""
+@st.cache_data(ttl=3600)
+def fetch_binance_data(start_ts, end_ts):
+  """Attempts fetching 2 years from Binance."""
   endpoint = "https://api.binance.com/api/v3/klines"
-  symbol = "BTCUSDT"
-  interval = "1h"
-  limit = 1000  # Max limit per request
-
-  # Calculate start timestamp for 2 years ago (in milliseconds)
-  now = datetime.now(timezone.utc)
-  start_dt = now - timedelta(days=730)
-  start_ts = int(start_dt.timestamp() * 1000)
-  end_ts = int(now.timestamp() * 1000)
-
   all_candles = []
   current_start = start_ts
 
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      )
+  }
+
   while current_start < end_ts:
     params = {
-        "symbol": symbol,
-        "interval": interval,
+        "symbol": "BTCUSDT",
+        "interval": "1h",
         "startTime": current_start,
-        "limit": limit,
+        "limit": 1000,
     }
-    response = requests.get(endpoint, params=params, timeout=15)
-    data = response.json()
+    res = requests.get(
+        endpoint, params=params, headers=headers, timeout=10
+    ).json()
 
-    if not data or not isinstance(data, list):
+    if not isinstance(res, list) or len(res) == 0:
       break
 
-    all_candles.extend(data)
-
-    # Move start cursor to the end of the last retrieved candle + 1ms
-    last_candle_time = data[-1][0]
+    all_candles.extend(res)
+    last_candle_time = res[-1][0]
     if last_candle_time <= current_start:
       break
     current_start = last_candle_time + 1
+    time.sleep(0.02)
 
-    # Sleep slightly to remain friendly to API limits
-    time.sleep(0.05)
+  if len(all_candles) < 2000:
+    return None
 
-  # Binance Kline Structure:
-  # [0:OpenTime, 1:Open, 2:High, 3:Low, 4:Close, 5:Volume, ...]
   cols = [
       "OpenTime",
       "Open",
@@ -165,37 +158,95 @@ def fetch_binance_2year_hourly():
       "Ignore",
   ]
   df_raw = pd.DataFrame(all_candles, columns=cols)
-
   num_cols = ["Open", "High", "Low", "Close", "Volume"]
   df_raw[num_cols] = df_raw[num_cols].astype(float)
-
   df_raw["Timestamp"] = pd.to_datetime(df_raw["OpenTime"], unit="ms", utc=True)
   df_raw.set_index("Timestamp", inplace=True)
-  df_raw.sort_index(inplace=True)
-
-  # Drop duplicate index entries if any
-  df_raw = df_raw[~df_raw.index.duplicated(keep="first")]
-
-  # 🔒 STRICT LEAKAGE PREVENTION: Drop the currently unclosed running candle
-  df_raw = df_raw.iloc[:-1]
-
-  # Timezone conversion to Asia/Kolkata (IST)
-  df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
-
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+
+@st.cache_data(ttl=3600)
+def fetch_coinbase_data(start_dt, now_dt):
+  """Fallback engine using Coinbase Pro Pagination."""
+  endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+  headers = {"User-Agent": "Mozilla/5.0"}
+
+  current_end = now_dt
+  all_candles = []
+
+  # Coinbase returns max 300 candles per query (300 hours ~ 12.5 days)
+  while current_end > start_dt:
+    current_start = max(start_dt, current_end - timedelta(hours=300))
+    params = {
+        "granularity": 3600,
+        "start": current_start.isoformat(),
+        "end": current_end.isoformat(),
+    }
+    res = requests.get(
+        endpoint, params=params, headers=headers, timeout=10
+    ).json()
+
+    if isinstance(res, list) and len(res) > 0:
+      all_candles.extend(res)
+    else:
+      break
+
+    current_end = current_start
+    time.sleep(0.05)
+
+  if len(all_candles) == 0:
+    return None
+
+  # Coinbase format: [time, low, high, open, close, volume]
+  cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+  df_raw = pd.DataFrame(all_candles, columns=cols)
+  num_cols = ["Open", "High", "Low", "Close", "Volume"]
+  df_raw[num_cols] = df_raw[num_cols].astype(float)
+  df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
+  df_raw.set_index("Timestamp", inplace=True)
+  return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def get_robust_2year_hourly():
+  now = datetime.now(timezone.utc)
+  start_dt = now - timedelta(days=730)
+
+  # Try Primary Source (Binance)
+  try:
+    df = fetch_binance_data(
+        int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
+    )
+    if df is not None and len(df) >= 5000:
+      return df, "Binance REST API"
+  except Exception:
+    pass
+
+  # Fallback to Secondary Source (Coinbase Pro)
+  df = fetch_coinbase_data(start_dt, now)
+  if df is not None and len(df) >= 2000:
+    return df, "Coinbase Pro API (Fallback)"
+
+  raise ValueError(
+      "Both primary and fallback endpoints failed to return sufficient candles."
+  )
 
 
 # Fetch Data
 try:
-  with st.spinner(
-      "🔄 Fetching 2 Years of Hourly BTC Data (~17,500+ Candles)..."
-  ):
-    df = fetch_binance_2year_hourly()
-    if len(df) < 5000:
-      st.error("🚨 Error: Insufficient historical candles returned.")
-      st.stop()
+  with st.spinner("🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."):
+    df, source_used = get_robust_2year_hourly()
+
+    df.sort_index(inplace=True)
+    df = df[~df.index.duplicated(keep="first")]
+
+    # 🔒 STRICT LEAKAGE PREVENTION: Drop the unclosed running candle
+    df = df.iloc[:-1]
+
+    # Convert to IST
+    df.index = df.index.tz_convert("Asia/Kolkata")
+
 except Exception as e:
-  st.error(f"🚨 API Fetching Error: {e}")
+  st.error(f"🚨 Data Engine Error: {e}")
   st.stop()
 
 
@@ -213,9 +264,9 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 st.success(
-    f"🟢 **Synced {total_candles:,} Total Hourly Candles** | 🧠 **Learn Set:**"
-    f" {len(df_learn):,} Candles | 🔮 **Predict Matrix:**"
-    f" {len(df_predict):,} Candles (IST Locked)"
+    f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
+    f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
+    f" {len(df_predict):,} (IST Locked)"
 )
 
 # --- PATH A: NORMAL CANDLE KINEMATICS ---
@@ -271,7 +322,7 @@ for col in clean_cols:
       np.asarray(df_predict[col], dtype=float).flatten().round(2)
   )
 
-# Reverse DataFrame to display latest closed candle at the top
+# Reverse DataFrame to display latest closed candle at top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 
