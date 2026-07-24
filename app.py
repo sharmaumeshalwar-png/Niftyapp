@@ -6,13 +6,12 @@ import requests
 import streamlit as st
 
 # Page Configuration
-st.set_page_config(
-    page_title="BTC Multi-Kinematics Engine (Clean HAM)", layout="wide"
-)
-st.title("⚡ Bitcoin (BTC-USD) Multi-Level Kinematic Action Engine")
+st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
 st.write(
-    "🎯 **Direct OHLC + Independent Kalman + Hurst + HAM Engine** in IST [2-Year"
-    " Full Engine / Zero Leakage]"
+    "🎯 **Direct Live Crypto Stream:** Full Multi-Level Kinematics (Normal vs"
+    " Heikin-Ashi for High, Low, Close) in IST [2-Year Full Engine / Zero"
+    " Leakage]"
 )
 
 # Sidebar Refresh Controls
@@ -76,10 +75,10 @@ def calculate_rolling_hurst_vectorized(price_series, window=100):
 
 
 def compute_kinematics_path(price_array, window=100):
-  """Computes Independent Kalman, Hurst, and Direct HAM for any Price Series"""
+  """Computes Independent Kalman, Hurst, and Scaled HAM for any Price Series"""
   arr = np.asarray(price_array, dtype=float).flatten()
 
-  # 1. Kalman Base Trend
+  # 1. Base Kalman Trend
   kalman_vals = apply_kalman_filter_custom(
       arr, initial_p=50.0, q_val=0.0005, r_val=0.2
   )
@@ -87,15 +86,39 @@ def compute_kinematics_path(price_array, window=100):
   # 2. Rolling Hurst Exponent
   hurst_vals = calculate_rolling_hurst_vectorized(arr, window=window)
 
-  # 3. Direct Price-Deviation HAM: (Price - Kalman) * Hurst
+  # 3. Direct Scaled Momentum: (Price - Kalman) * Hurst Exponent
   price_diff = arr - kalman_vals
   ham_vals = price_diff * hurst_vals
 
   return kalman_vals, hurst_vals, ham_vals
 
 
+def apply_heikin_ashi(df_in):
+  """Generates Heikin-Ashi OHLC Values"""
+  op = np.asarray(df_in["Open"], dtype=float).flatten()
+  hi = np.asarray(df_in["High"], dtype=float).flatten()
+  lo = np.asarray(df_in["Low"], dtype=float).flatten()
+  cl = np.asarray(df_in["Close"], dtype=float).flatten()
+
+  ha_close = (op + hi + lo + cl) / 4.0
+  ha_open = np.zeros(len(df_in))
+  ha_open[0] = (op[0] + cl[0]) / 2.0
+  for i in range(1, len(df_in)):
+    ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+
+  ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
+  ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
+
+  df_out = df_in.copy()
+  df_out["HA_Open"] = ha_open
+  df_out["HA_High"] = ha_high
+  df_out["HA_Low"] = ha_low
+  df_out["HA_Close"] = ha_close
+  return df_out
+
+
 # -----------------------------------------------------------------
-# 🛡️ 2-YEAR UNRESTRICTED HOURLY FETCH
+# 🛡️ 2-YEAR UNRESTRICTED Crypto Endpoint (Kraken + Coinbase Fallback)
 # -----------------------------------------------------------------
 @st.cache_data(ttl=60)
 def fetch_2year_public_crypto_hourly():
@@ -160,9 +183,11 @@ except Exception as e:
   st.stop()
 
 # =====================================================================
-# ⚡ CORE TRANSFORMATIONS (HIGH, LOW & CLOSE INDEPENDENT KINEMATICS)
+# ⚡ CORE TRANSFORMATIONS & DUAL KINEMATICS ENGINE
 # =====================================================================
+df = apply_heikin_ashi(df)
 
+# Dynamic 50:50 Split Matrix
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -171,28 +196,60 @@ st.success(
     f" {len(df_predict)} IST Locked Candles (Zero Leakage Active)!**"
 )
 
-# 1️⃣ CLOSE KINEMATICS
-close_arr = np.asarray(df_predict["Close"], dtype=float).flatten()
-kalman_c, hurst_c, ham_c = compute_kinematics_path(close_arr, window=100)
+# -----------------------------------------------------------------
+# 1️⃣ NORMAL OHLC KINEMATICS (Close, High, Low)
+# -----------------------------------------------------------------
+# Close
+kalman_c, hurst_c, ham_c = compute_kinematics_path(
+    df_predict["Close"], window=100
+)
 df_predict["Kalman_Close"] = kalman_c
 df_predict["Hurst_Close"] = hurst_c
 df_predict["HAM_Close"] = ham_c
 
-# 2️⃣ HIGH KINEMATICS
-high_arr = np.asarray(df_predict["High"], dtype=float).flatten()
-kalman_h, hurst_h, ham_h = compute_kinematics_path(high_arr, window=100)
+# High
+kalman_h, hurst_h, ham_h = compute_kinematics_path(
+    df_predict["High"], window=100
+)
 df_predict["Kalman_High"] = kalman_h
 df_predict["Hurst_High"] = hurst_h
 df_predict["HAM_High"] = ham_h
 
-# 3️⃣ LOW KINEMATICS
-low_arr = np.asarray(df_predict["Low"], dtype=float).flatten()
-kalman_l, hurst_l, ham_l = compute_kinematics_path(low_arr, window=100)
+# Low
+kalman_l, hurst_l, ham_l = compute_kinematics_path(
+    df_predict["Low"], window=100
+)
 df_predict["Kalman_Low"] = kalman_l
 df_predict["Hurst_Low"] = hurst_l
 df_predict["HAM_Low"] = ham_l
 
-# Clean NA rows
+# -----------------------------------------------------------------
+# 2️⃣ HEIKIN-ASHI KINEMATICS (HA_Close, HA_High, HA_Low)
+# -----------------------------------------------------------------
+# HA Close
+kalman_ha_c, hurst_ha_c, ham_ha_c = compute_kinematics_path(
+    df_predict["HA_Close"], window=100
+)
+df_predict["Kalman_HA_Close"] = kalman_ha_c
+df_predict["Hurst_HA_Close"] = hurst_ha_c
+df_predict["HAM_HA_Close"] = ham_ha_c
+
+# HA High
+kalman_ha_h, hurst_ha_h, ham_ha_h = compute_kinematics_path(
+    df_predict["HA_High"], window=100
+)
+df_predict["Kalman_HA_High"] = kalman_ha_h
+df_predict["Hurst_HA_High"] = hurst_ha_h
+df_predict["HAM_HA_High"] = ham_ha_h
+
+# HA Low
+kalman_ha_l, hurst_ha_l, ham_ha_l = compute_kinematics_path(
+    df_predict["HA_Low"], window=100
+)
+df_predict["Kalman_HA_Low"] = kalman_ha_l
+df_predict["Hurst_HA_Low"] = hurst_ha_l
+df_predict["HAM_HA_Low"] = ham_ha_l
+
 df_predict.dropna(
     subset=["Hurst_Close", "Hurst_High", "Hurst_Low"], inplace=True
 )
@@ -201,19 +258,21 @@ df_predict.dropna(
 # 📋 MATRIX FORMATTING AND IST DISPLAY
 # =====================================================================
 clean_cols = [
-    "Open",
+    "Close",
     "High",
     "Low",
-    "Close",
+    "HA_Close",
+    "HA_High",
+    "HA_Low",
+    "Kalman_Close",
+    "HAM_Close",
     "Kalman_High",
-    "Hurst_High",
     "HAM_High",
     "Kalman_Low",
-    "Hurst_Low",
     "HAM_Low",
-    "Kalman_Close",
-    "Hurst_Close",
-    "HAM_Close",
+    "HAM_HA_Close",
+    "HAM_HA_High",
+    "HAM_HA_Low",
 ]
 
 display_df = pd.DataFrame(index=df_predict.index)
@@ -233,45 +292,49 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Locked Close Price", f"${latest_candle['Close']:,}")
-m2.metric("Close HAM Signal", f"{latest_candle['HAM_Close']}")
-m3.metric("High HAM Signal", f"{latest_candle['HAM_High']}")
-m4.metric("Low HAM Signal", f"{latest_candle['HAM_Low']}")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Locked Close Price", f"${latest_candle['Close']:,}")
+col2.metric("High / Low HAM (Normal)", f"{latest_candle['HAM_High']} / {latest_candle['HAM_Low']}")
+col3.metric("Locked HA Close", f"${latest_candle['HA_Close']:,}")
+col4.metric("High / Low HAM (HA)", f"{latest_candle['HAM_HA_High']} / {latest_candle['HAM_HA_Low']}")
 
 st.divider()
 
-st.subheader("📋 OHLC Multi-Kinematic Analysis Matrix")
+st.subheader("📋 Dynamic Kinematic Matrix (Normal vs Heikin-Ashi)")
 
 st.dataframe(
     display_df,
     column_config={
-        "Open": st.column_config.NumberColumn("Open ($)", format="$%.2f"),
+        "Close": st.column_config.NumberColumn("Close ($)", format="$%.2f"),
         "High": st.column_config.NumberColumn("High ($)", format="$%.2f"),
         "Low": st.column_config.NumberColumn("Low ($)", format="$%.2f"),
-        "Close": st.column_config.NumberColumn("Close ($)", format="$%.2f"),
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
+        ),
+        "HA_High": st.column_config.NumberColumn("HA High ($)", format="$%.2f"),
+        "HA_Low": st.column_config.NumberColumn("HA Low ($)", format="$%.2f"),
+        "Kalman_Close": st.column_config.NumberColumn(
+            "Kalman (Close)", format="$%.2f"
+        ),
+        "HAM_Close": st.column_config.NumberColumn(
+            "HAM (Close)", format="%.2f"
+        ),
         "Kalman_High": st.column_config.NumberColumn(
             "Kalman (High)", format="$%.2f"
-        ),
-        "Hurst_High": st.column_config.NumberColumn(
-            "Hurst (High)", format="%.2f"
         ),
         "HAM_High": st.column_config.NumberColumn("HAM (High)", format="%.2f"),
         "Kalman_Low": st.column_config.NumberColumn(
             "Kalman (Low)", format="$%.2f"
         ),
-        "Hurst_Low": st.column_config.NumberColumn(
-            "Hurst (Low)", format="%.2f"
-        ),
         "HAM_Low": st.column_config.NumberColumn("HAM (Low)", format="%.2f"),
-        "Kalman_Close": st.column_config.NumberColumn(
-            "Kalman (Close)", format="$%.2f"
+        "HAM_HA_Close": st.column_config.NumberColumn(
+            "HAM (HA Close)", format="%.2f"
         ),
-        "Hurst_Close": st.column_config.NumberColumn(
-            "Hurst (Close)", format="%.2f"
+        "HAM_HA_High": st.column_config.NumberColumn(
+            "HAM (HA High)", format="%.2f"
         ),
-        "HAM_Close": st.column_config.NumberColumn(
-            "HAM (Close)", format="%.2f"
+        "HAM_HA_Low": st.column_config.NumberColumn(
+            "HAM (HA Low)", format="%.2f"
         ),
     },
     use_container_width=True,
