@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Dual HAM (7x Cascaded 30 EMA Base)",
+    page_title="BTC-USD 1H Quantum HAM Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ BTC-USD 1H Dual HAM Engine (7x Cascaded 30 EMA Base)")
+st.title("⚛️ BTC-USD 1H Quantum Mechanics + HAM Engine")
 st.caption(
-    "7-Level Recursive 30 EMA on HA_Close | Causal Kalman | Strict Bar-Close Freeze | 50:50 Split"
+    "Quantum Wavefunction Probability Density | 7x Cascaded 30 EMA | Strict Bar Freeze"
 )
 
 
@@ -66,7 +66,33 @@ def apply_kalman_filter_causal(
 
 
 # =====================================================================
-# 3. LEAK-FREE ROLLING HURST EXPONENT
+# 3. QUANTUM WAVEFUNCTION & PROBABILITY DENSITY ENGINE
+# =====================================================================
+def compute_quantum_wavefunction(price_series, window=30):
+    """Calculates Quantum Wave Probability State |Psi|^2 based on Harmonic Oscillator Potential"""
+    s = pd.Series(price_series)
+    mean_p = s.rolling(window).mean()
+    std_p = s.rolling(window).std().fillna(1.0)
+
+    # Normalized Position Displacement (x)
+    x = (s - mean_p) / (std_p + 1e-8)
+
+    # Quantum Harmonic Oscillator Wavefunction Ground State: Psi(x) ~ exp(-x^2 / 2)
+    psi = np.exp(-(x**2) / 2.0)
+
+    # Quantum Probability Density: |Psi|^2
+    prob_density = psi**2
+
+    # Quantum State Momentum Direction (+1 for Upper Quantum State, -1 for Lower)
+    quantum_state = np.where(
+        x >= 0, prob_density, -prob_density
+    )  # Quantum Phase
+
+    return quantum_state
+
+
+# =====================================================================
+# 4. LEAK-FREE ROLLING HURST EXPONENT
 # =====================================================================
 def calculate_rolling_hurst_leak_free(price_series, window=30):
     n = len(price_series)
@@ -90,28 +116,21 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 4. STRICT DUAL HAM FEATURE GENERATOR (7x CASCADED 30 EMA BASE)
+# 5. STRICT DUAL HAM + QUANTUM FEATURE GENERATOR
 # =====================================================================
-def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
+def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
 
-    # 1. Base Series Preparation: 7-Level Cascaded 30 EMA on HA_Close
+    # 1. 7x Cascaded 30 EMA Base
     ema_lvl = df_ha["HA_Close"].copy()
     for _ in range(7):
         ema_lvl = ema_lvl.ewm(span=30, adjust=False).mean()
 
     df_ha["HA_Close_EMA30_L7"] = ema_lvl
-
-    ha_close = df_ha["HA_Close"].to_numpy().flatten()
     ha_close_ema30_l7 = df_ha["HA_Close_EMA30_L7"].to_numpy().flatten()
+    ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # Direct 1-Hour Physics (window = 1)
-    df_ha["Velocity_Speed"] = df_ha["Close"].diff(1)
-    df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(1)
-
-    # -----------------------------------------------------------------
-    # HAM Fast: Applied strictly on '7-Level Cascaded 30 EMA'
-    # -----------------------------------------------------------------
+    # 2. HAM Fast Calculation
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(
         ha_close_ema30_l7, window=30
     )
@@ -123,9 +142,7 @@ def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_30_EMA7"] = mom_30_l7 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # -----------------------------------------------------------------
-    # HAM 200: Applied on Structural Base HA_Close
-    # -----------------------------------------------------------------
+    # 3. HAM Macro 200
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
@@ -137,39 +154,37 @@ def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
+    # 4. Quantum Wavefunction Calculation
+    df_ha["Quantum_State"] = compute_quantum_wavefunction(
+        ha_close_ema30_l7, window=30
+    )
+
     # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar for ZERO live leakage)
     df_ha["HAM_30_EMA7_Frozen"] = df_ha["HA_HAM_30_EMA7"].shift(1)
     df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
-    df_ha["Hurst_30_Frozen"] = df_ha["Hurst_30"].shift(1)
-    df_ha["Hurst_200_Frozen"] = df_ha["Hurst_200"].shift(1)
+    df_ha["Quantum_State_Frozen"] = df_ha["Quantum_State"].shift(1)
 
-    # Difference Spread Column (HAM 30 EMA(x7) - HAM 200 Base)
-    df_ha["HAM_Spread_30EMA7_200"] = (
-        df_ha["HAM_30_EMA7_Frozen"] - df_ha["HAM_200_Frozen"]
-    )
+    # Difference Spread
+    df_ha["HAM_Spread"] = df_ha["HAM_30_EMA7_Frozen"] - df_ha["HAM_200_Frozen"]
 
     return df_ha
 
 
 # =====================================================================
-# 5. DATA INGESTION (2 YEARS BTC-USD 1H DATA)
+# 6. DATA INGESTION & RUN ENGINE
 # =====================================================================
 @st.cache_data(ttl=3600)
 def load_btc_2year_1h_data():
     df_btc = yf.download(
         tickers="BTC-USD", period="730d", interval="1h", progress=False
     )
-
     if isinstance(df_btc.columns, pd.MultiIndex):
         df_btc.columns = df_btc.columns.get_level_values(0)
-
     df_btc = df_btc.dropna(subset=["Open", "High", "Low", "Close"])
-
     if df_btc.index.tz is None:
         df_btc.index = df_btc.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
     else:
         df_btc.index = df_btc.index.tz_convert("Asia/Kolkata")
-
     return df_btc
 
 
@@ -181,20 +196,15 @@ with st.spinner("📥 Fetching 2 Years BTC-USD 1H Data..."):
         st.stop()
 
 # Compute Features
-df_btc_processed = compute_strict_btc_ham_features(df_btc_raw)
-
-# Clean and bfill
+df_btc_processed = compute_strict_btc_quantum_ham(df_btc_raw)
 df_btc_clean = df_btc_processed.dropna(
-    subset=["HAM_30_EMA7_Frozen", "HAM_200_Frozen", "HAM_Spread_30EMA7_200"]
+    subset=["HAM_30_EMA7_Frozen", "Quantum_State_Frozen"]
 ).copy()
 df_btc_clean = df_btc_clean.bfill()
 
-# =====================================================================
-# 6. 50:50 SPLIT ENGINE
-# =====================================================================
+# 50:50 Split
 total_bars = len(df_btc_clean)
 split_idx = int(total_bars * 0.50)
-
 df_learn = df_btc_clean.iloc[:split_idx].copy()
 df_predict = df_btc_clean.iloc[split_idx:].copy()
 
@@ -204,13 +214,12 @@ latest_bar = df_btc_clean.iloc[-1]
 # 7. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader("📌 Live State: 7x Cascaded 30 EMA on HA_Close Base vs 200 HAM")
+st.subheader("📌 Live State: Quantum Wave Probability + Dual HAM")
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
     st.metric(
-        label="BTC Price (Last Closed)",
-        value=f"${latest_bar['Close']:,.2f}",
+        label="BTC Price (Last Closed)", value=f"${latest_bar['Close']:,.2f}"
     )
 with m2:
     st.metric(
@@ -219,18 +228,17 @@ with m2:
     )
 with m3:
     st.metric(
-        label="Frozen HAM (200 Base)",
-        value=f"{latest_bar['HAM_200_Frozen']:+.2f}",
+        label="Quantum Phase State (|Ψ|²)",
+        value=f"{latest_bar['Quantum_State_Frozen']:+.4f}",
+        delta=(
+            "High Bullish State"
+            if latest_bar["Quantum_State_Frozen"] > 0
+            else "High Bearish State"
+        ),
     )
 with m4:
     st.metric(
-        label="Spread (30 EMA x7 - 200)",
-        value=f"{latest_bar['HAM_Spread_30EMA7_200']:+.2f}",
-        delta=(
-            "Bullish Divergence"
-            if latest_bar["HAM_Spread_30EMA7_200"] > 0
-            else "Bearish Divergence"
-        ),
+        label="HAM Spread (30x7 - 200)", value=f"{latest_bar['HAM_Spread']:+.2f}"
     )
 
 st.markdown("---")
@@ -238,39 +246,33 @@ tab1, tab2 = st.tabs(
     ["🔮 50% Prediction Set (Out-of-Sample)", "📚 50% Learning Set (In-Sample)"]
 )
 
-# Display Columns
 display_cols = [
     "Close",
     "HA_Close",
-    "HA_Close_EMA30_L7",
     "HAM_30_EMA7_Frozen",
+    "Quantum_State_Frozen",
     "HAM_200_Frozen",
-    "HAM_Spread_30EMA7_200",
-    "Hurst_30_Frozen",
-    "Hurst_200_Frozen",
+    "HAM_Spread",
 ]
-
 col_renames = {
     "Close": "BTC Close ($)",
     "HA_Close": "HA Close ($)",
-    "HA_Close_EMA30_L7": "HA Close 30 EMA (x7) ($)",
     "HAM_30_EMA7_Frozen": "Frozen HAM (30 EMA x7)",
+    "Quantum_State_Frozen": "Quantum Wave Phase (|Ψ|²)",
     "HAM_200_Frozen": "Frozen HAM (W-200)",
-    "HAM_Spread_30EMA7_200": "HAM (30 EMA x7 - 200) Spread",
-    "Hurst_30_Frozen": "Frozen Hurst (W-30)",
-    "Hurst_200_Frozen": "Frozen Hurst (W-200)",
+    "HAM_Spread": "HAM Spread",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table (7x Cascaded 30 EMA Base)")
+    st.markdown("#### Out-of-Sample Prediction Table (Quantum HAM Integration)")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(p_df.round(2), use_container_width=True, height=500)
+    st.dataframe(p_df.round(4), use_container_width=True, height=500)
 
 with tab2:
     st.markdown("#### In-Sample Learning Table")
     l_df = df_learn[display_cols].copy().iloc[::-1]
     l_df.rename(columns=col_renames, inplace=True)
     l_df.index = l_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(l_df.round(2), use_container_width=True, height=500)
+    st.dataframe(l_df.round(4), use_container_width=True, height=500)
