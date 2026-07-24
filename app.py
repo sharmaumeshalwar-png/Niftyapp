@@ -5,14 +5,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty 50 Dual 5M HAM Engine",
+    page_title="Nifty 50 Dual 5M HAM (W-50 & W-30) Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("🚀 NIFTY 50 Dual 5M HAM (Window 10 & Window 30) + Speed Engine")
+st.title("🚀 NIFTY 50 Dual 5M HAM (Window 50 & Window 30) + Speed Engine")
 st.caption(
-    "100% Leak-Free Grid with Fast 10-Window HAM, Hurst-Scaled 30-Window HAM & Physics Speed Radar"
+    "100% Leak-Free Grid with 50-Window HAM, Hurst-Scaled 30-Window HAM & Physics Speed Radar"
 )
 
 
@@ -82,7 +82,6 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
-    raw_close = df_ha["Close"].to_numpy().flatten()
 
     # Physics Velocity & Acceleration
     window = 5
@@ -101,14 +100,14 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_30"] = np.array(mom_30) * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 2. HAM Fast (Window 10 on 5M Close / HA_Close)
-    kalman_10 = apply_kalman_filter_custom(
-        ha_close, initial_p=20.0, q_val=0.005, r_val=0.05
+    # 2. HAM (Window 50 on 5M Close / HA_Close)
+    kalman_50 = apply_kalman_filter_custom(
+        ha_close, initial_p=50.0, q_val=0.0003, r_val=0.3
     )
-    mom_10 = apply_kalman_filter_custom(
-        ha_close - kalman_10, initial_p=0.50, q_val=0.005, r_val=0.05
+    mom_50 = apply_kalman_filter_custom(
+        ha_close - kalman_50, initial_p=0.50, q_val=0.001, r_val=0.1
     )
-    df_ha["HA_HAM_10"] = np.array(mom_10)
+    df_ha["HA_HAM_50"] = np.array(mom_50)
 
     return df_ha
 
@@ -145,7 +144,7 @@ def load_market_data():
     return processed_dfs[0], processed_dfs[1], processed_dfs[2]
 
 
-with st.spinner("Loading Nifty Data & Calculating Dual 5M HAM..."):
+with st.spinner("Loading Nifty Data & Calculating Dual 5M HAM (W-50 & W-30)..."):
     try:
         df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
     except Exception as e:
@@ -182,8 +181,8 @@ df_15m_grid["5M_Hurst_30"] = (
 df_15m_grid["5M_HAM_30"] = (
     df_5m["HA_HAM_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["5M_HAM_10"] = (
-    df_5m["HA_HAM_10"].shift(1).reindex(df_15m_grid.index, method="ffill")
+df_15m_grid["5M_HAM_50"] = (
+    df_5m["HA_HAM_50"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["5M_Velocity"] = (
     df_5m["Velocity_Speed"].shift(1).reindex(df_15m_grid.index, method="ffill")
@@ -199,7 +198,7 @@ ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
 hurst_5m_vals = df_15m_grid["5M_Hurst_30"].to_numpy()
 ham_5m_30_vals = df_15m_grid["5M_HAM_30"].to_numpy()
-ham_5m_10_vals = df_15m_grid["5M_HAM_10"].to_numpy()
+ham_5m_50_vals = df_15m_grid["5M_HAM_50"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
 regime = ["⚡ ORDERED TREND"] * n
@@ -211,19 +210,19 @@ for i in range(2, n):
     m15_curr = m15_curr_arr[i]
     h_5m = hurst_5m_vals[i]
     h5_30 = ham_5m_30_vals[i]
-    h5_10 = ham_5m_10_vals[i]
+    h5_50 = ham_5m_50_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Dual 5M HAM Alignment Check
-    if h5_10 > 0 and h5_30 > 0:
-        ham_alignment[i] = "🟢 DUAL BULLISH (10 & 30 HAM > 0)"
-    elif h5_10 < 0 and h5_30 < 0:
-        ham_alignment[i] = "🔴 DUAL BEARISH (10 & 30 HAM < 0)"
-    elif h5_10 > 0 and h5_30 < 0:
-        ham_alignment[i] = "⚡ FAST RECOVERY (10 HAM Turned Green)"
+    # Dual 5M HAM Alignment Check (Window 50 & Window 30)
+    if h5_50 > 0 and h5_30 > 0:
+        ham_alignment[i] = "🟢 DUAL BULLISH (50 & 30 HAM > 0)"
+    elif h5_50 < 0 and h5_30 < 0:
+        ham_alignment[i] = "🔴 DUAL BEARISH (50 & 30 HAM < 0)"
+    elif h5_50 > 0 and h5_30 < 0:
+        ham_alignment[i] = "⚡ STRONG RECOVERY (50 HAM Green / 30 Red)"
     else:
-        ham_alignment[i] = "⚠️ FAST SLIP (10 HAM Turned Red)"
+        ham_alignment[i] = "⚠️ MOMENTUM WEAKENING (50 HAM Red / 30 Green)"
 
     # Hurst Filter (Anti-Chop Rule: Hurst < 0.48 -> No Trade)
     if h_5m < 0.48:
@@ -246,9 +245,9 @@ for i in range(2, n):
             if (m15_curr > 0 and not is_ha_red)
             else "🔴 FAKE RALLY PASS"
         )
-    elif h1_curr > h1_prev and h1_curr > 0 and h5_10 > 0:
+    elif h1_curr > h1_prev and h1_curr > 0 and h5_50 > 0:
         signals[i] = "🟢 ACCELERATED RALLY 🚀"
-    elif h1_curr < h1_prev and h1_curr < 0 and h5_10 < 0:
+    elif h1_curr < h1_prev and h1_curr < 0 and h5_50 < 0:
         signals[i] = "🔴 ACCELERATED DROP 🔥"
 
 df_15m_grid["Market_Regime"] = regime
@@ -269,14 +268,14 @@ m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
 with m_c1:
     st.metric(
-        label="5M HAM (Fast W-10)",
-        value=f"{latest['5M_HAM_10']:+.2f}",
-        delta="Positive" if latest["5M_HAM_10"] > 0 else "Negative",
+        label="5M HAM (Window 50)",
+        value=f"{latest['5M_HAM_50']:+.2f}",
+        delta="Positive" if latest["5M_HAM_50"] > 0 else "Negative",
     )
 
 with m_c2:
     st.metric(
-        label="5M HAM (Scaled W-30)",
+        label="5M HAM (Scaled Window 30)",
         value=f"{latest['5M_HAM_30']:+.2f}",
         delta="Positive" if latest["5M_HAM_30"] > 0 else "Negative",
     )
@@ -318,14 +317,14 @@ with col_s2:
         {
             "Metric": [
                 "15M HA-Close",
-                "5M HAM (Window 10 - Fast)",
+                "5M HAM (Window 50 - Trend)",
                 "5M HAM (Window 30 - Baseline)",
                 "5M Hurst Exponent (Window 30)",
                 "5M Momentum Alignment State",
             ],
             "Live Value": [
                 f"{latest['HA_Close']:,.2f}",
-                f"{latest['5M_HAM_10']:+.2f}",
+                f"{latest['5M_HAM_50']:+.2f}",
                 f"{latest['5M_HAM_30']:+.2f}",
                 f"{latest['5M_Hurst_30']:.2f}",
                 f"{latest['5M_HAM_Alignment']}",
@@ -335,12 +334,12 @@ with col_s2:
     st.table(summary_table)
 
 st.markdown("---")
-st.subheader("📋 Timeline with Dual 5M HAM Grid")
+st.subheader("📋 Timeline with Dual 5M HAM Grid (W-50 & W-30)")
 
 clean_cols = [
     "Market_Regime",
     "5M_HAM_Alignment",
-    "5M_HAM_10",
+    "5M_HAM_50",
     "5M_HAM_30",
     "5M_Hurst_30",
     "HA_Close",
@@ -352,7 +351,7 @@ display_df.rename(
     columns={
         "Market_Regime": "Regime",
         "5M_HAM_Alignment": "5M HAM State",
-        "5M_HAM_10": "5M HAM (W-10)",
+        "5M_HAM_50": "5M HAM (W-50)",
         "5M_HAM_30": "5M HAM (W-30)",
         "5M_Hurst_30": "5M Hurst",
         "HA_Close": "15M HA-Close",
@@ -361,7 +360,7 @@ display_df.rename(
     inplace=True,
 )
 
-for c in ["5M HAM (W-10)", "5M HAM (W-30)", "5M Hurst", "15M HA-Close"]:
+for c in ["5M HAM (W-50)", "5M HAM (W-30)", "5M Hurst", "15M HA-Close"]:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
