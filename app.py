@@ -5,14 +5,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty 50 Dual 5M HAM (W-50 & W-30) Engine",
+    page_title="Nifty 50 Dual Symmetric HAM (W-50 & W-30)",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("🚀 NIFTY 50 Dual 5M HAM (Window 50 & Window 30) + Speed Engine")
+st.title("🚀 NIFTY 50 Dual Symmetric 5M HAM (W-50 & W-30) Engine")
 st.caption(
-    "100% Leak-Free Grid with 50-Window HAM, Hurst-Scaled 30-Window HAM & Physics Speed Radar"
+    "100% Leak-Free Grid with Identical 30-Window & 50-Window Hurst-Weighted HAM Engines"
 )
 
 
@@ -88,10 +88,10 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha["Velocity_Speed"] = df_ha["Close"].diff(window) / window
     df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(window) / window
 
-    # Hurst Exponent on 30 Window
+    # -------------------------------------------------------------
+    # 1. HAM Window 30 (Hurst-Weighted Momentum)
+    # -------------------------------------------------------------
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-
-    # 1. HAM Baseline (Window 30 with Hurst Scaling)
     kalman_30 = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
@@ -100,14 +100,17 @@ def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_30"] = np.array(mom_30) * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 2. HAM (Window 50 on 5M Close / HA_Close)
+    # -------------------------------------------------------------
+    # 2. HAM Window 50 (EXACT SAME FORMULA - Only Window Changed)
+    # -------------------------------------------------------------
+    df_ha["Hurst_50"] = calculate_rolling_hurst_leak_free(ha_close, window=50)
     kalman_50 = apply_kalman_filter_custom(
-        ha_close, initial_p=50.0, q_val=0.0003, r_val=0.3
+        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
     mom_50 = apply_kalman_filter_custom(
         ha_close - kalman_50, initial_p=0.50, q_val=0.001, r_val=0.1
     )
-    df_ha["HA_HAM_50"] = np.array(mom_50)
+    df_ha["HA_HAM_50"] = np.array(mom_50) * (df_ha["Hurst_50"].to_numpy() * 2.0)
 
     return df_ha
 
@@ -144,7 +147,9 @@ def load_market_data():
     return processed_dfs[0], processed_dfs[1], processed_dfs[2]
 
 
-with st.spinner("Loading Nifty Data & Calculating Dual 5M HAM (W-50 & W-30)..."):
+with st.spinner(
+    "Loading Nifty Data & Calculating Symmetric 5M HAM (W-50 & W-30)..."
+):
     try:
         df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
     except Exception as e:
@@ -177,6 +182,9 @@ df_15m_grid["5M_Close"] = (
 )
 df_15m_grid["5M_Hurst_30"] = (
     df_5m["Hurst_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
+df_15m_grid["5M_Hurst_50"] = (
+    df_5m["Hurst_50"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 df_15m_grid["5M_HAM_30"] = (
     df_5m["HA_HAM_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
@@ -262,7 +270,7 @@ latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
 # DISPLAY RADAR & TIMELINE
 # =====================================================================
 st.markdown("---")
-st.subheader("📊 Live Dual 5M HAM Momentum Dashboard")
+st.subheader("📊 Live Symmetric Dual 5M HAM Momentum Dashboard")
 
 m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
@@ -275,15 +283,15 @@ with m_c1:
 
 with m_c2:
     st.metric(
-        label="5M HAM (Scaled Window 30)",
+        label="5M HAM (Window 30)",
         value=f"{latest['5M_HAM_30']:+.2f}",
         delta="Positive" if latest["5M_HAM_30"] > 0 else "Negative",
     )
 
 with m_c3:
     st.metric(
-        label="5M Hurst Exponent (W-30)",
-        value=f"{latest['5M_Hurst_30']:.2f}",
+        label="5M Hurst (W-50 / W-30)",
+        value=f"{latest['5M_Hurst_50']:.2f} / {latest['5M_Hurst_30']:.2f}",
         delta="Trending" if latest["5M_Hurst_30"] >= 0.50 else "Choppy",
     )
 
@@ -317,16 +325,16 @@ with col_s2:
         {
             "Metric": [
                 "15M HA-Close",
-                "5M HAM (Window 50 - Trend)",
-                "5M HAM (Window 30 - Baseline)",
-                "5M Hurst Exponent (Window 30)",
+                "5M HAM (Window 50 - Symmetric)",
+                "5M HAM (Window 30 - Symmetric)",
+                "5M Hurst Exponent (W-50 / W-30)",
                 "5M Momentum Alignment State",
             ],
             "Live Value": [
                 f"{latest['HA_Close']:,.2f}",
                 f"{latest['5M_HAM_50']:+.2f}",
                 f"{latest['5M_HAM_30']:+.2f}",
-                f"{latest['5M_Hurst_30']:.2f}",
+                f"{latest['5M_Hurst_50']:.2f} / {latest['5M_Hurst_30']:.2f}",
                 f"{latest['5M_HAM_Alignment']}",
             ],
         }
@@ -334,13 +342,14 @@ with col_s2:
     st.table(summary_table)
 
 st.markdown("---")
-st.subheader("📋 Timeline with Dual 5M HAM Grid (W-50 & W-30)")
+st.subheader("📋 Timeline with Dual Symmetric 5M HAM Grid (W-50 & W-30)")
 
 clean_cols = [
     "Market_Regime",
     "5M_HAM_Alignment",
     "5M_HAM_50",
     "5M_HAM_30",
+    "5M_Hurst_50",
     "5M_Hurst_30",
     "HA_Close",
     "Kinematic_Signal",
@@ -353,14 +362,21 @@ display_df.rename(
         "5M_HAM_Alignment": "5M HAM State",
         "5M_HAM_50": "5M HAM (W-50)",
         "5M_HAM_30": "5M HAM (W-30)",
-        "5M_Hurst_30": "5M Hurst",
+        "5M_Hurst_50": "Hurst (W-50)",
+        "5M_Hurst_30": "Hurst (W-30)",
         "HA_Close": "15M HA-Close",
         "Kinematic_Signal": "Signal",
     },
     inplace=True,
 )
 
-for c in ["5M HAM (W-50)", "5M HAM (W-30)", "5M Hurst", "15M HA-Close"]:
+for c in [
+    "5M HAM (W-50)",
+    "5M HAM (W-30)",
+    "Hurst (W-50)",
+    "Hurst (W-30)",
+    "15M HA-Close",
+]:
     display_df[c] = display_df[c].round(2)
 
 display_df = display_df.iloc[::-1]
