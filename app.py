@@ -2,23 +2,22 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-from scipy.stats import ks_2samp
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty 50 Kolmogorov Engine",
+    page_title="Nifty 50 Chaos Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ NIFTY 50 Heikin-Ashi Triple Engine + Kolmogorov Anti-Chop Radar")
+st.title("🌀 NIFTY 50 Heikin-Ashi Triple Engine + Pure Chaos Theory Radar")
 st.caption(
-    "100% Leak-Free Grid with Live Kolmogorov Complexity, K-S Drift, Hurst Exponent & Composite Signal"
+    "100% Leak-Free Grid with Lyapunov Chaos Exponent, Fractal Dimension & Kinetic Momentum"
 )
 
 
 # =====================================================================
-# KOLMOGOROV & MATHEMATICAL ENGINES
+# CHAOS THEORY & MATHEMATICAL ENGINES
 # =====================================================================
 def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
@@ -60,25 +59,58 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
     return filtered_values
 
 
-def calculate_kolmogorov_complexity(series, window=30):
+def compute_lyapunov_chaos_exponent(series, window=30):
     """
-    Computes Algorithmic Complexity on Price Returns.
-    Lower Complexity (< 0.45) = Structured Trend
-    Higher Complexity (> 0.70) = Pure Random Walk / High Chop
+    Proxy for Largest Lyapunov Exponent (LLE) in Phase Space.
+    Measures sensitive dependence on initial conditions (Divergence Rate).
+    LLE < 0.35 -> Smooth Deterministic Trend
+    LLE > 0.65 -> High Turbulence / Unpredictable Chaos
     """
     s = pd.Series(series)
-    diff = s.diff().fillna(0.0).to_numpy()
-    binary_seq = (diff > 0).astype(int)
+    returns = np.abs(np.log(s / s.shift(1)).fillna(0.0).to_numpy())
+    
+    lle = np.full(len(series), 0.5)
+    for i in range(window, len(returns)):
+        sub = returns[i - window + 1 : i + 1]
+        std_val = np.std(sub)
+        mean_val = np.mean(sub) + 1e-8
+        
+        # Phase space divergence proxy
+        divergence = std_val / mean_val
+        lle[i] = np.clip(divergence / (1.0 + divergence), 0.0, 1.0)
+        
+    return lle
 
-    complexity = np.full(len(series), 0.5)
-    for i in range(window, len(binary_seq)):
-        sub_seq = binary_seq[i - window + 1 : i + 1]
-        patterns = set(
-            tuple(sub_seq[j : j + 3]) for j in range(len(sub_seq) - 2)
-        )
-        complexity[i] = len(patterns) / 8.0  # Normalized (2^3 = 8 max binary triples)
 
-    return complexity
+def compute_fractal_dimension(series, window=30):
+    """
+    Computes Sevcik Fractal Dimension of Price Time-Series.
+    D_f = 1.0 -> Smooth Linear Movement
+    D_f > 1.5 -> Highly Complex Jagged Phase (Chaos)
+    """
+    s = pd.Series(series).to_numpy()
+    df_val = np.full(len(series), 1.5)
+    
+    for i in range(window, len(series)):
+        sub = s[i - window + 1 : i + 1]
+        max_p = np.max(sub)
+        min_p = np.min(sub)
+        
+        if max_p - min_p < 1e-8:
+            df_val[i] = 1.0
+            continue
+            
+        # Normalize curve to unit square
+        norm_sub = (sub - min_p) / (max_p - min_p)
+        
+        # Calculate total length of path L
+        path_length = np.sum(np.sqrt(np.diff(norm_sub)**2 + (1.0 / (window - 1))**2))
+        
+        # Sevcik Formula
+        d = 1.0 + (np.log(path_length) + np.log(2.0)) / np.log(2.0 * (window - 1))
+        df_val[i] = np.clip(d, 1.0, 2.0)
+        
+    return df_val
 
 
 def calculate_rolling_hurst_leak_free(price_series, window=30):
@@ -101,24 +133,14 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
     return hurst_values
 
 
-def calculate_efficiency_ratio(price_series, window=14):
-    s = pd.Series(price_series)
-    net_change = (s - s.shift(window)).abs()
-    sum_individual_changes = (s - s.shift(1)).abs().rolling(window=window).sum()
-    er = net_change / (sum_individual_changes + 1e-8)
-    return er.fillna(0.0).to_numpy()
-
-
 def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
     raw_close = df_ha["Close"].to_numpy().flatten()
 
     df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    df_ha["ER"] = calculate_efficiency_ratio(ha_close, window=14)
-
-    # Applied Kolmogorov Complexity directly on Close Price
-    df_ha["Kolmogorov_Complexity"] = calculate_kolmogorov_complexity(raw_close, window=30)
+    df_ha["Lyapunov_Chaos"] = compute_lyapunov_chaos_exponent(raw_close, window=30)
+    df_ha["Fractal_Dimension"] = compute_fractal_dimension(raw_close, window=30)
 
     kalman = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -171,7 +193,7 @@ with st.spinner("Fetching Extended (60-Day) Nifty 50 Intraday Data..."):
         st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Heikin-Ashi, HAM, Hurst & Kolmogorov Metrics
+# Compute Heikin-Ashi, HAM, Hurst & Chaos Metrics
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 df_5m = compute_ha_ham_features(df_5m_raw)
@@ -202,31 +224,14 @@ df_15m_grid["5M_HA_Close"] = (
 df_15m_grid["5M_HA_HAM"] = (
     df_5m["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
-df_15m_grid["5M_Kolmogorov"] = (
-    df_5m["Kolmogorov_Complexity"].shift(1).reindex(df_15m_grid.index, method="ffill")
+df_15m_grid["5M_Lyapunov_Chaos"] = (
+    df_5m["Lyapunov_Chaos"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
+df_15m_grid["5M_Fractal_Dimension"] = (
+    df_5m["Fractal_Dimension"].shift(1).reindex(df_15m_grid.index, method="ffill")
 )
 
-# K-S Distribution Drift Test between 5M Close & 15M Close
-ks_stats = np.zeros(len(df_15m_grid))
-
-# FIXED: Replaced method="ffill" with .ffill() for Pandas 2.0+ compatibility
-c_5m = df_15m_grid["5M_Close"].ffill().to_numpy()
-c_15m = df_15m_grid["Close"].to_numpy()
-
-for i in range(30, len(df_15m_grid)):
-    if np.isnan(c_5m[i - 30 : i]).any() or np.isnan(c_15m[i - 30 : i]).any():
-        ks_stats[i] = 0.0
-    else:
-        stat, _ = ks_2samp(c_5m[i - 30 : i], c_15m[i - 30 : i])
-        ks_stats[i] = stat
-
-df_15m_grid["KS_Drift_Stat"] = ks_stats
-
-# Anti-Chop Composite Score combining Kolmogorov Entropy & Hurst Exponent
-df_15m_grid["Kolmogorov_Chop_Score"] = (
-    df_15m_grid["5M_Kolmogorov"] / (df_15m_grid["Hurst"] + 1e-8)
-)
-
+# Composite Signal Calculation
 df_15m_grid["Composite_Signal"] = (
     df_15m_grid["Hurst"] * df_15m_grid["5M_HA_HAM"]
 )
@@ -240,29 +245,29 @@ ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
 ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
 
 hurst_vals = df_15m_grid["Hurst"].to_numpy()
-er_vals = df_15m_grid["ER"].to_numpy()
-kolm_5m_vals = df_15m_grid["5M_Kolmogorov"].to_numpy()
+chaos_5m_vals = df_15m_grid["5M_Lyapunov_Chaos"].to_numpy()
+fractal_5m_vals = df_15m_grid["5M_Fractal_Dimension"].to_numpy()
 
 signals = ["⚪ NEUTRAL"] * n
-regime = ["⚡ TRENDING"] * n
+regime = ["⚡ DETERMINISTIC TREND"] * n
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
     h_val = hurst_vals[i]
-    e_val = er_vals[i]
-    k_5m = kolm_5m_vals[i]
+    ch_5m = chaos_5m_vals[i]
+    f_5m = fractal_5m_vals[i]
 
     is_ha_red = ha_close_vals[i] < ha_open_vals[i]
 
-    # Kolmogorov Anti-Chop Rule (High Complexity > 0.70 OR Low Hurst < 0.48)
-    if k_5m > 0.70 or h_val < 0.48 or e_val < 0.18:
-        regime[i] = "⚠️ HIGH ENTROPY / CHOP"
-        signals[i] = "🛑 NO TRADE (Kolmogorov Noise Detected)"
+    # Pure Chaos Anti-Chop Rule (High Chaos > 0.65 OR High Fractal Complexity > 1.55 OR Hurst < 0.48)
+    if ch_5m > 0.65 or f_5m > 1.55 or h_val < 0.48:
+        regime[i] = "🌀 TURBULENT CHAOS ZONE"
+        signals[i] = "🛑 NO TRADE (High Phase-Space Chaos)"
         continue
 
-    regime[i] = "⚡ LOW ENTROPY / TREND"
+    regime[i] = "⚡ ORDERED / TRENDING PHASE"
 
     if h1_curr > 0 and h1_curr < h1_prev:
         signals[i] = (
@@ -291,7 +296,8 @@ df_15m_grid.dropna(
         "5M_HA_Close",
         "5M_HA_HAM",
         "Composite_Signal",
-        "5M_Kolmogorov",
+        "5M_Lyapunov_Chaos",
+        "5M_Fractal_Dimension",
     ],
     inplace=True,
 )
@@ -309,9 +315,9 @@ with col_s1:
     sig = latest["Instant_Kinematic_Signal"]
     reg = latest["Market_Regime"]
 
-    if reg == "⚠️ HIGH ENTROPY / CHOP":
+    if reg == "🌀 TURBULENT CHAOS ZONE":
         st.warning(
-            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(5M Kolmogorov Complexity {latest['5M_Kolmogorov']:.2f} / Hurst {latest['Hurst']:.2f})*"
+            f"### Market Regime: {reg}\n# 🛑 AVOID TRADING\n*(5M Chaos Exponent {latest['5M_Lyapunov_Chaos']:.2f} / Fractal Dim {latest['5M_Fractal_Dimension']:.2f})*"
         )
     elif "REAL BOTTOM" in sig or "TRAP PASS (15M Bullish" in sig or "RALLY" in sig:
         st.success(f"### Live Signal ({latest_time})\n# {sig}")
@@ -324,10 +330,9 @@ with col_s2:
     summary_data = {
         "Metric": [
             "HA Close Price",
-            "5M Kolmogorov Complexity (Entropy)",
-            "K-S Distribution Drift Stat",
-            "Hurst Exponent (Chop Filter)",
-            "Efficiency Ratio (ER)",
+            "5M Lyapunov Chaos Exponent (0-1)",
+            "5M Fractal Dimension (1-2)",
+            "Hurst Exponent (Persistence)",
             "Composite Signal (Hurst * 5M HAM)",
         ],
         "1-Hour (Locked)": [
@@ -336,21 +341,18 @@ with col_s2:
             "-",
             "-",
             "-",
-            "-",
         ],
         "15-Min (Live)": [
             f"{latest['HA_Close']:,.2f}",
-            f"{latest['Kolmogorov_Complexity']:.2f}",
-            f"{latest['KS_Drift_Stat']:.2f}",
+            f"{latest['Lyapunov_Chaos']:.2f}",
+            f"{latest['Fractal_Dimension']:.2f}",
             f"{latest['Hurst']:.2f}",
-            f"{latest['ER']:.2f}",
             f"{latest['Composite_Signal']:.2f}",
         ],
         "5-Min (Live)": [
             f"{latest['5M_HA_Close']:,.2f}",
-            f"{latest['5M_Kolmogorov']:.2f}",
-            "-",
-            "-",
+            f"{latest['5M_Lyapunov_Chaos']:.2f}",
+            f"{latest['5M_Fractal_Dimension']:.2f}",
             "-",
             "-",
         ],
@@ -359,14 +361,13 @@ with col_s2:
 
 st.markdown("---")
 
-st.subheader("📋 Nifty 50 Timeline with Kolmogorov Complexity & K-S Drift Radar")
+st.subheader("📋 Nifty 50 Timeline with Chaos Exponent & Fractal Radar")
 
 clean_cols = [
     "Market_Regime",
-    "5M_Kolmogorov",
-    "KS_Drift_Stat",
+    "5M_Lyapunov_Chaos",
+    "5M_Fractal_Dimension",
     "Hurst",
-    "ER",
     "Composite_Signal",
     "1H_HA_Close_Frozen",
     "HA_Close",
@@ -381,10 +382,9 @@ display_df = df_15m_grid[clean_cols].copy()
 display_df.rename(
     columns={
         "Market_Regime": "Regime",
-        "5M_Kolmogorov": "5M Kolmogorov Complexity",
-        "KS_Drift_Stat": "K-S Drift Stat",
+        "5M_Lyapunov_Chaos": "5M Chaos Exponent",
+        "5M_Fractal_Dimension": "5M Fractal Dim",
         "Hurst": "Hurst Exponent",
-        "ER": "Eff. Ratio",
         "Composite_Signal": "Composite (Hurst * 5M)",
         "1H_HA_Close_Frozen": "1H HA-Close",
         "HA_Close": "15M HA-Close",
@@ -398,10 +398,9 @@ display_df.rename(
 )
 
 for c in [
-    "5M Kolmogorov Complexity",
-    "K-S Drift Stat",
+    "5M Chaos Exponent",
+    "5M Fractal Dim",
     "Hurst Exponent",
-    "Eff. Ratio",
     "Composite (Hurst * 5M)",
     "1H HA-Close",
     "15M HA-Close",
