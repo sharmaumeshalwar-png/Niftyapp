@@ -7,11 +7,11 @@ import streamlit as st
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC Multi-Kinematics Engine (Fixed HAM)", layout="wide"
+    page_title="BTC Multi-Kinematics Engine (Clean HAM)", layout="wide"
 )
 st.title("⚡ Bitcoin (BTC-USD) Multi-Level Kinematic Action Engine")
 st.write(
-    "🎯 **Corrected Normalized HAM Signals (Close, High, Low)** in IST [2-Year"
+    "🎯 **Direct OHLC + Independent Kalman + Hurst + HAM Engine** in IST [2-Year"
     " Full Engine / Zero Leakage]"
 )
 
@@ -27,12 +27,12 @@ st.sidebar.success(
 
 
 # =====================================================================
-# CORRECTED MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead)
+# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=1.0, q_val=0.001, r_val=0.05
+    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
 ):
-  """Recursive Forward-Only Kalman Filter for Normalized Series"""
+  """Recursive Forward-Only Kalman Filter"""
   arr = np.asarray(data_array, dtype=float).flatten()
   if len(arr) == 0:
     return np.array([])
@@ -75,35 +75,23 @@ def calculate_rolling_hurst_vectorized(price_series, window=100):
   return hurst_values
 
 
-def calculate_normalized_ham(price_series, window=100):
-  """Calculates Accurate Volatility-Adjusted Hurst Adaptive Momentum (HAM)"""
-  s = pd.Series(price_series)
-  # 1. Log Returns
-  returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+def compute_kinematics_path(price_array, window=100):
+  """Computes Independent Kalman, Hurst, and Direct HAM for any Price Series"""
+  arr = np.asarray(price_array, dtype=float).flatten()
 
-  # 2. Base Kalman Filter on Price
-  kalman_price = apply_kalman_filter_custom(
-      price_series, initial_p=50.0, q_val=0.0005, r_val=0.2
+  # 1. Kalman Base Trend
+  kalman_vals = apply_kalman_filter_custom(
+      arr, initial_p=50.0, q_val=0.0005, r_val=0.2
   )
 
-  # 3. Dynamic Return-Based Kalman Momentum
-  kalman_returns = apply_kalman_filter_custom(
-      returns, initial_p=0.01, q_val=0.0001, r_val=0.01
-  )
+  # 2. Rolling Hurst Exponent
+  hurst_vals = calculate_rolling_hurst_vectorized(arr, window=window)
 
-  # 4. Rolling Hurst Exponent
-  hurst = calculate_rolling_hurst_vectorized(price_series, window=window)
+  # 3. Direct Price-Deviation HAM: (Price - Kalman) * Hurst
+  price_diff = arr - kalman_vals
+  ham_vals = price_diff * hurst_vals
 
-  # 5. Rolling Volatility Normalization (Preventing Scale Distortion)
-  rolling_std = (
-      pd.Series(returns).rolling(window=window, min_periods=1).std().to_numpy()
-      + 1e-8
-  )
-
-  # 6. Final Scaled HAM Calculation
-  ham = (kalman_returns / rolling_std) * hurst
-
-  return kalman_price, hurst, np.clip(ham, -10.0, 10.0)
+  return kalman_vals, hurst_vals, ham_vals
 
 
 # -----------------------------------------------------------------
@@ -172,7 +160,7 @@ except Exception as e:
   st.stop()
 
 # =====================================================================
-# ⚡ CORE TRANSFORMATIONS (PROPERLY SCALED HIGH, LOW & CLOSE HAM)
+# ⚡ CORE TRANSFORMATIONS (HIGH, LOW & CLOSE INDEPENDENT KINEMATICS)
 # =====================================================================
 
 split_idx = int(len(df) * 0.50)
@@ -185,21 +173,21 @@ st.success(
 
 # 1️⃣ CLOSE KINEMATICS
 close_arr = np.asarray(df_predict["Close"], dtype=float).flatten()
-kalman_c, hurst_c, ham_c = calculate_normalized_ham(close_arr, window=100)
+kalman_c, hurst_c, ham_c = compute_kinematics_path(close_arr, window=100)
 df_predict["Kalman_Close"] = kalman_c
 df_predict["Hurst_Close"] = hurst_c
 df_predict["HAM_Close"] = ham_c
 
 # 2️⃣ HIGH KINEMATICS
 high_arr = np.asarray(df_predict["High"], dtype=float).flatten()
-kalman_h, hurst_h, ham_h = calculate_normalized_ham(high_arr, window=100)
+kalman_h, hurst_h, ham_h = compute_kinematics_path(high_arr, window=100)
 df_predict["Kalman_High"] = kalman_h
 df_predict["Hurst_High"] = hurst_h
 df_predict["HAM_High"] = ham_h
 
 # 3️⃣ LOW KINEMATICS
 low_arr = np.asarray(df_predict["Low"], dtype=float).flatten()
-kalman_l, hurst_l, ham_l = calculate_normalized_ham(low_arr, window=100)
+kalman_l, hurst_l, ham_l = compute_kinematics_path(low_arr, window=100)
 df_predict["Kalman_Low"] = kalman_l
 df_predict["Hurst_Low"] = hurst_l
 df_predict["HAM_Low"] = ham_l
@@ -253,7 +241,7 @@ m4.metric("Low HAM Signal", f"{latest_candle['HAM_Low']}")
 
 st.divider()
 
-st.subheader("📋 Corrected Normalized HAM Kinematic Matrix")
+st.subheader("📋 OHLC Multi-Kinematic Analysis Matrix")
 
 st.dataframe(
     display_df,
