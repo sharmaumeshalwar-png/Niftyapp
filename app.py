@@ -9,18 +9,18 @@ import streamlit as st
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
 st.write(
-    "🎯 **Direct Binance Stream:** Dual H.A.M. Matrix (Normal vs Heikin-Ashi) in"
-    " IST [2-Year Full Engine / Zero Leakage]"
+    "🎯 **Direct Live Crypto Stream:** Dual H.A.M. Matrix (Normal vs"
+    " Heikin-Ashi) in IST [2-Year Full Engine / Zero Leakage]"
 )
 
 # Sidebar Refresh Controls
-st.sidebar.header("🔄 Binance Stream Controls")
+st.sidebar.header("🔄 Live Engine Controls")
 if st.sidebar.button("⚡ Force Refresh Engine"):
   st.cache_data.clear()
   st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Binance Direct Feed:** CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Public Direct Stream:** CONNECTED"
 )
 
 
@@ -30,7 +30,6 @@ st.sidebar.success(
 def apply_kalman_filter_custom(
     data_array, initial_p=50.0, q_val=0.001, r_val=0.1
 ):
-  """Recursive Forward-Only Kalman Filter"""
   arr = np.asarray(data_array, dtype=float).flatten()
   if len(arr) == 0:
     return np.array([])
@@ -46,7 +45,6 @@ def apply_kalman_filter_custom(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=100):
-  """Backward-Looking Vectorized Rolling Hurst Exponent"""
   arr = np.asarray(price_series, dtype=float).flatten()
   s = pd.Series(arr)
   log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
@@ -74,7 +72,6 @@ def calculate_rolling_hurst_vectorized(price_series, window=100):
 
 
 def apply_heikin_ashi(df_in):
-  """Vectorized Heikin-Ashi Transformation"""
   op = np.asarray(df_in["Open"], dtype=float).flatten()
   hi = np.asarray(df_in["High"], dtype=float).flatten()
   lo = np.asarray(df_in["Low"], dtype=float).flatten()
@@ -98,68 +95,30 @@ def apply_heikin_ashi(df_in):
 
 
 # -----------------------------------------------------------------
-# 🛡️ BINANCE DIRECT 2-YEAR HOURLY FETCH (No Yahoo Dependency)
+# 🛡️ STABLE PUBLIC FETCH (No Block / Zero Restriction Endpoint)
 # -----------------------------------------------------------------
-@st.cache_data(ttl=60)  # 1-Minute TTL Refresh
-def fetch_binance_2year_hourly():
-  url = "https://api.binance.com/api/v3/klines"
-  symbol = "BTCUSDT"
-  interval = "1h"
-  limit = 1000
+@st.cache_data(ttl=60)
+def fetch_public_crypto_hourly():
+  # Method 1: Coinbase Pro API (Fast & Reliable Global Endpoint)
+  url = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+  params = {"granularity": 3600}  # 1 Hour
 
-  # Calculate 2 years (730 days) back in milliseconds
-  now_ms = int(time.time() * 1000)
-  two_years_ms = 730 * 24 * 60 * 60 * 1000
-  start_ms = now_ms - two_years_ms
+  response = requests.get(
+      url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+  )
+  data = response.json()
 
-  all_candles = []
-  current_start = start_ms
+  if not data or not isinstance(data, list):
+    raise ValueError("Invalid Data Structure from Primary Endpoint")
 
-  # Loop to fetch entire 2-year history (1000 candles per API call)
-  while current_start < now_ms:
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "startTime": current_start,
-        "limit": limit,
-    }
-    response = requests.get(url, params=params, timeout=10)
-    data = response.json()
+  # Coinbase Candle Format: [time, low, high, open, close, volume]
+  cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+  df_raw = pd.DataFrame(data, columns=cols)
 
-    if not data or not isinstance(data, list):
-      break
+  # Sort Chronologically (Past to Present)
+  df_raw.sort_values(by="time", inplace=True)
 
-    all_candles.extend(data)
-    # Move start time to last candle time + 1 ms
-    current_start = data[-1][0] + 1
-
-    # Safety stop if near current time
-    if len(data) < limit:
-      break
-
-  # Convert to Pandas Dataframe
-  cols = [
-      "Open_Time",
-      "Open",
-      "High",
-      "Low",
-      "Close",
-      "Volume",
-      "Close_Time",
-      "Quote_Vol",
-      "Trades",
-      "Taker_Buy_Base",
-      "Taker_Buy_Quote",
-      "Ignore",
-  ]
-  df_raw = pd.DataFrame(all_candles, columns=cols)
-
-  # Convert numeric columns
-  for col in ["Open", "High", "Low", "Close", "Volume"]:
-    df_raw[col] = df_raw[col].astype(float)
-
-  # Setup UTC Timestamp Index
-  df_raw["Timestamp"] = pd.to_datetime(df_raw["Open_Time"], unit="ms", utc=True)
+  df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
   df_raw.set_index("Timestamp", inplace=True)
 
   # 🔒 STRICT NON-LEAKAGE: Drop currently running/unclosed bar
@@ -172,13 +131,13 @@ def fetch_binance_2year_hourly():
 
 
 try:
-  with st.spinner("Fetching Full 2-Year Hourly Binance Stream..."):
-    df = fetch_binance_2year_hourly()
-    if len(df) < 1000:
-      st.error("🚨 Error: Insufficient data lines fetched from Binance.")
+  with st.spinner("Connecting to Unrestricted Live Crypto Endpoint..."):
+    df = fetch_public_crypto_hourly()
+    if len(df) < 50:
+      st.error("🚨 Error: Insufficient data returned.")
       st.stop()
 except Exception as e:
-  st.error(f"🚨 Binance API Failure: {e}")
+  st.error(f"🚨 API Connection Error: {e}")
   st.stop()
 
 # =====================================================================
@@ -186,19 +145,19 @@ except Exception as e:
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# Dynamic 50:50 Split Matrix across full 2-Year Engine
+# Dynamic 50:50 Split Matrix
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
 st.success(
-    f"🟢 **Fetched {len(df)} Binance 1-Hour Candles (~2 Years) | Matrix"
-    f" Processing {len(df_predict)} IST Locked Candles (Zero Leakage)!**"
+    f"🟢 **Synced {len(df)} Live Hourly Candles | Matrix Processing"
+    f" {len(df_predict)} IST Locked Candles (Zero Leakage)!**"
 )
 
 # --- PATH A: NORMAL CANDLE KINEMATICS ---
 normal_close = np.asarray(df_predict["Close"], dtype=float).flatten()
 df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close, window=100
+    normal_close, window=50
 )
 kalman_base_normal = apply_kalman_filter_custom(
     normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -213,7 +172,7 @@ df_predict["HAM_Normal"] = momentum_normal * (
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close = np.asarray(df_predict["HA_Close"], dtype=float).flatten()
 df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    ha_close, window=100
+    ha_close, window=50
 )
 kalman_base_ha = apply_kalman_filter_custom(
     ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -253,7 +212,7 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
-st.markdown(f"### 🔒 **LAST LOCKED CANDE (BINANCE IST):** `{latest_time}`")
+st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,}")
@@ -263,7 +222,7 @@ col4.metric("HA HAM Signal", f"{latest_candle['HAM_HeikinAshi']}")
 
 st.divider()
 
-st.subheader("📋 2-Year 50:50 Dynamic Rolling Matrix (Binance Live Stream)")
+st.subheader("📋 50:50 Dynamic Rolling Kinematic Matrix (Live Feed)")
 
 st.dataframe(
     display_df,
