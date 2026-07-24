@@ -1,57 +1,141 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
+import requests
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC HA Dual-Timeframe Kinematic Engine",
-    layout="wide",
-    initial_sidebar_state="collapsed",
+    page_title="BTC HA Dual-Timeframe Kinematic Engine", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
 )
 
-st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
-st.caption(
-    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
-    " HA-HAM update dynamically every 15 mins."
-)
+st.title("⚡ BTC Heikin-Ashi Dual Engine + Price-Action Liquidity Engine")
+st.caption("1-Hour HA Frozen + 15-Min Dynamic Grid with Zero-Lag Hull Orderflow")
 
+# =====================================================================
+# 🌐 BINANCE PIPELINE & DYNAMIC PRICE-ACTION ABSORPTION ENGINE
+# =====================================================================
+def fetch_btc_data_binance():
+    """
+    Fetches BTC Historical Candles from Binance.
+    Calculates Real Price-Action Liquidity Absorption via Zero-Lag Hull Filter.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
+    
+    endpoints = [
+        "https://data-api.binance.vision/api/v3/klines",
+        "https://api.binance.com/api/v3/klines",
+        "https://api1.binance.com/api/v3/klines",
+        "https://api2.binance.com/api/v3/klines",
+        "https://api3.binance.com/api/v3/klines"
+    ]
+    
+    params_15m = {'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 1000}
+    params_1h = {'symbol': 'BTCUSDT', 'interval': '1h', 'limit': 500}
+    
+    cols = [
+        'Open Time', 'Open', 'High', 'Low', 'Close', 'Volume',
+        'Close Time', 'Quote Volume', 'Trades', 
+        'Taker_Buy_Base_Vol', 'Taker_Buy_Quote_Vol', 'Ignore'
+    ]
+    
+    res_15m_json = None
+    res_1h_json = None
+    
+    for url in endpoints:
+        try:
+            r15 = requests.get(url, params=params_15m, headers=headers, timeout=5)
+            r1 = requests.get(url, params=params_1h, headers=headers, timeout=5)
+            
+            if r15.status_code == 200 and r1.status_code == 200:
+                res_15m_json = r15.json()
+                res_1h_json = r1.json()
+                break
+        except Exception:
+            continue
+            
+    if not res_15m_json or not res_1h_json:
+        return pd.DataFrame(), pd.DataFrame()
+        
+    df_15m = pd.DataFrame(res_15m_json, columns=cols)
+    df_1h = pd.DataFrame(res_1h_json, columns=cols)
+    
+    def process_df(df_raw):
+        if df_raw.empty or not isinstance(df_raw, pd.DataFrame):
+            return pd.DataFrame()
+            
+        float_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for c in float_cols:
+            df_raw[c] = df_raw[c].astype(float)
+            
+        df_raw['Open Time'] = pd.to_datetime(df_raw['Open Time'], unit='ms', utc=True).dt.tz_convert('Asia/Kolkata')
+        df_raw.set_index('Open Time', inplace=True)
+        
+        # 🎯 DYNAMIC LIQUIDITY ABSORPTION ENGINE
+        range_span = (df_raw['High'] - df_raw['Low']).replace(0, 1e-5)
+        price_pressure = ((df_raw['Close'] - df_raw['Low']) - (df_raw['High'] - df_raw['Close'])) / range_span
+        
+        buy_weight = (1 + price_pressure) / 2.0
+        sell_weight = (1 - price_pressure) / 2.0
+        
+        raw_dynamic_buy = df_raw['Volume'] * buy_weight
+        raw_dynamic_sell = df_raw['Volume'] * sell_weight
+        
+        # Zero-Lag Hull Smooth Filter
+        def hull_smooth(series, period=5):
+            half_period = int(period / 2)
+            wma_full = series.ewm(span=period, adjust=False).mean()
+            wma_half = series.ewm(span=half_period, adjust=False).mean()
+            diff = 2 * wma_half - wma_full
+            return diff.ewm(span=int(np.sqrt(period)), adjust=False).mean()
+
+        df_raw['Market_Buy_Vol'] = hull_smooth(raw_dynamic_buy, period=5)
+        df_raw['Market_Sell_Vol'] = hull_smooth(raw_dynamic_sell, period=5)
+        
+        total_smoothed = df_raw['Market_Buy_Vol'] + df_raw['Market_Sell_Vol'] + 1e-5
+        df_raw['Volume_Delta_%'] = ((df_raw['Market_Buy_Vol'] - df_raw['Market_Sell_Vol']) / total_smoothed) * 100
+        
+        df_raw['Total_Volume'] = hull_smooth(df_raw['Volume'], period=5)
+        df_raw['Candle_Range'] = df_raw['High'] - df_raw['Low']
+        
+        return df_raw
+
+    return process_df(df_1h), process_df(df_15m)
 
 # =====================================================================
 # MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
 # =====================================================================
-def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
+def compute_heikin_ashi(df_in):
     df_ha = df_in.copy()
-
-    op = df_ha["Open"].to_numpy().flatten()
-    hi = df_ha["High"].to_numpy().flatten()
-    lo = df_ha["Low"].to_numpy().flatten()
-    cl = df_ha["Close"].to_numpy().flatten()
-
+    
+    op = df_ha['Open'].to_numpy().flatten()
+    hi = df_ha['High'].to_numpy().flatten()
+    lo = df_ha['Low'].to_numpy().flatten()
+    cl = df_ha['Close'].to_numpy().flatten()
+    
     ha_close = (op + hi + lo + cl) / 4.0
     ha_open = np.zeros(len(df_in))
     ha_open[0] = (op[0] + cl[0]) / 2.0
-
+    
     for i in range(1, len(df_in)):
-        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
-
+        ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2.0
+        
     ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
     ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
-
-    df_ha["HA_Open"] = ha_open
-    df_ha["HA_High"] = ha_high
-    df_ha["HA_Low"] = ha_low
-    df_ha["HA_Close"] = ha_close
-
+    
+    df_ha['HA_Open'] = ha_open
+    df_ha['HA_High'] = ha_high
+    df_ha['HA_Low'] = ha_low
+    df_ha['HA_Close'] = ha_close
+    
     return df_ha
 
-
-def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
-):
-    if len(data_array) == 0:
-        return []
-    x, p = data_array[0], initial_p
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+    if len(data_array) == 0: return []
+    x, p = data_array[0], initial_p  
     filtered_values = []
     for z in data_array:
         p = p + q_val
@@ -61,221 +145,177 @@ def apply_kalman_filter_custom(
         filtered_values.append(x)
     return filtered_values
 
-
 def calculate_rolling_hurst_leak_free(price_series, window=30):
-    hurst_values = np.full(len(price_series), 0.5)
+    hurst_values = np.full(len(price_series), 0.5) 
     s = pd.Series(price_series)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
-
+    
     for i in range(window, len(price_series)):
         window_data = log_returns[i - window + 1 : i + 1]
         cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
         s_val = np.std(window_data) + 1e-10
-
+        
         rs_ratio = r_val / s_val
         if rs_ratio > 0:
             h = np.log(rs_ratio) / np.log(window)
             hurst_values[i] = np.clip(h, 0.0, 1.0)
-
+            
     return hurst_values
 
-
-def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
+def compute_ha_ham_features(df_raw):
     df_ha = compute_heikin_ashi(df_raw)
-    ha_close = df_ha["HA_Close"].to_numpy().flatten()
-
-    df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    kalman = apply_kalman_filter_custom(
-        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-    )
-    momentum = apply_kalman_filter_custom(
-        ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1
-    )
-
-    df_ha["Kalman_Price"] = kalman
-    df_ha["HA_HAM"] = np.array(momentum) * (df_ha["Hurst"].to_numpy() * 2.0)
+    ha_close = df_ha['HA_Close'].to_numpy().flatten()
+    
+    df_ha['Hurst'] = calculate_rolling_hurst_leak_free(ha_close, window=30)
+    kalman = apply_kalman_filter_custom(ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2)
+    momentum = apply_kalman_filter_custom(ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1)
+    
+    df_ha['Kalman_Price'] = kalman
+    df_ha['HA_HAM'] = np.array(momentum) * (df_ha['Hurst'].to_numpy() * 2.0)
     return df_ha
 
-
 # =====================================================================
-# DATA INGESTION
+# DATA PIPELINE EXECUTION
 # =====================================================================
-@st.cache_data(ttl=60)
-def load_market_data():
-    df_1h_raw = yf.download(
-        tickers="BTC-USD", period="60d", interval="1h", progress=False
-    )
-    df_15m_raw = yf.download(
-        tickers="BTC-USD", period="14d", interval="15m", progress=False
-    )
+with st.spinner("Fetching Binance BTC Data & Computing Indicators..."):
+    df_1h_raw, df_15m_raw = fetch_btc_data_binance()
 
-    for d in [df_1h_raw, df_15m_raw]:
-        if isinstance(d.columns, pd.MultiIndex):
-            d.columns = d.columns.get_level_values(0)
-        d.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
-        if d.index.tz is None:
-            d.index = d.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
-        else:
-            d.index = d.index.tz_convert("Asia/Kolkata")
+if df_1h_raw.empty or df_15m_raw.empty:
+    st.error("🚨 Data Fetching Error. Please check your network connection.")
+    st.stop()
 
-    return df_1h_raw, df_15m_raw
-
-
-with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
-    try:
-        df_1h_raw, df_15m_raw = load_market_data()
-    except Exception as e:
-        st.error(f"🚨 Data Fetching Error: {e}")
-        st.stop()
-
-# Compute Heikin-Ashi & HAM Features
+# Compute Features
 df_1h = compute_ha_ham_features(df_1h_raw)
 df_15m = compute_ha_ham_features(df_15m_raw)
 
-# =====================================================================
-# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
-# =====================================================================
+# Forward Fill 1-Hour Signals on 15M Grid
 df_15m_grid = df_15m.copy()
+df_15m_grid['1H_HA_Close_Frozen'] = df_1h['HA_Close'].reindex(df_15m_grid.index, method='ffill')
+df_15m_grid['HA_HAM_1H_Frozen'] = df_1h['HA_HAM'].reindex(df_15m_grid.index, method='ffill')
+df_15m_grid['HA_HAM_1H_Prev'] = df_1h['HA_HAM'].shift(1).reindex(df_15m_grid.index, method='ffill')
 
-# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
-df_15m_grid["1H_HA_Close_Frozen"] = df_1h["HA_Close"].reindex(
-    df_15m_grid.index, method="ffill"
-)
-df_15m_grid["HA_HAM_1H_Frozen"] = df_1h["HA_HAM"].reindex(
-    df_15m_grid.index, method="ffill"
-)
-df_15m_grid["HA_HAM_1H_Prev"] = (
-    df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
+df_15m_grid['HAM_Diff'] = df_15m_grid['HA_HAM_1H_Frozen'] - df_15m_grid['HA_HAM']
+df_15m_grid['HA_Close_Diff_15M'] = df_15m_grid['HA_Close'] - df_15m_grid['HA_Close'].shift(1)
+df_15m_grid['15M_Delta_Momentum'] = df_15m_grid['HA_Close_Diff_15M'] * df_15m_grid['HA_HAM']
 
-# HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
-df_15m_grid["HAM_Diff"] = (
-    df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
-)
-
-# EXACT FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
-df_15m_grid["HA_Close_Diff_15M"] = (
-    df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
-)
-df_15m_grid["15M_Delta_Momentum"] = (
-    df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
-)
-
+# Kinematic State Engine + Invalidation Logic
 n = len(df_15m_grid)
-h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
-h1_prev_arr = df_15m_grid["HA_HAM_1H_Prev"].to_numpy()
-m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
+h1_curr_arr = df_15m_grid['HA_HAM_1H_Frozen'].to_numpy()
+h1_prev_arr = df_15m_grid['HA_HAM_1H_Prev'].to_numpy()
+m15_curr_arr = df_15m_grid['HA_HAM'].to_numpy()
 
-ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
-ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
+ha_close_vals = df_15m_grid['HA_Close'].to_numpy()
+ha_open_vals = df_15m_grid['HA_Open'].to_numpy()
+ha_high_vals = df_15m_grid['HA_High'].to_numpy()
+ha_low_vals = df_15m_grid['HA_Low'].to_numpy()
 
-signals = ["⚪ NEUTRAL"] * n
+signals = ['⚪ NEUTRAL'] * n
+barrier_levels = [None] * n
+
+active_state = None
+last_level = None
 
 for i in range(2, n):
     h1_curr = h1_curr_arr[i]
     h1_prev = h1_prev_arr[i]
     m15_curr = m15_curr_arr[i]
-
-    is_ha_red = ha_close_vals[i] < ha_open_vals[i]
-
-    # Case A: 1H Macro HAM is declining
+    
+    ha_close = ha_close_vals[i]
+    ha_open = ha_open_vals[i]
+    ha_high = ha_high_vals[i]
+    ha_low = ha_low_vals[i]
+    
+    is_ha_red = ha_close < ha_open
+    base_signal = '⚪ NEUTRAL'
+    
     if h1_curr > 0 and h1_curr < h1_prev:
-        if m15_curr < 0 or is_ha_red:
-            signals[i] = "🔴 REAL TOP (1H Drop + 15M Red)"
-        else:
-            signals[i] = "🟢 TRAP PASS (15M Bullish / Dip Buy)"
-
-    # Case B: 1H Macro HAM is recovering
+        base_signal = '🔴 REAL TOP (1H Drop + 15M Red)' if (m15_curr < 0 or is_ha_red) else '🟢 TRAP PASS (15M Bullish)'
     elif h1_curr < 0 and h1_curr > h1_prev:
-        if m15_curr > 0 and not is_ha_red:
-            signals[i] = "🟢 REAL BOTTOM (1H Rise + 15M Green)"
-        else:
-            signals[i] = "🔴 TRAP PASS (15M Bearish / Fake Rally)"
-
+        base_signal = '🟢 REAL BOTTOM (1H Rise + 15M Green)' if (m15_curr > 0 and not is_ha_red) else '🔴 TRAP PASS (15M Bearish)'
     elif h1_curr > h1_prev and h1_curr > 0:
-        signals[i] = "🟢 ACCELERATED RALLY"
+        base_signal = '🟢 ACCELERATED RALLY'
     elif h1_curr < h1_prev and h1_curr < 0:
-        signals[i] = "🔴 ACCELERATED DROP"
+        base_signal = '🔴 ACCELERATED DROP'
 
-df_15m_grid["Instant_Kinematic_Signal"] = signals
-df_15m_grid.dropna(
-    subset=["HA_HAM", "HA_HAM_1H_Frozen", "15M_Delta_Momentum"], inplace=True
-)
-
-latest = df_15m_grid.iloc[-1]
-latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
-
-# =====================================================================
-# 📊 DISPLAY MATRIX
-# =====================================================================
-st.markdown("---")
-col_s1, col_s2 = st.columns([1, 2])
-
-with col_s1:
-    sig = latest["Instant_Kinematic_Signal"]
-    if (
-        "REAL BOTTOM" in sig
-        or "TRAP PASS (15M Bullish" in sig
-        or "RALLY" in sig
-    ):
-        st.success(f"### Live Signal ({latest_time})\n# {sig}")
-    elif (
-        "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig
-    ):
-        st.error(f"### Live Signal ({latest_time})\n# {sig}")
+    # Invalidation Flip
+    if 'REAL TOP' in base_signal:
+        active_state, last_level, signals[i] = 'TOP', ha_high, base_signal
+    elif 'REAL BOTTOM' in base_signal:
+        active_state, last_level, signals[i] = 'BOTTOM', ha_low, base_signal
+    elif active_state == 'TOP' and last_level is not None and ha_close > last_level:
+        active_state, last_level, signals[i] = 'BOTTOM', ha_low, '🟢 REAL BOTTOM (Breakout Flip)'
+    elif active_state == 'BOTTOM' and last_level is not None and ha_close < last_level:
+        active_state, last_level, signals[i] = 'TOP', ha_high, '🔴 REAL TOP (Breakdown Flip)'
     else:
-        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
+        signals[i] = base_signal
 
-with col_s2:
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
-    m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
-    m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
-    m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
-    m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
-    m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
+    barrier_levels[i] = last_level
+
+df_15m_grid['Instant_Kinematic_Signal'] = signals
+df_15m_grid['Barrier_Level'] = barrier_levels
+
+df_15m_grid.dropna(subset=['HA_HAM', '15M_Delta_Momentum'], inplace=True)
+latest = df_15m_grid.iloc[-1]
+latest_time = df_15m_grid.index[-1].strftime('%Y-%m-%d %H:%M IST')
+
+# =====================================================================
+# 📊 METRICS & TABLE DISPLAY
+# =====================================================================
+st.markdown("---")
+
+sig = latest['Instant_Kinematic_Signal']
+if 'REAL BOTTOM' in sig or 'TRAP PASS (15M Bullish' in sig or 'RALLY' in sig:
+    st.success(f"### Live Signal ({latest_time})\n# {sig}")
+elif 'REAL TOP' in sig or 'TRAP PASS (15M Bearish' in sig or 'DROP' in sig:
+    st.error(f"### Live Signal ({latest_time})\n# {sig}")
+else:
+    st.warning(f"### Live Signal ({latest_time})\n# {sig}")
 
 st.markdown("---")
 
-st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
+m1, m2, m3, m4, m5, m6 = st.columns(6)
+m1.metric("1H HA Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
+m2.metric("15M HA Close", f"${latest['HA_Close']:,.2f}")
+m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
+m5.metric("Dynamic Buy Vol", f"{latest['Market_Buy_Vol']:,.2f}")
+m6.metric("Dynamic Sell Vol", f"{latest['Market_Sell_Vol']:,.2f}")
 
-# Table with Delta Momentum Column
+st.markdown("---")
+
+st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline with Dynamic Orderflow")
+
 clean_cols = [
-    "1H_HA_Close_Frozen",
-    "HA_Close",
-    "HA_HAM_1H_Frozen",
-    "HA_HAM",
-    "HAM_Diff",
-    "15M_Delta_Momentum",
-    "Instant_Kinematic_Signal",
+    '1H_HA_Close_Frozen', 'HA_Close', 'HA_HAM_1H_Frozen', 'HA_HAM', 
+    'Market_Buy_Vol', 'Market_Sell_Vol', 'Volume_Delta_%', 'Barrier_Level', 
+    '15M_Delta_Momentum', 'Instant_Kinematic_Signal'
 ]
 display_df = df_15m_grid[clean_cols].copy()
 
-display_df.rename(
-    columns={
-        "1H_HA_Close_Frozen": "1H HA-Close",
-        "HA_Close": "15M HA-Close",
-        "HA_HAM_1H_Frozen": "1H Locked HA-HAM",
-        "HA_HAM": "15M Live HA-HAM",
-        "HAM_Diff": "HAM Diff (1H - 15M)",
-        "15M_Delta_Momentum": "15M Delta Momentum",
-        "Instant_Kinematic_Signal": "Kinematic Signal",
-    },
-    inplace=True,
-)
+display_df.rename(columns={
+    '1H_HA_Close_Frozen': '1H HA Close',
+    'HA_Close': '15M HA Close',
+    'HA_HAM_1H_Frozen': '1H Locked HA-HAM',
+    'HA_HAM': '15M Live HA-HAM',
+    'Market_Buy_Vol': 'Dynamic Buy Vol',
+    'Market_Sell_Vol': 'Dynamic Sell Vol',
+    'Volume_Delta_%': 'Net Vol Delta (%)',
+    'Barrier_Level': 'Active Barrier',
+    '15M_Delta_Momentum': '15M Delta Momentum',
+    'Instant_Kinematic_Signal': 'Kinematic Signal'
+}, inplace=True)
 
-for c in [
-    "1H HA-Close",
-    "15M HA-Close",
-    "1H Locked HA-HAM",
-    "15M Live HA-HAM",
-    "HAM Diff (1H - 15M)",
-    "15M Delta Momentum",
-]:
-    display_df[c] = display_df[c].round(2)
+num_cols = [
+    '1H HA Close', '15M HA Close', '1H Locked HA-HAM', '15M Live HA-HAM',
+    'Dynamic Buy Vol', 'Dynamic Sell Vol', 'Net Vol Delta (%)', 
+    'Active Barrier', '15M Delta Momentum'
+]
+
+for col in num_cols:
+    display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0.0).round(2)
 
 display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
 
 st.dataframe(display_df, use_container_width=True, height=650)
