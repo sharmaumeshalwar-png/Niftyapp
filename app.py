@@ -1,25 +1,26 @@
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
-import yfinance as yf
 
 # Page Configuration
 st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
 st.write(
-    "🎯 **Pure Direct Crypto Signals:** Dual H.A.M. Matrix (Normal vs"
-    " Heikin-Ashi) in IST [Hybrid 2-Year Engine / Zero Leakage]"
+    "🎯 **Direct Binance Stream:** Dual H.A.M. Matrix (Normal vs Heikin-Ashi) in"
+    " IST [2-Year Full Engine / Zero Leakage]"
 )
 
 # Sidebar Refresh Controls
-st.sidebar.header("🔄 Live Stream Controls")
+st.sidebar.header("🔄 Binance Stream Controls")
 if st.sidebar.button("⚡ Force Refresh Engine"):
   st.cache_data.clear()
   st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Locked Candle Execution:** ACTIVE"
+    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Binance Direct Feed:** CONNECTED"
 )
 
 
@@ -97,43 +98,87 @@ def apply_heikin_ashi(df_in):
 
 
 # -----------------------------------------------------------------
-# 🛡️ SYSTEM HYBRID DATA INGESTION (Bypasses Yahoo Stale Freeze)
+# 🛡️ BINANCE DIRECT 2-YEAR HOURLY FETCH (No Yahoo Dependency)
 # -----------------------------------------------------------------
-@st.cache_data(ttl=30)  # 30 Seconds TTL
-def fetch_live_hybrid_btc_data():
-  # Step A: Fetch Live Stream (Last 60 days hourly - ALWAYS FRESH)
-  df_live = yf.download(
-      tickers="BTC-USD", period="60d", interval="1h", progress=False
-  )
+@st.cache_data(ttl=60)  # 1-Minute TTL Refresh
+def fetch_binance_2year_hourly():
+  url = "https://api.binance.com/api/v3/klines"
+  symbol = "BTCUSDT"
+  interval = "1h"
+  limit = 1000
 
-  if isinstance(df_live.columns, pd.MultiIndex):
-    df_live.columns = df_live.columns.get_level_values(0)
+  # Calculate 2 years (730 days) back in milliseconds
+  now_ms = int(time.time() * 1000)
+  two_years_ms = 730 * 24 * 60 * 60 * 1000
+  start_ms = now_ms - two_years_ms
 
-  df_live.columns = [str(c).capitalize() for c in df_live.columns]
-  df_live.dropna(
-      subset=["Open", "High", "Low", "Close", "Volume"], inplace=True
-  )
+  all_candles = []
+  current_start = start_ms
+
+  # Loop to fetch entire 2-year history (1000 candles per API call)
+  while current_start < now_ms:
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "startTime": current_start,
+        "limit": limit,
+    }
+    response = requests.get(url, params=params, timeout=10)
+    data = response.json()
+
+    if not data or not isinstance(data, list):
+      break
+
+    all_candles.extend(data)
+    # Move start time to last candle time + 1 ms
+    current_start = data[-1][0] + 1
+
+    # Safety stop if near current time
+    if len(data) < limit:
+      break
+
+  # Convert to Pandas Dataframe
+  cols = [
+      "Open_Time",
+      "Open",
+      "High",
+      "Low",
+      "Close",
+      "Volume",
+      "Close_Time",
+      "Quote_Vol",
+      "Trades",
+      "Taker_Buy_Base",
+      "Taker_Buy_Quote",
+      "Ignore",
+  ]
+  df_raw = pd.DataFrame(all_candles, columns=cols)
+
+  # Convert numeric columns
+  for col in ["Open", "High", "Low", "Close", "Volume"]:
+    df_raw[col] = df_raw[col].astype(float)
+
+  # Setup UTC Timestamp Index
+  df_raw["Timestamp"] = pd.to_datetime(df_raw["Open_Time"], unit="ms", utc=True)
+  df_raw.set_index("Timestamp", inplace=True)
 
   # 🔒 STRICT NON-LEAKAGE: Drop currently running/unclosed bar
-  df_live = df_live.iloc[:-1]
+  df_raw = df_raw.iloc[:-1]
 
   # Timezone conversion to IST
-  if df_live.index.tz is None:
-    df_live.index = df_live.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
-  else:
-    df_live.index = df_live.index.tz_convert("Asia/Kolkata")
+  df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
 
-  return df_live
+  return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
 try:
-  with st.spinner("Connecting to Live Hourly Bitcoin Stream..."):
-    df = fetch_live_hybrid_btc_data()
-    if len(df) < 100:
-      st.error("🚨 Error: Insufficient data lines fetched.")
+  with st.spinner("Fetching Full 2-Year Hourly Binance Stream..."):
+    df = fetch_binance_2year_hourly()
+    if len(df) < 1000:
+      st.error("🚨 Error: Insufficient data lines fetched from Binance.")
       st.stop()
 except Exception as e:
-  st.error(f"🚨 API Failure: {e}")
+  st.error(f"🚨 Binance API Failure: {e}")
   st.stop()
 
 # =====================================================================
@@ -141,13 +186,13 @@ except Exception as e:
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# Dynamic 50:50 Split Matrix
+# Dynamic 50:50 Split Matrix across full 2-Year Engine
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
 st.success(
-    f"🟢 **Synced {len(df)} Total Rolling Bars | Processing {len(df_predict)}"
-    " IST Locked Matrix Candles (Zero Leakage Active)!**"
+    f"🟢 **Fetched {len(df)} Binance 1-Hour Candles (~2 Years) | Matrix"
+    f" Processing {len(df_predict)} IST Locked Candles (Zero Leakage)!**"
 )
 
 # --- PATH A: NORMAL CANDLE KINEMATICS ---
@@ -208,7 +253,7 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
-st.markdown(f"### 🔒 **LAST LOCKED CANDLE:** `{latest_time}`")
+st.markdown(f"### 🔒 **LAST LOCKED CANDE (BINANCE IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,}")
@@ -218,9 +263,7 @@ col4.metric("HA HAM Signal", f"{latest_candle['HAM_HeikinAshi']}")
 
 st.divider()
 
-st.subheader(
-    "📋 50:50 Split Pure Kinematic Analysis Matrix (Sliding Locked Bars)"
-)
+st.subheader("📋 2-Year 50:50 Dynamic Rolling Matrix (Binance Live Stream)")
 
 st.dataframe(
     display_df,
