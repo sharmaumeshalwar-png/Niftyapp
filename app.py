@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Quantum HAM Engine (10,000x)",
+    page_title="BTC-USD 1H Quantum HAM Engine (Normal Base)",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚛️ BTC-USD 1H Quantum HAM Engine (10,000x Scaled)")
+st.title("⚛️ BTC-USD 1H Quantum HAM Engine (Normal Fast HAM Base)")
 st.caption(
-    "10,000x Scaled Quantum Wave Phase | 7x Cascaded 30 EMA | Zero Future Leakage (Shift 1)"
+    "10,000x Scaled Quantum Wave Phase | Normal Base Fast HAM (30 Window) | Zero Future Leakage (Shift 1)"
 )
 
 
@@ -47,7 +47,7 @@ def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# 2. CAUSAL KALMAN FILTER
+# 2. CAUSAL KALMAN FILTER (ZERO FUTURE LEAKAGE)
 # =====================================================================
 def apply_kalman_filter_causal(
     data_array, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -118,33 +118,26 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 5. STRICT DUAL HAM + 10,000x QUANTUM FEATURE GENERATOR
+# 5. STRICT DUAL HAM + 10,000x QUANTUM FEATURE GENERATOR (EMA REMOVED)
 # =====================================================================
 def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
 
-    # 1. 7x Cascaded 30 EMA Base
-    ema_lvl = df_ha["HA_Close"].copy()
-    for _ in range(7):
-        ema_lvl = ema_lvl.ewm(span=30, adjust=False).mean()
-
-    df_ha["HA_Close_EMA30_L7"] = ema_lvl
-    ha_close_ema30_l7 = df_ha["HA_Close_EMA30_L7"].to_numpy().flatten()
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # 2. HAM Fast Calculation
+    # 1. Normal Fast HAM (Window = 30) on Raw HA_Close (No EMA Filtering)
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(
-        ha_close_ema30_l7, window=30
+        ha_close, window=30
     )
-    kalman_30_l7 = apply_kalman_filter_causal(
-        ha_close_ema30_l7, initial_p=50.0, q_val=0.0005, r_val=0.2
+    kalman_30 = apply_kalman_filter_causal(
+        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    mom_30_l7 = apply_kalman_filter_causal(
-        ha_close_ema30_l7 - kalman_30_l7, initial_p=0.50, q_val=0.001, r_val=0.1
+    mom_30 = apply_kalman_filter_causal(
+        ha_close - kalman_30, initial_p=0.50, q_val=0.001, r_val=0.1
     )
-    df_ha["HA_HAM_30_EMA7"] = mom_30_l7 * (df_ha["Hurst_30"].to_numpy() * 2.0)
+    df_ha["HA_HAM_30_Normal"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 3. HAM Macro 200
+    # 2. Macro HAM 200 on Raw HA_Close
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
@@ -156,18 +149,20 @@ def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
-    # 4. Quantum Wavefunction Calculation (10,000x Multiplied)
+    # 3. Quantum Wavefunction Calculation (10,000x Multiplied on Raw HA_Close)
     df_ha["Quantum_State"] = compute_quantum_wavefunction_10k(
-        ha_close_ema30_l7, window=30, scale_factor=10000.0
+        ha_close, window=30, scale_factor=10000.0
     )
 
     # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar for ZERO live leakage)
-    df_ha["HAM_30_EMA7_Frozen"] = df_ha["HA_HAM_30_EMA7"].shift(1)
+    df_ha["HAM_30_Normal_Frozen"] = df_ha["HA_HAM_30_Normal"].shift(1)
     df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
     df_ha["Quantum_State_Frozen"] = df_ha["Quantum_State"].shift(1)
 
-    # Difference Spread
-    df_ha["HAM_Spread"] = df_ha["HAM_30_EMA7_Frozen"] - df_ha["HAM_200_Frozen"]
+    # Difference Spread (Normal Fast HAM - HAM 200)
+    df_ha["HAM_Spread"] = (
+        df_ha["HAM_30_Normal_Frozen"] - df_ha["HAM_200_Frozen"]
+    )
 
     return df_ha
 
@@ -200,7 +195,7 @@ with st.spinner("📥 Fetching 2 Years BTC-USD 1H Data..."):
 # Compute Features
 df_btc_processed = compute_strict_btc_quantum_ham(df_btc_raw)
 df_btc_clean = df_btc_processed.dropna(
-    subset=["HAM_30_EMA7_Frozen", "Quantum_State_Frozen"]
+    subset=["HAM_30_Normal_Frozen", "Quantum_State_Frozen"]
 ).copy()
 df_btc_clean = df_btc_clean.bfill()
 
@@ -216,7 +211,7 @@ latest_bar = df_btc_clean.iloc[-1]
 # 7. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader("📌 Live State: 10,000x Quantum Phase State + Dual HAM")
+st.subheader("📌 Live State: Normal Base HAM (30 W) + 10,000x Quantum Phase")
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
@@ -225,8 +220,8 @@ with m1:
     )
 with m2:
     st.metric(
-        label="Frozen HAM (30 EMA x7)",
-        value=f"{latest_bar['HAM_30_EMA7_Frozen']:+.2f}",
+        label="Frozen Normal Fast HAM (W-30)",
+        value=f"{latest_bar['HAM_30_Normal_Frozen']:+.2f}",
     )
 with m3:
     st.metric(
@@ -240,7 +235,8 @@ with m3:
     )
 with m4:
     st.metric(
-        label="HAM Spread (30x7 - 200)", value=f"{latest_bar['HAM_Spread']:+.2f}"
+        label="HAM Spread (Fast 30 - Macro 200)",
+        value=f"{latest_bar['HAM_Spread']:+.2f}",
     )
 
 st.markdown("---")
@@ -251,7 +247,7 @@ tab1, tab2 = st.tabs(
 display_cols = [
     "Close",
     "HA_Close",
-    "HAM_30_EMA7_Frozen",
+    "HAM_30_Normal_Frozen",
     "Quantum_State_Frozen",
     "HAM_200_Frozen",
     "HAM_Spread",
@@ -259,14 +255,14 @@ display_cols = [
 col_renames = {
     "Close": "BTC Close ($)",
     "HA_Close": "HA Close ($)",
-    "HAM_30_EMA7_Frozen": "Frozen HAM (30 EMA x7)",
+    "HAM_30_Normal_Frozen": "Frozen Fast HAM (Normal 30)",
     "Quantum_State_Frozen": "Quantum Wave Phase (|Ψ|² x10,000)",
     "HAM_200_Frozen": "Frozen HAM (W-200)",
     "HAM_Spread": "HAM Spread",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table (10,000x Quantum Integration)")
+    st.markdown("#### Out-of-Sample Prediction Table (EMA Removed)")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
