@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Direct Dual HAM Engine",
+    page_title="BTC-USD 1H Dual HAM + Spread Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚡ BTC-USD 1H Pure Bar-Closed HAM Engine (1-Hour Direct Physics)")
+st.title("⚡ BTC-USD 1H Pure Bar-Closed HAM Engine (+ Spread Column)")
 st.caption(
-    "Strict Freeze-on-Bar-Close | 1-Hour Bar-to-Bar Velocity | 2-Year BTC-USD History | 50:50 Split"
+    "Strict Freeze-on-Bar-Close | 1-Hour Direct Physics | HAM 30 vs 200 Difference Spread"
 )
 
 
@@ -47,7 +47,7 @@ def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# 2. CAUSAL KALMAN FILTER (ZERO BACKWARD SMOOTHING)
+# 2. CAUSAL KALMAN FILTER
 # =====================================================================
 def apply_kalman_filter_causal(
     data_array, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -90,17 +90,17 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 4. STRICT DUAL HAM FEATURE GENERATOR (PURE 1-HOUR VELOCITY)
+# 4. STRICT DUAL HAM FEATURE GENERATOR (+ SPREAD CALCULATOR)
 # =====================================================================
 def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # Pure 1-Hour Candle-to-Candle Physics (window = 1)
+    # Direct 1-Hour Velocity
     df_ha["Velocity_Speed"] = df_ha["Close"].diff(1)
     df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(1)
 
-    # 1. HAM Window 30 (Fast Momentum)
+    # HAM Window 30
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
     kalman_30 = apply_kalman_filter_causal(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -110,7 +110,7 @@ def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_30"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 2. HAM Window 200 (Macro Baseline)
+    # HAM Window 200
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
@@ -122,17 +122,22 @@ def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
-    # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar)
+    # STRICT FREEZE ON BAR CLOSE
     df_ha["HAM_30_Frozen"] = df_ha["HA_HAM_30"].shift(1)
     df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
     df_ha["Hurst_30_Frozen"] = df_ha["Hurst_30"].shift(1)
     df_ha["Hurst_200_Frozen"] = df_ha["Hurst_200"].shift(1)
 
+    # NAYA COLUMN: (HAM 30 - HAM 200) Difference
+    df_ha["HAM_Spread_30_200"] = (
+        df_ha["HAM_30_Frozen"] - df_ha["HAM_200_Frozen"]
+    )
+
     return df_ha
 
 
 # =====================================================================
-# 5. DATA INGESTION (2 YEARS BTC-USD 1H DATA)
+# 5. DATA INGESTION
 # =====================================================================
 @st.cache_data(ttl=3600)
 def load_btc_2year_1h_data():
@@ -165,7 +170,7 @@ df_btc_processed = compute_strict_btc_ham_features(df_btc_raw)
 
 # Clean and bfill
 df_btc_clean = df_btc_processed.dropna(
-    subset=["HAM_30_Frozen", "HAM_200_Frozen"]
+    subset=["HAM_30_Frozen", "HAM_200_Frozen", "HAM_Spread_30_200"]
 ).copy()
 df_btc_clean = df_btc_clean.bfill()
 
@@ -184,32 +189,33 @@ latest_bar = df_btc_clean.iloc[-1]
 # 7. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader(
-    "📌 BTC-USD Live Frozen State (Pure 1H Bar-to-Bar Momentum - Zero Leakage)"
-)
+st.subheader("📌 BTC-USD Live State + HAM Difference Metric")
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
     st.metric(
-        label="BTC Price (Last Closed Bar)",
+        label="BTC Price (Last Closed)",
         value=f"${latest_bar['Close']:,.2f}",
     )
 with m2:
     st.metric(
-        label="Frozen 1H HAM (Window 30)",
+        label="Frozen HAM (W-30)",
         value=f"{latest_bar['HAM_30_Frozen']:+.2f}",
-        delta="Positive" if latest_bar["HAM_30_Frozen"] > 0 else "Negative",
     )
 with m3:
     st.metric(
-        label="Frozen 1H HAM (Window 200)",
+        label="Frozen HAM (W-200)",
         value=f"{latest_bar['HAM_200_Frozen']:+.2f}",
-        delta="Macro Bull" if latest_bar["HAM_200_Frozen"] > 0 else "Macro Bear",
     )
 with m4:
     st.metric(
-        label="Frozen Hurst (W-30 / W-200)",
-        value=f"{latest_bar['Hurst_30_Frozen']:.2f} / {latest_bar['Hurst_200_Frozen']:.2f}",
+        label="HAM Spread (30 - 200)",
+        value=f"{latest_bar['HAM_Spread_30_200']:+.2f}",
+        delta=(
+            "Bullish Divergence"
+            if latest_bar["HAM_Spread_30_200"] > 0
+            else "Bearish Divergence"
+        ),
     )
 
 st.markdown("---")
@@ -217,11 +223,13 @@ tab1, tab2 = st.tabs(
     ["🔮 50% Prediction Set (Out-of-Sample)", "📚 50% Learning Set (In-Sample)"]
 )
 
+# Display Columns Including New Difference Spread
 display_cols = [
     "Close",
     "HA_Close",
     "HAM_30_Frozen",
     "HAM_200_Frozen",
+    "HAM_Spread_30_200",
     "Hurst_30_Frozen",
     "Hurst_200_Frozen",
 ]
@@ -230,19 +238,20 @@ col_renames = {
     "HA_Close": "HA Close ($)",
     "HAM_30_Frozen": "Frozen HAM (W-30)",
     "HAM_200_Frozen": "Frozen HAM (W-200)",
+    "HAM_Spread_30_200": "HAM (30 - 200) Difference",
     "Hurst_30_Frozen": "Frozen Hurst (W-30)",
     "Hurst_200_Frozen": "Frozen Hurst (W-200)",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Set (Pure 1-Hour Freeze)")
+    st.markdown("#### Out-of-Sample Prediction Table")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
     st.dataframe(p_df.round(2), use_container_width=True, height=500)
 
 with tab2:
-    st.markdown("#### In-Sample Learning Set")
+    st.markdown("#### In-Sample Learning Table")
     l_df = df_learn[display_cols].copy().iloc[::-1]
     l_df.rename(columns=col_renames, inplace=True)
     l_df.index = l_df.index.strftime("%Y-%m-%d %H:%M IST")
