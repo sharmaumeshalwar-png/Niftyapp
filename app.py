@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Quantum HAM Engine",
+    page_title="BTC-USD 1H Quantum HAM Engine (10,000x)",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚛️ BTC-USD 1H Quantum Mechanics + HAM Engine")
+st.title("⚛️ BTC-USD 1H Quantum HAM Engine (10,000x Scaled)")
 st.caption(
-    "Quantum Wavefunction Probability Density | 7x Cascaded 30 EMA | Strict Bar Freeze"
+    "10,000x Scaled Quantum Wave Phase | 7x Cascaded 30 EMA | Zero Future Leakage (Shift 1)"
 )
 
 
@@ -66,10 +66,12 @@ def apply_kalman_filter_causal(
 
 
 # =====================================================================
-# 3. QUANTUM WAVEFUNCTION & PROBABILITY DENSITY ENGINE
+# 3. QUANTUM WAVEFUNCTION ENGINE (10,000x MULTIPLIER)
 # =====================================================================
-def compute_quantum_wavefunction(price_series, window=30):
-    """Calculates Quantum Wave Probability State |Psi|^2 based on Harmonic Oscillator Potential"""
+def compute_quantum_wavefunction_10k(
+    price_series, window=30, scale_factor=10000.0
+):
+    """Calculates Quantum Wave Probability State |Psi|^2 scaled strictly by 10,000x"""
     s = pd.Series(price_series)
     mean_p = s.rolling(window).mean()
     std_p = s.rolling(window).std().fillna(1.0)
@@ -77,16 +79,16 @@ def compute_quantum_wavefunction(price_series, window=30):
     # Normalized Position Displacement (x)
     x = (s - mean_p) / (std_p + 1e-8)
 
-    # Quantum Harmonic Oscillator Wavefunction Ground State: Psi(x) ~ exp(-x^2 / 2)
+    # Quantum Harmonic Oscillator Ground State: Psi(x) ~ exp(-x^2 / 2)
     psi = np.exp(-(x**2) / 2.0)
 
     # Quantum Probability Density: |Psi|^2
     prob_density = psi**2
 
-    # Quantum State Momentum Direction (+1 for Upper Quantum State, -1 for Lower)
-    quantum_state = np.where(
-        x >= 0, prob_density, -prob_density
-    )  # Quantum Phase
+    # Quantum Phase State Direction (+1 / -1) with EXACT 10,000x Multiplier
+    quantum_state = (
+        np.where(x >= 0, prob_density, -prob_density) * scale_factor
+    )
 
     return quantum_state
 
@@ -116,7 +118,7 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 5. STRICT DUAL HAM + QUANTUM FEATURE GENERATOR
+# 5. STRICT DUAL HAM + 10,000x QUANTUM FEATURE GENERATOR
 # =====================================================================
 def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
@@ -154,9 +156,9 @@ def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
-    # 4. Quantum Wavefunction Calculation
-    df_ha["Quantum_State"] = compute_quantum_wavefunction(
-        ha_close_ema30_l7, window=30
+    # 4. Quantum Wavefunction Calculation (10,000x Multiplied)
+    df_ha["Quantum_State"] = compute_quantum_wavefunction_10k(
+        ha_close_ema30_l7, window=30, scale_factor=10000.0
     )
 
     # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar for ZERO live leakage)
@@ -214,7 +216,7 @@ latest_bar = df_btc_clean.iloc[-1]
 # 7. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader("📌 Live State: Quantum Wave Probability + Dual HAM")
+st.subheader("📌 Live State: 10,000x Quantum Phase State + Dual HAM")
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
@@ -228,12 +230,12 @@ with m2:
     )
 with m3:
     st.metric(
-        label="Quantum Phase State (|Ψ|²)",
-        value=f"{latest_bar['Quantum_State_Frozen']:+.4f}",
+        label="Quantum Phase (|Ψ|² x10,000)",
+        value=f"{latest_bar['Quantum_State_Frozen']:+.2f}",
         delta=(
-            "High Bullish State"
+            "High Bullish Wave"
             if latest_bar["Quantum_State_Frozen"] > 0
-            else "High Bearish State"
+            else "High Bearish Wave"
         ),
     )
 with m4:
@@ -258,21 +260,21 @@ col_renames = {
     "Close": "BTC Close ($)",
     "HA_Close": "HA Close ($)",
     "HAM_30_EMA7_Frozen": "Frozen HAM (30 EMA x7)",
-    "Quantum_State_Frozen": "Quantum Wave Phase (|Ψ|²)",
+    "Quantum_State_Frozen": "Quantum Wave Phase (|Ψ|² x10,000)",
     "HAM_200_Frozen": "Frozen HAM (W-200)",
     "HAM_Spread": "HAM Spread",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table (Quantum HAM Integration)")
+    st.markdown("#### Out-of-Sample Prediction Table (10,000x Quantum Integration)")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(p_df.round(4), use_container_width=True, height=500)
+    st.dataframe(p_df.round(2), use_container_width=True, height=500)
 
 with tab2:
     st.markdown("#### In-Sample Learning Table")
     l_df = df_learn[display_cols].copy().iloc[::-1]
     l_df.rename(columns=col_renames, inplace=True)
     l_df.index = l_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(l_df.round(4), use_container_width=True, height=500)
+    st.dataframe(l_df.round(2), use_container_width=True, height=500)
