@@ -1,26 +1,26 @@
-from datetime import datetime, timedelta
+import streamlit as st
 import numpy as np
 import pandas as pd
-import streamlit as st
 import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Quantum Engine + Correlation Tracker",
+    page_title="BTC HA Dual-Timeframe Kinematic Engine",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚛️ BTC-USD 1H Quantum Engine (with Auto-Correlation Filter)")
+st.title("⚡ BTC Heikin-Ashi Dual Engine (1H Frozen + 15M Live Dynamic)")
 st.caption(
-    "10,000x Scaled Quantum Wave Phase | Dynamic Rolling Correlation State | Zero Future Leakage (Shift 1)"
+    "1-Hour HA-Close & HA-HAM stay locked for 1 hour, while 15-Min HA-Close &"
+    " HA-HAM update dynamically every 15 mins."
 )
 
 
 # =====================================================================
-# 1. STRICT HEIKIN-ASHI CALCULATION
+# MATHEMATICAL ENGINES (HEIKIN-ASHI & KALMAN-HAM)
 # =====================================================================
-def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
+def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
 
     op = df_ha["Open"].to_numpy().flatten()
@@ -46,14 +46,11 @@ def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
     return df_ha
 
 
-# =====================================================================
-# 2. CAUSAL KALMAN FILTER (ZERO LEAKAGE)
-# =====================================================================
-def apply_kalman_filter_causal(
-    data_array, initial_p=50.0, q_val=0.0005, r_val=0.2
+def apply_kalman_filter_custom(
+    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
 ):
     if len(data_array) == 0:
-        return np.array([])
+        return []
     x, p = data_array[0], initial_p
     filtered_values = []
     for z in data_array:
@@ -62,252 +59,223 @@ def apply_kalman_filter_causal(
         x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values.append(x)
-    return np.array(filtered_values)
+    return filtered_values
 
 
-# =====================================================================
-# 3. QUANTUM WAVEFUNCTION ENGINE (10,000x MULTIPLIER)
-# =====================================================================
-def compute_quantum_wavefunction_10k(
-    price_series, window=30, scale_factor=10000.0
-):
-    s = pd.Series(price_series)
-    mean_p = s.rolling(window).mean()
-    std_p = s.rolling(window).std().fillna(1.0)
-
-    # Normalized Position Displacement (x)
-    x = (s - mean_p) / (std_p + 1e-8)
-
-    # Quantum Harmonic Oscillator Ground State: Psi(x) ~ exp(-x^2 / 2)
-    psi = np.exp(-(x**2) / 2.0)
-    prob_density = psi**2
-
-    # Scaled Quantum Phase State Direction
-    quantum_state = (
-        np.where(x >= 0, prob_density, -prob_density) * scale_factor
-    )
-    return quantum_state
-
-
-# =====================================================================
-# 4. LEAK-FREE ROLLING HURST EXPONENT
-# =====================================================================
 def calculate_rolling_hurst_leak_free(price_series, window=30):
-    n = len(price_series)
-    hurst_values = np.full(n, 0.5)
+    hurst_values = np.full(len(price_series), 0.5)
     s = pd.Series(price_series)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
 
-    for i in range(window, n):
+    for i in range(window, len(price_series)):
         window_data = log_returns[i - window + 1 : i + 1]
-        mean_val = np.mean(window_data)
-        cum_dev = np.cumsum(window_data - mean_val)
+        cum_dev = np.cumsum(window_data - np.mean(window_data))
         r_val = np.max(cum_dev) - np.min(cum_dev)
-        s_val = np.std(window_data)
+        s_val = np.std(window_data) + 1e-10
 
-        if s_val > 1e-8 and r_val > 0:
-            rs_ratio = r_val / s_val
+        rs_ratio = r_val / s_val
+        if rs_ratio > 0:
             h = np.log(rs_ratio) / np.log(window)
             hurst_values[i] = np.clip(h, 0.0, 1.0)
 
     return hurst_values
 
 
-# =====================================================================
-# 5. METHOD 2: DYNAMIC ROLLING CORRELATION TRACKER
-# =====================================================================
-def compute_rolling_correlation_filter(s1: pd.Series, s2: pd.Series, window=30):
-    """Calculates rolling Pearson Correlation and assigns sync states."""
-    r = s1.rolling(window).corr(s2).fillna(0.0)
-
-    # Z-Score of rolling correlation to measure extreme deviation
-    r_mean = r.rolling(window).mean()
-    r_std = r.rolling(window).std().replace(0, 1e-8)
-    r_zscore = (r - r_mean) / r_std
-
-    # Correlation State Logic
-    # Strong correlation when |r| >= 0.70
-    states = np.where(
-        np.abs(r) >= 0.70, "IN_CORRELATION", "CORRELATION_BREAKDOWN"
-    )
-
-    return r, r_zscore, states
-
-
-# =====================================================================
-# 6. DUAL HAM + QUANTUM + CORRELATION PIPELINE
-# =====================================================================
-def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
-    df_ha = compute_heikin_ashi_strict(df_raw)
+def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df_ha = compute_heikin_ashi(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # 1. Normal Fast HAM 30
-    df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(
-        ha_close, window=30
-    )
-    kalman_30 = apply_kalman_filter_causal(
+    df_ha["Hurst"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
+    kalman = apply_kalman_filter_custom(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    mom_30 = apply_kalman_filter_causal(
-        ha_close - kalman_30, initial_p=0.50, q_val=0.001, r_val=0.1
-    )
-    df_ha["HA_HAM_30_Normal"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
-
-    # 2. Macro HAM 200
-    df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
-        ha_close, window=200
-    )
-    kalman_200 = apply_kalman_filter_causal(
-        ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-    )
-    mom_200 = apply_kalman_filter_causal(
-        ha_close - kalman_200, initial_p=0.50, q_val=0.001, r_val=0.1
-    )
-    df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
-
-    # 3. Quantum Wavefunction 10,000x
-    df_ha["Quantum_State"] = compute_quantum_wavefunction_10k(
-        ha_close, window=30, scale_factor=10000.0
+    momentum = apply_kalman_filter_custom(
+        ha_close - kalman, initial_p=0.50, q_val=0.001, r_val=0.1
     )
 
-    # 4. INTEGRATION OF METHOD 2: Dynamic Rolling Correlation (Close vs Quantum)
-    r_val, r_zscore, corr_states = compute_rolling_correlation_filter(
-        df_ha["Close"], df_ha["Quantum_State"], window=30
-    )
-    df_ha["Rolling_Corr"] = r_val
-    df_ha["Corr_ZScore"] = r_zscore
-    df_ha["Corr_State"] = corr_states
-
-    # STRICT FREEZE ON BAR CLOSE (Shift 1 for Zero Future Leakage)
-    df_ha["HAM_30_Normal_Frozen"] = df_ha["HA_HAM_30_Normal"].shift(1)
-    df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
-    df_ha["Quantum_State_Frozen"] = df_ha["Quantum_State"].shift(1)
-    df_ha["Rolling_Corr_Frozen"] = df_ha["Rolling_Corr"].shift(1)
-    df_ha["Corr_State_Frozen"] = df_ha["Corr_State"].shift(1)
-
-    df_ha["HAM_Spread"] = (
-        df_ha["HAM_30_Normal_Frozen"] - df_ha["HAM_200_Frozen"]
-    )
-
+    df_ha["Kalman_Price"] = kalman
+    df_ha["HA_HAM"] = np.array(momentum) * (df_ha["Hurst"].to_numpy() * 2.0)
     return df_ha
 
 
 # =====================================================================
-# 7. DATA INGESTION & ENGINE RUN
+# DATA INGESTION
 # =====================================================================
-@st.cache_data(ttl=3600)
-def load_btc_2year_1h_data():
-    df_btc = yf.download(
-        tickers="BTC-USD", period="730d", interval="1h", progress=False
+@st.cache_data(ttl=60)
+def load_market_data():
+    df_1h_raw = yf.download(
+        tickers="BTC-USD", period="60d", interval="1h", progress=False
     )
-    if isinstance(df_btc.columns, pd.MultiIndex):
-        df_btc.columns = df_btc.columns.get_level_values(0)
-    df_btc = df_btc.dropna(subset=["Open", "High", "Low", "Close"])
-    if df_btc.index.tz is None:
-        df_btc.index = df_btc.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
-    else:
-        df_btc.index = df_btc.index.tz_convert("Asia/Kolkata")
-    return df_btc
+    df_15m_raw = yf.download(
+        tickers="BTC-USD", period="14d", interval="15m", progress=False
+    )
+
+    for d in [df_1h_raw, df_15m_raw]:
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        d.dropna(subset=["Open", "High", "Low", "Close"], inplace=True)
+        if d.index.tz is None:
+            d.index = d.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
+        else:
+            d.index = d.index.tz_convert("Asia/Kolkata")
+
+    return df_1h_raw, df_15m_raw
 
 
-with st.spinner("📥 Fetching 2 Years BTC-USD 1H Data..."):
+with st.spinner("Fetching Live 1-Hour & 15-Minute Heikin-Ashi BTC Data..."):
     try:
-        df_btc_raw = load_btc_2year_1h_data()
+        df_1h_raw, df_15m_raw = load_market_data()
     except Exception as e:
-        st.error(f"🚨 Data Error: {e}")
+        st.error(f"🚨 Data Fetching Error: {e}")
         st.stop()
 
-# Compute Pipeline
-df_btc_processed = compute_strict_btc_quantum_ham(df_btc_raw)
-df_btc_clean = df_btc_processed.dropna(
-    subset=["HAM_30_Normal_Frozen", "Quantum_State_Frozen"]
-).copy()
-df_btc_clean = df_btc_clean.bfill()
-
-# 50:50 Split
-total_bars = len(df_btc_clean)
-split_idx = int(total_bars * 0.50)
-df_learn = df_btc_clean.iloc[:split_idx].copy()
-df_predict = df_btc_clean.iloc[split_idx:].copy()
-
-latest_bar = df_btc_clean.iloc[-1]
+# Compute Heikin-Ashi & HAM Features
+df_1h = compute_ha_ham_features(df_1h_raw)
+df_15m = compute_ha_ham_features(df_15m_raw)
 
 # =====================================================================
-# 8. DASHBOARD DISPLAY
+# ⚙️ 1H FREEZE + 15M STEPWISE ALIGNMENT ENGINE
+# =====================================================================
+df_15m_grid = df_15m.copy()
+
+# Forward Fill 1-Hour HA-Close & HA-HAM on 15M timestamps
+df_15m_grid["1H_HA_Close_Frozen"] = df_1h["HA_Close"].reindex(
+    df_15m_grid.index, method="ffill"
+)
+df_15m_grid["HA_HAM_1H_Frozen"] = df_1h["HA_HAM"].reindex(
+    df_15m_grid.index, method="ffill"
+)
+df_15m_grid["HA_HAM_1H_Prev"] = (
+    df_1h["HA_HAM"].shift(1).reindex(df_15m_grid.index, method="ffill")
+)
+
+# HAM Difference: (1H Locked HA-HAM) minus (15M Live HA-HAM)
+df_15m_grid["HAM_Diff"] = (
+    df_15m_grid["HA_HAM_1H_Frozen"] - df_15m_grid["HA_HAM"]
+)
+
+# EXACT FORMULA: (15M HA Close Current - 15M HA Close Last) * 15M Live HAM
+df_15m_grid["HA_Close_Diff_15M"] = (
+    df_15m_grid["HA_Close"] - df_15m_grid["HA_Close"].shift(1)
+)
+df_15m_grid["15M_Delta_Momentum"] = (
+    df_15m_grid["HA_Close_Diff_15M"] * df_15m_grid["HA_HAM"]
+)
+
+n = len(df_15m_grid)
+h1_curr_arr = df_15m_grid["HA_HAM_1H_Frozen"].to_numpy()
+h1_prev_arr = df_15m_grid["HA_HAM_1H_Prev"].to_numpy()
+m15_curr_arr = df_15m_grid["HA_HAM"].to_numpy()
+
+ha_close_vals = df_15m_grid["HA_Close"].to_numpy()
+ha_open_vals = df_15m_grid["HA_Open"].to_numpy()
+
+signals = ["⚪ NEUTRAL"] * n
+
+for i in range(2, n):
+    h1_curr = h1_curr_arr[i]
+    h1_prev = h1_prev_arr[i]
+    m15_curr = m15_curr_arr[i]
+
+    is_ha_red = ha_close_vals[i] < ha_open_vals[i]
+
+    # Case A: 1H Macro HAM is declining
+    if h1_curr > 0 and h1_curr < h1_prev:
+        if m15_curr < 0 or is_ha_red:
+            signals[i] = "🔴 REAL TOP (1H Drop + 15M Red)"
+        else:
+            signals[i] = "🟢 TRAP PASS (15M Bullish / Dip Buy)"
+
+    # Case B: 1H Macro HAM is recovering
+    elif h1_curr < 0 and h1_curr > h1_prev:
+        if m15_curr > 0 and not is_ha_red:
+            signals[i] = "🟢 REAL BOTTOM (1H Rise + 15M Green)"
+        else:
+            signals[i] = "🔴 TRAP PASS (15M Bearish / Fake Rally)"
+
+    elif h1_curr > h1_prev and h1_curr > 0:
+        signals[i] = "🟢 ACCELERATED RALLY"
+    elif h1_curr < h1_prev and h1_curr < 0:
+        signals[i] = "🔴 ACCELERATED DROP"
+
+df_15m_grid["Instant_Kinematic_Signal"] = signals
+df_15m_grid.dropna(
+    subset=["HA_HAM", "HA_HAM_1H_Frozen", "15M_Delta_Momentum"], inplace=True
+)
+
+latest = df_15m_grid.iloc[-1]
+latest_time = df_15m_grid.index[-1].strftime("%Y-%m-%d %H:%M IST")
+
+# =====================================================================
+# 📊 DISPLAY MATRIX
 # =====================================================================
 st.markdown("---")
-st.subheader(
-    "📌 Live State: 10,000x Quantum Phase + Rolling Correlation Filter"
-)
+col_s1, col_s2 = st.columns([1, 2])
 
-m1, m2, m3, m4, m5 = st.columns(5)
-with m1:
-    st.metric(
-        label="BTC Price (Last Closed)", value=f"${latest_bar['Close']:,.2f}"
-    )
-with m2:
-    st.metric(
-        label="Frozen HAM (Normal 30)",
-        value=f"{latest_bar['HAM_30_Normal_Frozen']:+.2f}",
-    )
-with m3:
-    st.metric(
-        label="Quantum Phase (|Ψ|² x10k)",
-        value=f"{latest_bar['Quantum_State_Frozen']:+.2f}",
-    )
-with m4:
-    st.metric(
-        label="Rolling Corr (30 W)",
-        value=f"{latest_bar['Rolling_Corr_Frozen']:+.2f}",
-    )
-with m5:
-    corr_status = latest_bar["Corr_State_Frozen"]
-    st.metric(
-        label="Correlation State",
-        value=corr_status,
-        delta=(
-            "Synced (Safe)"
-            if corr_status == "IN_CORRELATION"
-            else "Breakdown Alert!"
-        ),
-        delta_color="normal" if corr_status == "IN_CORRELATION" else "inverse",
-    )
+with col_s1:
+    sig = latest["Instant_Kinematic_Signal"]
+    if (
+        "REAL BOTTOM" in sig
+        or "TRAP PASS (15M Bullish" in sig
+        or "RALLY" in sig
+    ):
+        st.success(f"### Live Signal ({latest_time})\n# {sig}")
+    elif (
+        "REAL TOP" in sig or "TRAP PASS (15M Bearish" in sig or "DROP" in sig
+    ):
+        st.error(f"### Live Signal ({latest_time})\n# {sig}")
+    else:
+        st.warning(f"### Live Signal ({latest_time})\n# {sig}")
+
+with col_s2:
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("1H HA-Close", f"${latest['1H_HA_Close_Frozen']:,.2f}")
+    m2.metric("15M HA-Close", f"${latest['HA_Close']:,.2f}")
+    m3.metric("1H Locked HAM", f"{latest['HA_HAM_1H_Frozen']:.2f}")
+    m4.metric("15M Live HAM", f"{latest['HA_HAM']:.2f}")
+    m5.metric("HAM Diff", f"{latest['HAM_Diff']:.2f}")
+    m6.metric("15M Delta Mom.", f"{latest['15M_Delta_Momentum']:.2f}")
 
 st.markdown("---")
-tab1, tab2 = st.tabs(
-    ["🔮 50% Prediction Set (Out-of-Sample)", "📚 50% Learning Set (In-Sample)"]
-)
 
-display_cols = [
-    "Close",
+st.subheader("📋 Heikin-Ashi Dual Timeframe Timeline")
+
+# Table with Delta Momentum Column
+clean_cols = [
+    "1H_HA_Close_Frozen",
     "HA_Close",
-    "HAM_30_Normal_Frozen",
-    "Quantum_State_Frozen",
-    "Rolling_Corr_Frozen",
-    "Corr_State_Frozen",
-    "HAM_Spread",
+    "HA_HAM_1H_Frozen",
+    "HA_HAM",
+    "HAM_Diff",
+    "15M_Delta_Momentum",
+    "Instant_Kinematic_Signal",
 ]
+display_df = df_15m_grid[clean_cols].copy()
 
-col_renames = {
-    "Close": "BTC Close ($)",
-    "HA_Close": "HA Close ($)",
-    "HAM_30_Normal_Frozen": "Frozen Fast HAM (W-30)",
-    "Quantum_State_Frozen": "Quantum Phase (|Ψ|² x10k)",
-    "Rolling_Corr_Frozen": "Rolling Corr (30 Close)",
-    "Corr_State_Frozen": "Correlation Status",
-    "HAM_Spread": "HAM Spread",
-}
+display_df.rename(
+    columns={
+        "1H_HA_Close_Frozen": "1H HA-Close",
+        "HA_Close": "15M HA-Close",
+        "HA_HAM_1H_Frozen": "1H Locked HA-HAM",
+        "HA_HAM": "15M Live HA-HAM",
+        "HAM_Diff": "HAM Diff (1H - 15M)",
+        "15M_Delta_Momentum": "15M Delta Momentum",
+        "Instant_Kinematic_Signal": "Kinematic Signal",
+    },
+    inplace=True,
+)
 
-with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table (Method 2 Active)")
-    p_df = df_predict[display_cols].copy().iloc[::-1]
-    p_df.rename(columns=col_renames, inplace=True)
-    p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(p_df.round(2), use_container_width=True, height=500)
+for c in [
+    "1H HA-Close",
+    "15M HA-Close",
+    "1H Locked HA-HAM",
+    "15M Live HA-HAM",
+    "HAM Diff (1H - 15M)",
+    "15M Delta Momentum",
+]:
+    display_df[c] = display_df[c].round(2)
 
-with tab2:
-    st.markdown("#### In-Sample Learning Table")
-    l_df = df_learn[display_cols].copy().iloc[::-1]
-    l_df.rename(columns=col_renames, inplace=True)
-    l_df.index = l_df.index.strftime("%Y-%m-%d %H:%M IST")
-    st.dataframe(l_df.round(2), use_container_width=True, height=500)
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+
+st.dataframe(display_df, use_container_width=True, height=650)
