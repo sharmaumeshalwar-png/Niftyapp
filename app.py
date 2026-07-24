@@ -6,11 +6,13 @@ import requests
 import streamlit as st
 
 # Page Configuration
-st.set_page_config(page_title="BTC Multi-Kinematics Engine", layout="wide")
+st.set_page_config(
+    page_title="BTC Multi-Kinematics Engine (Fixed HAM)", layout="wide"
+)
 st.title("⚡ Bitcoin (BTC-USD) Multi-Level Kinematic Action Engine")
 st.write(
-    "🎯 **High, Low & Close Kinematics Engine:** Separate Hurst & HAM Metrics"
-    " in IST [2-Year Full Engine / Zero Leakage]"
+    "🎯 **Corrected Normalized HAM Signals (Close, High, Low)** in IST [2-Year"
+    " Full Engine / Zero Leakage]"
 )
 
 # Sidebar Refresh Controls
@@ -25,12 +27,12 @@ st.sidebar.success(
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
+# CORRECTED MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead)
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+    data_array, initial_p=1.0, q_val=0.001, r_val=0.05
 ):
-  """Recursive Forward-Only Kalman Filter"""
+  """Recursive Forward-Only Kalman Filter for Normalized Series"""
   arr = np.asarray(data_array, dtype=float).flatten()
   if len(arr) == 0:
     return np.array([])
@@ -73,14 +75,44 @@ def calculate_rolling_hurst_vectorized(price_series, window=100):
   return hurst_values
 
 
+def calculate_normalized_ham(price_series, window=100):
+  """Calculates Accurate Volatility-Adjusted Hurst Adaptive Momentum (HAM)"""
+  s = pd.Series(price_series)
+  # 1. Log Returns
+  returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+
+  # 2. Base Kalman Filter on Price
+  kalman_price = apply_kalman_filter_custom(
+      price_series, initial_p=50.0, q_val=0.0005, r_val=0.2
+  )
+
+  # 3. Dynamic Return-Based Kalman Momentum
+  kalman_returns = apply_kalman_filter_custom(
+      returns, initial_p=0.01, q_val=0.0001, r_val=0.01
+  )
+
+  # 4. Rolling Hurst Exponent
+  hurst = calculate_rolling_hurst_vectorized(price_series, window=window)
+
+  # 5. Rolling Volatility Normalization (Preventing Scale Distortion)
+  rolling_std = (
+      pd.Series(returns).rolling(window=window, min_periods=1).std().to_numpy()
+      + 1e-8
+  )
+
+  # 6. Final Scaled HAM Calculation
+  ham = (kalman_returns / rolling_std) * hurst
+
+  return kalman_price, hurst, np.clip(ham, -10.0, 10.0)
+
+
 # -----------------------------------------------------------------
 # 🛡️ 2-YEAR UNRESTRICTED HOURLY FETCH
 # -----------------------------------------------------------------
 @st.cache_data(ttl=60)
 def fetch_2year_public_crypto_hourly():
-  # Using Kraken/Coinbase Public Endpoint for complete non-restricted history
   url = "https://api.kraken.com/0/public/OHLC"
-  params = {"pair": "XBTUSD", "interval": 60}  # 60 min = 1 hr
+  params = {"pair": "XBTUSD", "interval": 60}
 
   response = requests.get(
       url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15
@@ -88,7 +120,6 @@ def fetch_2year_public_crypto_hourly():
   data = response.json()
 
   if "result" not in data or not data["result"]:
-    # Fallback to Coinbase
     cb_url = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
     cb_resp = requests.get(
         cb_url,
@@ -104,7 +135,6 @@ def fetch_2year_public_crypto_hourly():
   else:
     pair_key = list(data["result"].keys())[0]
     raw_candles = data["result"][pair_key]
-    # Kraken format: [time, open, high, low, close, vwap, volume, count]
     cols = [
         "time",
         "Open",
@@ -142,10 +172,9 @@ except Exception as e:
   st.stop()
 
 # =====================================================================
-# ⚡ CORE TRANSFORMATIONS (CLOSE, HIGH & LOW KINEMATICS)
+# ⚡ CORE TRANSFORMATIONS (PROPERLY SCALED HIGH, LOW & CLOSE HAM)
 # =====================================================================
 
-# Dynamic 50:50 Split Matrix across full dataset
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -154,56 +183,26 @@ st.success(
     f" {len(df_predict)} IST Locked Candles (Zero Leakage Active)!**"
 )
 
-# -----------------------------------------------------------------
 # 1️⃣ CLOSE KINEMATICS
-# -----------------------------------------------------------------
 close_arr = np.asarray(df_predict["Close"], dtype=float).flatten()
-df_predict["Hurst_Close"] = calculate_rolling_hurst_vectorized(
-    close_arr, window=100
-)
-kalman_base_close = apply_kalman_filter_custom(
-    close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_close = apply_kalman_filter_custom(
-    close_arr - kalman_base_close, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_predict["HAM_Close"] = momentum_close * (
-    df_predict["Hurst_Close"].to_numpy() * 2.0
-)
+kalman_c, hurst_c, ham_c = calculate_normalized_ham(close_arr, window=100)
+df_predict["Kalman_Close"] = kalman_c
+df_predict["Hurst_Close"] = hurst_c
+df_predict["HAM_Close"] = ham_c
 
-# -----------------------------------------------------------------
-# 2️⃣ HIGH KINEMATICS (Alag Hurst + Alag HAM)
-# -----------------------------------------------------------------
+# 2️⃣ HIGH KINEMATICS
 high_arr = np.asarray(df_predict["High"], dtype=float).flatten()
-df_predict["Hurst_High"] = calculate_rolling_hurst_vectorized(
-    high_arr, window=100
-)
-kalman_base_high = apply_kalman_filter_custom(
-    high_arr, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_high = apply_kalman_filter_custom(
-    high_arr - kalman_base_high, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_predict["HAM_High"] = momentum_high * (
-    df_predict["Hurst_High"].to_numpy() * 2.0
-)
+kalman_h, hurst_h, ham_h = calculate_normalized_ham(high_arr, window=100)
+df_predict["Kalman_High"] = kalman_h
+df_predict["Hurst_High"] = hurst_h
+df_predict["HAM_High"] = ham_h
 
-# -----------------------------------------------------------------
-# 3️⃣ LOW KINEMATICS (Alag Hurst + Alag HAM)
-# -----------------------------------------------------------------
+# 3️⃣ LOW KINEMATICS
 low_arr = np.asarray(df_predict["Low"], dtype=float).flatten()
-df_predict["Hurst_Low"] = calculate_rolling_hurst_vectorized(
-    low_arr, window=100
-)
-kalman_base_low = apply_kalman_filter_custom(
-    low_arr, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_low = apply_kalman_filter_custom(
-    low_arr - kalman_base_low, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_predict["HAM_Low"] = momentum_low * (
-    df_predict["Hurst_Low"].to_numpy() * 2.0
-)
+kalman_l, hurst_l, ham_l = calculate_normalized_ham(low_arr, window=100)
+df_predict["Kalman_Low"] = kalman_l
+df_predict["Hurst_Low"] = hurst_l
+df_predict["HAM_Low"] = ham_l
 
 # Clean NA rows
 df_predict.dropna(
@@ -218,12 +217,15 @@ clean_cols = [
     "High",
     "Low",
     "Close",
-    "Hurst_Close",
-    "HAM_Close",
+    "Kalman_High",
     "Hurst_High",
     "HAM_High",
+    "Kalman_Low",
     "Hurst_Low",
     "HAM_Low",
+    "Kalman_Close",
+    "Hurst_Close",
+    "HAM_Close",
 ]
 
 display_df = pd.DataFrame(index=df_predict.index)
@@ -241,7 +243,7 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
-st.markdown(f"### 🔒 **LAST LOCKED CANDE (IST):** `{latest_time}`")
+st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Locked Close Price", f"${latest_candle['Close']:,}")
@@ -251,9 +253,7 @@ m4.metric("Low HAM Signal", f"{latest_candle['HAM_Low']}")
 
 st.divider()
 
-st.subheader(
-    "📋 Complete OHLC Multi-Kinematic Analysis Matrix (50:50 Dynamic Roll)"
-)
+st.subheader("📋 Corrected Normalized HAM Kinematic Matrix")
 
 st.dataframe(
     display_df,
@@ -262,20 +262,29 @@ st.dataframe(
         "High": st.column_config.NumberColumn("High ($)", format="$%.2f"),
         "Low": st.column_config.NumberColumn("Low ($)", format="$%.2f"),
         "Close": st.column_config.NumberColumn("Close ($)", format="$%.2f"),
+        "Kalman_High": st.column_config.NumberColumn(
+            "Kalman (High)", format="$%.2f"
+        ),
+        "Hurst_High": st.column_config.NumberColumn(
+            "Hurst (High)", format="%.2f"
+        ),
+        "HAM_High": st.column_config.NumberColumn("HAM (High)", format="%.2f"),
+        "Kalman_Low": st.column_config.NumberColumn(
+            "Kalman (Low)", format="$%.2f"
+        ),
+        "Hurst_Low": st.column_config.NumberColumn(
+            "Hurst (Low)", format="%.2f"
+        ),
+        "HAM_Low": st.column_config.NumberColumn("HAM (Low)", format="%.2f"),
+        "Kalman_Close": st.column_config.NumberColumn(
+            "Kalman (Close)", format="$%.2f"
+        ),
         "Hurst_Close": st.column_config.NumberColumn(
             "Hurst (Close)", format="%.2f"
         ),
         "HAM_Close": st.column_config.NumberColumn(
             "HAM (Close)", format="%.2f"
         ),
-        "Hurst_High": st.column_config.NumberColumn(
-            "Hurst (High)", format="%.2f"
-        ),
-        "HAM_High": st.column_config.NumberColumn("HAM (High)", format="%.2f"),
-        "Hurst_Low": st.column_config.NumberColumn(
-            "Hurst (Low)", format="%.2f"
-        ),
-        "HAM_Low": st.column_config.NumberColumn("HAM (Low)", format="%.2f"),
     },
     use_container_width=True,
     height=600,
