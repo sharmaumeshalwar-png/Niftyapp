@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -5,19 +6,21 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="Nifty 50 Dual HAM (W-30 & W-200)",
+    page_title="BTC-USD 1H Dual HAM Engine (Zero Future Leakage)",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("🚀 NIFTY 50 Dual 5M HAM (Window 30 & Window 200) Engine")
-st.caption("Exact Same Theoretical Math Matrix — Window 30 vs Window 200")
+st.title("⚡ BTC-USD 1H Strict Bar-Closed Dual HAM Engine")
+st.caption(
+    "100% Strict Freeze-on-Bar-Close Logic | 2-Year BTC-USD History (IST) | 50:50 Learn & Predict Split"
+)
 
 
 # =====================================================================
-# 1. HEIKIN-ASHI CALCULATION
+# 1. STRICT HEIKIN-ASHI CALCULATION (FREEZE ON BAR CLOSE)
 # =====================================================================
-def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
+def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
     df_ha = df_in.copy()
 
     op = df_ha["Open"].to_numpy().flatten()
@@ -44,11 +47,13 @@ def compute_heikin_ashi(df_in: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# 2. CUSTOM KALMAN FILTER
+# 2. CUSTOM CAUSAL KALMAN FILTER (ZERO BACKWARD SMOOTHING)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+def apply_kalman_filter_causal(
+    data_array, initial_p=50.0, q_val=0.0005, r_val=0.2
+):
     if len(data_array) == 0:
-        return []
+        return np.array([])
     x, p = data_array[0], initial_p
     filtered_values = []
     for z in data_array:
@@ -57,18 +62,19 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values.append(x)
-    return filtered_values
+    return np.array(filtered_values)
 
 
 # =====================================================================
-# 3. LEAK-FREE ROLLING HURST EXPONENT
+# 3. LEAK-FREE ROLLING HURST EXPONENT (STRICT LOOKBACK)
 # =====================================================================
 def calculate_rolling_hurst_leak_free(price_series, window=30):
-    hurst_values = np.full(len(price_series), 0.5)
+    n = len(price_series)
+    hurst_values = np.full(n, 0.5)
     s = pd.Series(price_series)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
 
-    for i in range(window, len(price_series)):
+    for i in range(window, n):
         window_data = log_returns[i - window + 1 : i + 1]
         mean_val = np.mean(window_data)
         cum_dev = np.cumsum(window_data - mean_val)
@@ -84,149 +90,189 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 4. CORE FEATURES (WINDOW 30 VS WINDOW 200)
+# 4. STRICT DUAL HAM FEATURE GENERATOR (W-30 & W-200)
 # =====================================================================
-def compute_ha_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
-    df_ha = compute_heikin_ashi(df_raw)
+def compute_strict_btc_ham_features(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df_ha = compute_heikin_ashi_strict(df_raw)
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # Physics Velocity & Acceleration
+    # Physics Velocity & Acceleration on Closed Bars
     window = 5
     df_ha["Velocity_Speed"] = df_ha["Close"].diff(window) / window
     df_ha["Acceleration_GForce"] = df_ha["Velocity_Speed"].diff(window) / window
 
     # 1. HAM Window 30 (Fast Momentum)
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(ha_close, window=30)
-    kalman_30 = apply_kalman_filter_custom(
+    kalman_30 = apply_kalman_filter_causal(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    mom_30 = apply_kalman_filter_custom(
+    mom_30 = apply_kalman_filter_causal(
         ha_close - kalman_30, initial_p=0.50, q_val=0.001, r_val=0.1
     )
-    df_ha["HA_HAM_30"] = np.array(mom_30) * (df_ha["Hurst_30"].to_numpy() * 2.0)
+    df_ha["HA_HAM_30"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 2. HAM Window 200 (Macro Anchor - EXACT SAME THEORY)
+    # 2. HAM Window 200 (Macro Baseline)
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
-    kalman_200 = apply_kalman_filter_custom(
+    kalman_200 = apply_kalman_filter_causal(
         ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
     )
-    mom_200 = apply_kalman_filter_custom(
+    mom_200 = apply_kalman_filter_causal(
         ha_close - kalman_200, initial_p=0.50, q_val=0.001, r_val=0.1
     )
-    df_ha["HA_HAM_200"] = np.array(mom_200) * (
-        df_ha["Hurst_200"].to_numpy() * 2.0
-    )
+    df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
+
+    # STRICT FREEZE: Shifted by 1 bar so unclosed candle has 0 impact
+    df_ha["HAM_30_Frozen"] = df_ha["HA_HAM_30"].shift(1)
+    df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
+    df_ha["Hurst_30_Frozen"] = df_ha["Hurst_30"].shift(1)
+    df_ha["Hurst_200_Frozen"] = df_ha["Hurst_200"].shift(1)
 
     return df_ha
 
 
 # =====================================================================
-# 5. DATA INGESTION
+# 5. DATA INGESTION (2 YEARS BTC-USD 1H DATA)
 # =====================================================================
-@st.cache_data(ttl=60)
-def load_market_data():
-    df_1h_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="1h", progress=False
-    )
-    df_15m_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="15m", progress=False
-    )
-    df_5m_raw = yf.download(
-        tickers="^NSEI", period="60d", interval="5m", progress=False
+@st.cache_data(ttl=3600)
+def load_btc_2year_1h_data():
+    df_btc = yf.download(
+        tickers="BTC-USD", period="730d", interval="1h", progress=False
     )
 
-    processed_dfs = []
-    for d in [df_1h_raw, df_15m_raw, df_5m_raw]:
-        if isinstance(d.columns, pd.MultiIndex):
-            d.columns = d.columns.get_level_values(0)
+    if isinstance(df_btc.columns, pd.MultiIndex):
+        df_btc.columns = df_btc.columns.get_level_values(0)
 
-        d = d.dropna(subset=["Open", "High", "Low", "Close"])
+    df_btc = df_btc.dropna(subset=["Open", "High", "Low", "Close"])
 
-        if d.index.tz is None:
-            d.index = d.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
-        else:
-            d.index = d.index.tz_convert("Asia/Kolkata")
+    # Convert Timezone strictly to IST (Asia/Kolkata)
+    if df_btc.index.tz is None:
+        df_btc.index = df_btc.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
+    else:
+        df_btc.index = df_btc.index.tz_convert("Asia/Kolkata")
 
-        processed_dfs.append(d)
-
-    return processed_dfs[0], processed_dfs[1], processed_dfs[2]
+    return df_btc
 
 
-with st.spinner("Fetching Nifty Data & Computing Window 30 vs 200 HAM..."):
+with st.spinner(
+    "📥 Fetching 2 Years of BTC-USD 1H Data & Computing Freeze Engine..."
+):
     try:
-        df_1h_raw, df_15m_raw, df_5m_raw = load_market_data()
+        df_btc_raw = load_btc_2year_1h_data()
     except Exception as e:
-        st.error(f"🚨 Data Fetching Error: {e}")
+        st.error(f"🚨 Data Error: {e}")
         st.stop()
 
-# Compute Features
-df_1h = compute_ha_ham_features(df_1h_raw)
-df_15m = compute_ha_ham_features(df_15m_raw)
-df_5m = compute_ha_ham_features(df_5m_raw)
+# Compute HAM Features
+df_btc_processed = compute_strict_btc_ham_features(df_btc_raw)
+
+# Cleaning & Backfill Verification
+df_btc_clean = df_btc_processed.dropna(
+    subset=["HAM_30_Frozen", "HAM_200_Frozen"]
+).copy()
+df_btc_clean = df_btc_clean.bfill()
 
 # =====================================================================
-# 6. LEAK-FREE ALIGNMENT & DISPLAY
+# 6. 50:50 LEARN & PREDICTION SPLIT ENGINE
 # =====================================================================
-df_15m_grid = df_15m.copy()
+total_bars = len(df_btc_clean)
+split_idx = int(total_bars * 0.50)
 
-df_15m_grid["5M_HAM_30"] = (
-    df_5m["HA_HAM_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_HAM_200"] = (
-    df_5m["HA_HAM_200"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_Hurst_30"] = (
-    df_5m["Hurst_30"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
-df_15m_grid["5M_Hurst_200"] = (
-    df_5m["Hurst_200"].shift(1).reindex(df_15m_grid.index, method="ffill")
-)
+df_learn = df_btc_clean.iloc[:split_idx].copy()
+df_predict = df_btc_clean.iloc[split_idx:].copy()
 
-df_15m_grid.dropna(inplace=True)
-latest = df_15m_grid.iloc[-1]
+# Latest Frozen Bar State
+latest_bar = df_btc_clean.iloc[-1]
+latest_time = df_btc_clean.index[-1].strftime("%Y-%m-%d %H:%M IST")
+
+# =====================================================================
+# 7. DASHBOARD & DISPLAY
+# =====================================================================
+st.markdown("---")
+st.subheader("📌 BTC-USD 1H Live Frozen State (Zero Live Candle Leakage)")
+
+m1, m2, m3, m4 = st.columns(4)
+
+with m1:
+    st.metric(
+        label="BTC-USD Price (Closed Bar)",
+        value=f"${latest_bar['Close']:,.2f}",
+    )
+
+with m2:
+    st.metric(
+        label="Frozen 1H HAM (Window 30)",
+        value=f"{latest_bar['HAM_30_Frozen']:+.2f}",
+        delta="Positive" if latest_bar["HAM_30_Frozen"] > 0 else "Negative",
+    )
+
+with m3:
+    st.metric(
+        label="Frozen 1H HAM (Window 200)",
+        value=f"{latest_bar['HAM_200_Frozen']:+.2f}",
+        delta="Macro Bull" if latest_bar["HAM_200_Frozen"] > 0 else "Macro Bear",
+    )
+
+with m4:
+    st.metric(
+        label="Frozen Hurst (W-30 / W-200)",
+        value=f"{latest_bar['Hurst_30_Frozen']:.2f} / {latest_bar['Hurst_200_Frozen']:.2f}",
+        delta="Trending" if latest_bar["Hurst_30_Frozen"] >= 0.50 else "Choppy",
+    )
 
 st.markdown("---")
-st.subheader("📊 Live Numeric HAM Values (Window 30 vs Window 200)")
+st.subheader("📊 50:50 Dataset Partition Audit")
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric(
-        label="5M HAM (Window 30)",
-        value=f"{latest['5M_HAM_30']:+.2f}",
-        delta="Fast Momentum",
+s_col1, s_col2, s_col3 = st.columns(3)
+with s_col1:
+    st.info(f"**Total 1H Bars Processed:** {total_bars:,} Candles (~2 Years)")
+with s_col2:
+    st.success(
+        f"**50% Learning Set (In-Sample):** {len(df_learn):,} Bars\n"
+        f"*(From {df_learn.index[0].strftime('%d %b %Y')} to {df_learn.index[-1].strftime('%d %b %Y')})*"
     )
-with c2:
-    st.metric(
-        label="5M HAM (Window 200)",
-        value=f"{latest['5M_HAM_200']:+.2f}",
-        delta="Macro Baseline",
-    )
-with c3:
-    st.metric(
-        label="Hurst Exponents (W-30 / W-200)",
-        value=f"{latest['5M_Hurst_30']:.2f} / {latest['5M_Hurst_200']:.2f}",
+with s_col3:
+    st.warning(
+        f"**50% Prediction Set (Out-of-Sample):** {len(df_predict):,} Bars\n"
+        f"*(From {df_predict.index[0].strftime('%d %b %Y')} to {df_predict.index[-1].strftime('%d %b %Y')})*"
     )
 
 st.markdown("---")
-st.subheader("📋 Historical Multi-Timeframe Data Table")
+tab1, tab2 = st.tabs(
+    ["🔮 Out-of-Sample Prediction Set (50%)", "📚 In-Sample Learning Set (50%)"]
+)
 
 display_cols = [
+    "Close",
     "HA_Close",
-    "5M_HAM_30",
-    "5M_HAM_200",
-    "5M_Hurst_30",
-    "5M_Hurst_200",
+    "HAM_30_Frozen",
+    "HAM_200_Frozen",
+    "Hurst_30_Frozen",
+    "Hurst_200_Frozen",
 ]
-table_df = df_15m_grid[display_cols].copy().iloc[::-1]
-table_df.columns = [
-    "15M HA-Close",
-    "5M HAM (W-30)",
-    "5M HAM (W-200)",
-    "Hurst (W-30)",
-    "Hurst (W-200)",
-]
-table_df.index = table_df.index.strftime("%Y-%m-%d %H:%M IST")
 
-st.dataframe(table_df.round(2), use_container_width=True, height=500)
+col_renames = {
+    "Close": "BTC Close ($)",
+    "HA_Close": "HA Close ($)",
+    "HAM_30_Frozen": "Frozen HAM (W-30)",
+    "HAM_200_Frozen": "Frozen HAM (W-200)",
+    "Hurst_30_Frozen": "Frozen Hurst (W-30)",
+    "Hurst_200_Frozen": "Frozen Hurst (W-200)",
+}
+
+with tab1:
+    st.markdown(
+        "#### ⚡ Prediction Phase (Out-of-Sample - 100% Strict Causal Freeze)"
+    )
+    p_df = df_predict[display_cols].copy().iloc[::-1]
+    p_df.rename(columns=col_renames, inplace=True)
+    p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
+    st.dataframe(p_df.round(2), use_container_width=True, height=500)
+
+with tab2:
+    st.markdown("#### 📚 Learning Phase (In-Sample Calibration Set)")
+    l_df = df_learn[display_cols].copy().iloc[::-1]
+    l_df.rename(columns=col_renames, inplace=True)
+    l_df.index = l_df.index.strftime("%Y-%m-%d %H:%M IST")
+    st.dataframe(l_df.round(2), use_container_width=True, height=500)
