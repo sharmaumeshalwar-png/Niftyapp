@@ -6,14 +6,14 @@ import yfinance as yf
 
 # Page Configuration
 st.set_page_config(
-    page_title="BTC-USD 1H Quantum HAM Engine (Normal Base)",
+    page_title="BTC-USD 1H Quantum Engine + Correlation Tracker",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-st.title("⚛️ BTC-USD 1H Quantum HAM Engine (Normal Fast HAM Base)")
+st.title("⚛️ BTC-USD 1H Quantum Engine (with Auto-Correlation Filter)")
 st.caption(
-    "10,000x Scaled Quantum Wave Phase | Normal Base Fast HAM (30 Window) | Zero Future Leakage (Shift 1)"
+    "10,000x Scaled Quantum Wave Phase | Dynamic Rolling Correlation State | Zero Future Leakage (Shift 1)"
 )
 
 
@@ -47,7 +47,7 @@ def compute_heikin_ashi_strict(df_in: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# 2. CAUSAL KALMAN FILTER (ZERO FUTURE LEAKAGE)
+# 2. CAUSAL KALMAN FILTER (ZERO LEAKAGE)
 # =====================================================================
 def apply_kalman_filter_causal(
     data_array, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -71,7 +71,6 @@ def apply_kalman_filter_causal(
 def compute_quantum_wavefunction_10k(
     price_series, window=30, scale_factor=10000.0
 ):
-    """Calculates Quantum Wave Probability State |Psi|^2 scaled strictly by 10,000x"""
     s = pd.Series(price_series)
     mean_p = s.rolling(window).mean()
     std_p = s.rolling(window).std().fillna(1.0)
@@ -81,15 +80,12 @@ def compute_quantum_wavefunction_10k(
 
     # Quantum Harmonic Oscillator Ground State: Psi(x) ~ exp(-x^2 / 2)
     psi = np.exp(-(x**2) / 2.0)
-
-    # Quantum Probability Density: |Psi|^2
     prob_density = psi**2
 
-    # Quantum Phase State Direction (+1 / -1) with EXACT 10,000x Multiplier
+    # Scaled Quantum Phase State Direction
     quantum_state = (
         np.where(x >= 0, prob_density, -prob_density) * scale_factor
     )
-
     return quantum_state
 
 
@@ -118,14 +114,34 @@ def calculate_rolling_hurst_leak_free(price_series, window=30):
 
 
 # =====================================================================
-# 5. STRICT DUAL HAM + 10,000x QUANTUM FEATURE GENERATOR (EMA REMOVED)
+# 5. METHOD 2: DYNAMIC ROLLING CORRELATION TRACKER
+# =====================================================================
+def compute_rolling_correlation_filter(s1: pd.Series, s2: pd.Series, window=30):
+    """Calculates rolling Pearson Correlation and assigns sync states."""
+    r = s1.rolling(window).corr(s2).fillna(0.0)
+
+    # Z-Score of rolling correlation to measure extreme deviation
+    r_mean = r.rolling(window).mean()
+    r_std = r.rolling(window).std().replace(0, 1e-8)
+    r_zscore = (r - r_mean) / r_std
+
+    # Correlation State Logic
+    # Strong correlation when |r| >= 0.70
+    states = np.where(
+        np.abs(r) >= 0.70, "IN_CORRELATION", "CORRELATION_BREAKDOWN"
+    )
+
+    return r, r_zscore, states
+
+
+# =====================================================================
+# 6. DUAL HAM + QUANTUM + CORRELATION PIPELINE
 # =====================================================================
 def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     df_ha = compute_heikin_ashi_strict(df_raw)
-
     ha_close = df_ha["HA_Close"].to_numpy().flatten()
 
-    # 1. Normal Fast HAM (Window = 30) on Raw HA_Close (No EMA Filtering)
+    # 1. Normal Fast HAM 30
     df_ha["Hurst_30"] = calculate_rolling_hurst_leak_free(
         ha_close, window=30
     )
@@ -137,7 +153,7 @@ def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_30_Normal"] = mom_30 * (df_ha["Hurst_30"].to_numpy() * 2.0)
 
-    # 2. Macro HAM 200 on Raw HA_Close
+    # 2. Macro HAM 200
     df_ha["Hurst_200"] = calculate_rolling_hurst_leak_free(
         ha_close, window=200
     )
@@ -149,17 +165,26 @@ def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
     )
     df_ha["HA_HAM_200"] = mom_200 * (df_ha["Hurst_200"].to_numpy() * 2.0)
 
-    # 3. Quantum Wavefunction Calculation (10,000x Multiplied on Raw HA_Close)
+    # 3. Quantum Wavefunction 10,000x
     df_ha["Quantum_State"] = compute_quantum_wavefunction_10k(
         ha_close, window=30, scale_factor=10000.0
     )
 
-    # STRICT FREEZE ON BAR CLOSE (Shifted by 1 bar for ZERO live leakage)
+    # 4. INTEGRATION OF METHOD 2: Dynamic Rolling Correlation (Close vs Quantum)
+    r_val, r_zscore, corr_states = compute_rolling_correlation_filter(
+        df_ha["Close"], df_ha["Quantum_State"], window=30
+    )
+    df_ha["Rolling_Corr"] = r_val
+    df_ha["Corr_ZScore"] = r_zscore
+    df_ha["Corr_State"] = corr_states
+
+    # STRICT FREEZE ON BAR CLOSE (Shift 1 for Zero Future Leakage)
     df_ha["HAM_30_Normal_Frozen"] = df_ha["HA_HAM_30_Normal"].shift(1)
     df_ha["HAM_200_Frozen"] = df_ha["HA_HAM_200"].shift(1)
     df_ha["Quantum_State_Frozen"] = df_ha["Quantum_State"].shift(1)
+    df_ha["Rolling_Corr_Frozen"] = df_ha["Rolling_Corr"].shift(1)
+    df_ha["Corr_State_Frozen"] = df_ha["Corr_State"].shift(1)
 
-    # Difference Spread (Normal Fast HAM - HAM 200)
     df_ha["HAM_Spread"] = (
         df_ha["HAM_30_Normal_Frozen"] - df_ha["HAM_200_Frozen"]
     )
@@ -168,7 +193,7 @@ def compute_strict_btc_quantum_ham(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # =====================================================================
-# 6. DATA INGESTION & RUN ENGINE
+# 7. DATA INGESTION & ENGINE RUN
 # =====================================================================
 @st.cache_data(ttl=3600)
 def load_btc_2year_1h_data():
@@ -192,7 +217,7 @@ with st.spinner("📥 Fetching 2 Years BTC-USD 1H Data..."):
         st.error(f"🚨 Data Error: {e}")
         st.stop()
 
-# Compute Features
+# Compute Pipeline
 df_btc_processed = compute_strict_btc_quantum_ham(df_btc_raw)
 df_btc_clean = df_btc_processed.dropna(
     subset=["HAM_30_Normal_Frozen", "Quantum_State_Frozen"]
@@ -208,35 +233,44 @@ df_predict = df_btc_clean.iloc[split_idx:].copy()
 latest_bar = df_btc_clean.iloc[-1]
 
 # =====================================================================
-# 7. DASHBOARD DISPLAY
+# 8. DASHBOARD DISPLAY
 # =====================================================================
 st.markdown("---")
-st.subheader("📌 Live State: Normal Base HAM (30 W) + 10,000x Quantum Phase")
+st.subheader(
+    "📌 Live State: 10,000x Quantum Phase + Rolling Correlation Filter"
+)
 
-m1, m2, m3, m4 = st.columns(4)
+m1, m2, m3, m4, m5 = st.columns(5)
 with m1:
     st.metric(
         label="BTC Price (Last Closed)", value=f"${latest_bar['Close']:,.2f}"
     )
 with m2:
     st.metric(
-        label="Frozen Normal Fast HAM (W-30)",
+        label="Frozen HAM (Normal 30)",
         value=f"{latest_bar['HAM_30_Normal_Frozen']:+.2f}",
     )
 with m3:
     st.metric(
-        label="Quantum Phase (|Ψ|² x10,000)",
+        label="Quantum Phase (|Ψ|² x10k)",
         value=f"{latest_bar['Quantum_State_Frozen']:+.2f}",
-        delta=(
-            "High Bullish Wave"
-            if latest_bar["Quantum_State_Frozen"] > 0
-            else "High Bearish Wave"
-        ),
     )
 with m4:
     st.metric(
-        label="HAM Spread (Fast 30 - Macro 200)",
-        value=f"{latest_bar['HAM_Spread']:+.2f}",
+        label="Rolling Corr (30 W)",
+        value=f"{latest_bar['Rolling_Corr_Frozen']:+.2f}",
+    )
+with m5:
+    corr_status = latest_bar["Corr_State_Frozen"]
+    st.metric(
+        label="Correlation State",
+        value=corr_status,
+        delta=(
+            "Synced (Safe)"
+            if corr_status == "IN_CORRELATION"
+            else "Breakdown Alert!"
+        ),
+        delta_color="normal" if corr_status == "IN_CORRELATION" else "inverse",
     )
 
 st.markdown("---")
@@ -249,20 +283,23 @@ display_cols = [
     "HA_Close",
     "HAM_30_Normal_Frozen",
     "Quantum_State_Frozen",
-    "HAM_200_Frozen",
+    "Rolling_Corr_Frozen",
+    "Corr_State_Frozen",
     "HAM_Spread",
 ]
+
 col_renames = {
     "Close": "BTC Close ($)",
     "HA_Close": "HA Close ($)",
-    "HAM_30_Normal_Frozen": "Frozen Fast HAM (Normal 30)",
-    "Quantum_State_Frozen": "Quantum Wave Phase (|Ψ|² x10,000)",
-    "HAM_200_Frozen": "Frozen HAM (W-200)",
+    "HAM_30_Normal_Frozen": "Frozen Fast HAM (W-30)",
+    "Quantum_State_Frozen": "Quantum Phase (|Ψ|² x10k)",
+    "Rolling_Corr_Frozen": "Rolling Corr (30 Close)",
+    "Corr_State_Frozen": "Correlation Status",
     "HAM_Spread": "HAM Spread",
 }
 
 with tab1:
-    st.markdown("#### Out-of-Sample Prediction Table (EMA Removed)")
+    st.markdown("#### Out-of-Sample Prediction Table (Method 2 Active)")
     p_df = df_predict[display_cols].copy().iloc[::-1]
     p_df.rename(columns=col_renames, inplace=True)
     p_df.index = p_df.index.strftime("%Y-%m-%d %H:%M IST")
