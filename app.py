@@ -14,7 +14,7 @@ st.set_page_config(
 st.title("⚡ BTC-USD Dual-Engine Kinematic Matrix (1H & 15M)")
 st.write(
     "🎯 **Synchronized Dual Timeframe Engine:** 1-Hour & 15-Minute Kinematic "
-    "Matrix + Dynamic Kalman Hurst Column | IST Locked [Strict Zero Future"
+    "Matrix + Hurst Difference Column | IST Locked [Strict Zero Future"
     " Leakage]"
 )
 
@@ -229,7 +229,7 @@ def get_robust_timeframe_data(interval="1h", days=60):
   raise ValueError(f"Failed to fetch data for interval: {interval}")
 
 
-# Fetch Sync Data
+# Fetch Sync Data (60 Days Window)
 try:
   with st.spinner(
       "🔄 Synchronizing 1-Hour & 15-Minute Streams (Zero Leakage)..."
@@ -255,7 +255,6 @@ except Exception as e:
 # =====================================================================
 df_1h = apply_heikin_ashi(df_1h_raw)
 
-# Normal Close Processing
 normal_close_1h = np.asarray(df_1h["Close"], dtype=float).flatten()
 df_1h["1H_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_1h, window=50
@@ -263,10 +262,6 @@ df_1h["1H_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 kalman_base_1h_norm = apply_kalman_filter_custom(
     normal_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df_1h["1H_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
-    kalman_base_1h_norm, window=50
-)
-
 momentum_1h_norm = apply_kalman_filter_custom(
     normal_close_1h - kalman_base_1h_norm, initial_p=0.50, q_val=0.001, r_val=0.1
 )
@@ -274,7 +269,6 @@ df_1h["1H_HAM_Normal"] = momentum_1h_norm * (
     df_1h["1H_Hurst_Normal"].to_numpy() * 2.0
 )
 
-# Heikin-Ashi Processing
 ha_close_1h = np.asarray(df_1h["HA_Close"], dtype=float).flatten()
 df_1h["1H_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     ha_close_1h, window=50
@@ -282,10 +276,6 @@ df_1h["1H_Hurst_HA"] = calculate_rolling_hurst_vectorized(
 kalman_base_1h_ha = apply_kalman_filter_custom(
     ha_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df_1h["1H_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    kalman_base_1h_ha, window=50
-)
-
 momentum_1h_ha = apply_kalman_filter_custom(
     ha_close_1h - kalman_base_1h_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
@@ -295,12 +285,18 @@ df_1h_clean = df_1h[[
     "Close",
     "HA_Close",
     "1H_Hurst_Normal",
-    "1H_Kalman_Hurst_Norm",
     "1H_Hurst_HA",
-    "1H_Kalman_Hurst_HA",
     "1H_HAM_Normal",
     "1H_HAM_HA",
 ]].copy()
+df_1h_clean.columns = [
+    "1H_Close",
+    "1H_HA_Close",
+    "1H_Hurst_Normal",
+    "1H_Hurst_HA",
+    "1H_HAM_Normal",
+    "1H_HAM_HA",
+]
 
 
 # =====================================================================
@@ -308,7 +304,6 @@ df_1h_clean = df_1h[[
 # =====================================================================
 df_15m = apply_heikin_ashi(df_15m_raw)
 
-# Normal Close Processing
 normal_close_15m = np.asarray(df_15m["Close"], dtype=float).flatten()
 df_15m["15M_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_15m, window=50
@@ -316,10 +311,6 @@ df_15m["15M_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 kalman_base_15m_norm = apply_kalman_filter_custom(
     normal_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df_15m["15M_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
-    kalman_base_15m_norm, window=50
-)
-
 momentum_15m_norm = apply_kalman_filter_custom(
     normal_close_15m - kalman_base_15m_norm,
     initial_p=0.50,
@@ -330,7 +321,6 @@ df_15m["15M_HAM_Normal"] = momentum_15m_norm * (
     df_15m["15M_Hurst_Normal"].to_numpy() * 2.0
 )
 
-# Heikin-Ashi Processing
 ha_close_15m = np.asarray(df_15m["HA_Close"], dtype=float).flatten()
 df_15m["15M_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     ha_close_15m, window=50
@@ -338,10 +328,6 @@ df_15m["15M_Hurst_HA"] = calculate_rolling_hurst_vectorized(
 kalman_base_15m_ha = apply_kalman_filter_custom(
     ha_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df_15m["15M_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    kalman_base_15m_ha, window=50
-)
-
 momentum_15m_ha = apply_kalman_filter_custom(
     ha_close_15m - kalman_base_15m_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
@@ -353,28 +339,29 @@ df_15m_clean = df_15m[[
     "Close",
     "HA_Close",
     "15M_Hurst_Normal",
-    "15M_Kalman_Hurst_Norm",
     "15M_Hurst_HA",
-    "15M_Kalman_Hurst_HA",
     "15M_HAM_Normal",
     "15M_HAM_HA",
 ]].copy()
+df_15m_clean.columns = [
+    "15M_Close",
+    "15M_HA_Close",
+    "15M_Hurst_Normal",
+    "15M_Hurst_HA",
+    "15M_HAM_Normal",
+    "15M_HAM_HA",
+]
 
 
 # =====================================================================
-# 📋 UNIFIED MERGE & DIFFERENTIAL COLUMNS (FIXED JOIN ERROR)
+# 📋 UNIFIED MERGE & NEW HURST DIFFERENTIAL COLUMN
 # =====================================================================
-# Added explicit lsuffix and rsuffix to fix overlapping column name error
-combined_df = df_15m_clean.join(
-    df_1h_clean, how="left", lsuffix="_15m", rsuffix="_1h"
-).ffill()
+# Forward fill 1-Hour values across 15-minute intervals
+combined_df = df_15m_clean.join(df_1h_clean, how="left").ffill()
 
-# 🎯 DIFFERENTIAL COLUMNS:
+# 🎯 NEW COLUMN: (15M Hurst HA - 1H Hurst HA)
 combined_df["Hurst_HA_Diff"] = (
     combined_df["15M_Hurst_HA"] - combined_df["1H_Hurst_HA"]
-)
-combined_df["Kalman_Hurst_HA_Diff"] = (
-    combined_df["15M_Kalman_Hurst_HA"] - combined_df["1H_Kalman_Hurst_HA"]
 )
 
 # Display latest candle at top
@@ -390,52 +377,42 @@ c1, c2, c3 = st.columns([2, 2, 1.5])
 with c1:
   st.info(f"⏰ **1-Hour Locked Candle:** `{locked_1h_time}`")
   m1, m2 = st.columns(2)
-  m1.metric("1H HA Close", f"${df_1h_clean['HA_Close'].iloc[-1]:,.2f}")
-  m2.metric(
-      "1H Kalman Hurst HA", f"{df_1h_clean['1H_Kalman_Hurst_HA'].iloc[-1]:.2f}"
-  )
+  m1.metric("1H HA Close", f"${df_1h_clean['1H_HA_Close'].iloc[-1]:,.2f}")
+  m2.metric("1H Hurst HA", f"{df_1h_clean['1H_Hurst_HA'].iloc[-1]:.2f}")
 
 with c2:
   st.info(f"⚡ **15-Min Locked Candle:** `{locked_15m_time}`")
   n1, n2 = st.columns(2)
-  n1.metric("15M HA Close", f"${df_15m_clean['HA_Close'].iloc[-1]:,.2f}")
-  n2.metric(
-      "15M Kalman Hurst HA",
-      f"{df_15m_clean['15M_Kalman_Hurst_HA'].iloc[-1]:.2f}",
-  )
+  n1.metric("15M HA Close", f"${df_15m_clean['15M_HA_Close'].iloc[-1]:,.2f}")
+  n2.metric("15M Hurst HA", f"{df_15m_clean['15M_Hurst_HA'].iloc[-1]:.2f}")
 
 with c3:
-  latest_diff = combined_df["Kalman_Hurst_HA_Diff"].iloc[-1]
+  latest_diff = combined_df["Hurst_HA_Diff"].iloc[-1]
   st.metric(
-      "📊 Kalman Hurst HA Diff (15M-1H)",
+      "📊 Hurst HA Diff (15M - 1H)",
       f"{latest_diff:+.2f}",
       delta_color="normal",
   )
 
 st.divider()
 
-st.subheader("📋 Unified Dual-Engine Matrix with Kalman Hurst")
+st.subheader("📋 Unified Dual-Engine Matrix with Hurst Difference Column")
 
-# Exact Ordered Column Array Matching Explicit Join Suffix Keys
+# Reordered Column Layout (Matching Exact DataFrame Keys)
 ordered_cols = [
-    "Close_15m",
-    "HA_Close_15m",
-    "15M_Hurst_Normal",
-    "15M_Kalman_Hurst_Norm",
-    "15M_Hurst_HA",
-    "15M_Kalman_Hurst_HA",
-    "15M_HAM_Normal",
-    "15M_HAM_HA",
-    "Close_1h",
-    "HA_Close_1h",
+    "1H_Close",
+    "1H_HA_Close",
     "1H_Hurst_Normal",
-    "1H_Kalman_Hurst_Norm",
     "1H_Hurst_HA",
-    "1H_Kalman_Hurst_HA",
     "1H_HAM_Normal",
     "1H_HAM_HA",
+    "15M_Close",
+    "15M_HA_Close",
+    "15M_Hurst_Normal",
+    "15M_Hurst_HA",
     "Hurst_HA_Diff",
-    "Kalman_Hurst_HA_Diff",
+    "15M_HAM_Normal",
+    "15M_HAM_HA",
 ]
 
 display_df = display_df[ordered_cols].round(2)
@@ -444,45 +421,15 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 st.dataframe(
     display_df,
     column_config={
-        "Close_15m": st.column_config.NumberColumn(
-            "15M Close", format="$%.2f"
-        ),
-        "HA_Close_15m": st.column_config.NumberColumn(
-            "15M HA Close", format="$%.2f"
-        ),
-        "15M_Hurst_Normal": st.column_config.NumberColumn(
-            "15M Hurst Norm", format="%.2f"
-        ),
-        "15M_Kalman_Hurst_Norm": st.column_config.NumberColumn(
-            "15M KalHurst Norm", format="%.2f"
-        ),
-        "15M_Hurst_HA": st.column_config.NumberColumn(
-            "15M Hurst HA", format="%.2f"
-        ),
-        "15M_Kalman_Hurst_HA": st.column_config.NumberColumn(
-            "15M KalHurst HA", format="%.2f"
-        ),
-        "15M_HAM_Normal": st.column_config.NumberColumn(
-            "15M HAM Norm", format="%.2f"
-        ),
-        "15M_HAM_HA": st.column_config.NumberColumn(
-            "15M HAM HA", format="%.2f"
-        ),
-        "Close_1h": st.column_config.NumberColumn("1H Close", format="$%.2f"),
-        "HA_Close_1h": st.column_config.NumberColumn(
+        "1H_Close": st.column_config.NumberColumn("1H Close", format="$%.2f"),
+        "1H_HA_Close": st.column_config.NumberColumn(
             "1H HA Close", format="$%.2f"
         ),
         "1H_Hurst_Normal": st.column_config.NumberColumn(
             "1H Hurst Norm", format="%.2f"
         ),
-        "1H_Kalman_Hurst_Norm": st.column_config.NumberColumn(
-            "1H KalHurst Norm", format="%.2f"
-        ),
         "1H_Hurst_HA": st.column_config.NumberColumn(
             "1H Hurst HA", format="%.2f"
-        ),
-        "1H_Kalman_Hurst_HA": st.column_config.NumberColumn(
-            "1H KalHurst HA", format="%.2f"
         ),
         "1H_HAM_Normal": st.column_config.NumberColumn(
             "1H HAM Norm", format="%.2f"
@@ -490,11 +437,26 @@ st.dataframe(
         "1H_HAM_HA": st.column_config.NumberColumn(
             "1H HAM HA", format="%.2f"
         ),
-        "Hurst_HA_Diff": st.column_config.NumberColumn(
-            "Hurst HA Diff", format="%+.2f"
+        "15M_Close": st.column_config.NumberColumn(
+            "15M Close", format="$%.2f"
         ),
-        "Kalman_Hurst_HA_Diff": st.column_config.NumberColumn(
-            "KalHurst HA Diff", format="%+.2f"
+        "15M_HA_Close": st.column_config.NumberColumn(
+            "15M HA Close", format="$%.2f"
+        ),
+        "15M_Hurst_Normal": st.column_config.NumberColumn(
+            "15M Hurst Norm", format="%.2f"
+        ),
+        "15M_Hurst_HA": st.column_config.NumberColumn(
+            "15M Hurst HA", format="%.2f"
+        ),
+        "Hurst_HA_Diff": st.column_config.NumberColumn(
+            "Hurst HA Diff (15M-1H)", format="%+.2f"
+        ),
+        "15M_HAM_Normal": st.column_config.NumberColumn(
+            "15M HAM Norm", format="%.2f"
+        ),
+        "15M_HAM_HA": st.column_config.NumberColumn(
+            "15M HAM HA", format="%.2f"
         ),
     },
     use_container_width=True,
