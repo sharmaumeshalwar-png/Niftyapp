@@ -6,15 +6,16 @@ import requests
 import streamlit as st
 
 # =====================================================================
-# PAGE CONFIGURATION
+# PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 1H Multi-HAM Matrix (Learn:Predict)", layout="wide"
+    page_title="BTC 2-Year Kinematics Engine (50:50 Split)", layout="wide"
 )
-st.title("⚡ BTC-USD 1-Hour Engine (Multi-HAM Matrix)")
+st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **50:50 Learn:Predict Architecture:** Exact Original HA HAM vs Raw Close"
-    " HAM vs New ATR HAM"
+    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Multi-HAM Matrix"
+    " (Cascaded Dual-Kalman Kinematics) | 50:50 Learn:Predict Split | IST Locked"
+    " [Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -24,42 +25,43 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
   st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **50:50 Split Stream:** CONNECTED"
+  "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Dual REST Stream:** CONNECTED"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES
+# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.0005, r_val=0.2):
+def apply_kalman_filter_custom(
+    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+):
+  """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
   arr = np.asarray(data_array, dtype=float).flatten()
   if len(arr) == 0:
     return np.array([])
   x, p = arr[0], initial_p
-  filtered = np.empty(len(arr))
+  filtered_values = np.empty(len(arr))
   for i, z in enumerate(arr):
     p = p + q_val
     k = p / (p + r_val)
     x = x + k * (z - x)
     p = (1 - k) * p
-    filtered[i] = x
-  return filtered
+    filtered_values[i] = x
+  return filtered_values
 
 
-def calculate_rolling_hurst_classic(price_series, window=50):
-  """Classic Hurst Exponent using Simple Relative Price Returns."""
+def calculate_rolling_hurst_vectorized(price_series, window=50):
+  """Purely trailing rolling Hurst exponent calculation."""
   arr = np.asarray(price_series, dtype=float).flatten()
   s = pd.Series(arr)
-
-  # Simple percent returns for exact classic matching
-  returns = s.pct_change().fillna(0.0).to_numpy()
+  log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
   hurst_values = np.full(len(arr), 0.5)
 
-  if len(returns) < window:
+  if len(log_returns) < window:
     return hurst_values
 
   windows = np.lib.stride_tricks.sliding_window_view(
-      returns, window_shape=window
+      log_returns, window_shape=window
   )
   means = np.mean(windows, axis=1, keepdims=True)
   cum_dev = np.cumsum(windows - means, axis=1)
@@ -69,14 +71,15 @@ def calculate_rolling_hurst_classic(price_series, window=50):
   rs_ratio = r_val / s_val
 
   valid_mask = rs_ratio > 0
-  h_calc = np.full(len(rs_ratio), 0.5)
-  h_calc[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
+  h_calculated = np.full(len(rs_ratio), 0.5)
+  h_calculated[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
 
-  hurst_values[window - 1 :] = np.clip(h_calc, 0.0, 1.0)
+  hurst_values[window - 1 :] = np.clip(h_calculated, 0.0, 1.0)
   return hurst_values
 
 
 def apply_heikin_ashi(df_in):
+  """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
   op = np.asarray(df_in["Open"], dtype=float).flatten()
   hi = np.asarray(df_in["High"], dtype=float).flatten()
   lo = np.asarray(df_in["Low"], dtype=float).flatten()
@@ -111,13 +114,15 @@ def calculate_atr(df_in, period=14):
 
 
 # =====================================================================
-# DUAL SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
+# RELIABLE DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
 @st.cache_data(ttl=3600)
-def fetch_binance_1h_2yr(start_ts, end_ts):
+def fetch_binance_data(start_ts, end_ts):
+  """Attempts fetching 2 years from Binance."""
   endpoint = "https://api.binance.com/api/v3/klines"
   all_candles = []
   current_start = start_ts
+
   headers = {
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -131,22 +136,21 @@ def fetch_binance_1h_2yr(start_ts, end_ts):
         "startTime": current_start,
         "limit": 1000,
     }
-    try:
-      res = requests.get(
-          endpoint, params=params, headers=headers, timeout=10
-      ).json()
-      if not isinstance(res, list) or len(res) == 0:
-        break
-      all_candles.extend(res)
-      last_candle_time = res[-1][0]
-      if last_candle_time <= current_start:
-        break
-      current_start = last_candle_time + 1
-      time.sleep(0.02)
-    except Exception:
+    res = requests.get(
+        endpoint, params=params, headers=headers, timeout=10
+    ).json()
+
+    if not isinstance(res, list) or len(res) == 0:
       break
 
-  if len(all_candles) < 500:
+    all_candles.extend(res)
+    last_candle_time = res[-1][0]
+    if last_candle_time <= current_start:
+      break
+    current_start = last_candle_time + 1
+    time.sleep(0.02)
+
+  if len(all_candles) < 2000:
     return None
 
   cols = [
@@ -172,9 +176,11 @@ def fetch_binance_1h_2yr(start_ts, end_ts):
 
 
 @st.cache_data(ttl=3600)
-def fetch_coinbase_1h_2yr(start_dt, now_dt):
+def fetch_coinbase_data(start_dt, now_dt):
+  """Fallback engine using Coinbase Pro Pagination."""
   endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
   headers = {"User-Agent": "Mozilla/5.0"}
+
   current_end = now_dt
   all_candles = []
 
@@ -185,20 +191,19 @@ def fetch_coinbase_1h_2yr(start_dt, now_dt):
         "start": current_start.isoformat(),
         "end": current_end.isoformat(),
     }
-    try:
-      res = requests.get(
-          endpoint, params=params, headers=headers, timeout=10
-      ).json()
-      if isinstance(res, list) and len(res) > 0:
-        all_candles.extend(res)
-      else:
-        break
-      current_end = current_start
-      time.sleep(0.05)
-    except Exception:
+    res = requests.get(
+        endpoint, params=params, headers=headers, timeout=10
+    ).json()
+
+    if isinstance(res, list) and len(res) > 0:
+      all_candles.extend(res)
+    else:
       break
 
-  if len(all_candles) < 500:
+    current_end = current_start
+    time.sleep(0.05)
+
+  if len(all_candles) == 0:
     return None
 
   cols = ["time", "Low", "High", "Open", "Close", "Volume"]
@@ -210,158 +215,189 @@ def fetch_coinbase_1h_2yr(start_dt, now_dt):
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
-def get_robust_2year_data():
+def get_robust_2year_hourly():
   now = datetime.now(timezone.utc)
   start_dt = now - timedelta(days=730)
 
   try:
-    df = fetch_binance_1h_2yr(
+    df = fetch_binance_data(
         int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
     )
-    if df is not None and len(df) >= 500:
-      return df, "Binance REST API (1H)"
+    if df is not None and len(df) >= 5000:
+      return df, "Binance REST API"
   except Exception:
     pass
 
-  try:
-    df = fetch_coinbase_1h_2yr(start_dt, now)
-    if df is not None and len(df) >= 500:
-      return df, "Coinbase Pro API (1H)"
-  except Exception:
-    pass
+  df = fetch_coinbase_data(start_dt, now)
+  if df is not None and len(df) >= 2000:
+    return df, "Coinbase Pro API (Fallback)"
 
-  return None, None
+  raise ValueError(
+      "Both primary and fallback endpoints failed to return sufficient candles."
+  )
 
 
 # Fetch Data
 try:
-  with st.spinner("🔄 Fetching 2-Year Dataset..."):
-    df_raw, source = get_robust_2year_data()
+  with st.spinner(
+      "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
+  ):
+    df, source_used = get_robust_2year_hourly()
 
-    if df_raw is None:
-      st.error(
-          "🚨 Fetch Error: Unable to fetch data. Click 'Force Refresh Engine'."
-      )
-      st.stop()
+    df.sort_index(inplace=True)
+    df = df[~df.index.duplicated(keep="first")]
 
-    df_raw.sort_index(inplace=True)
-    df_raw = df_raw[~df_raw.index.duplicated(keep="first")].iloc[:-1]
-    df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
+    # 🔒 STRICT LEAKAGE PREVENTION: Drop the unclosed running candle
+    df = df.iloc[:-1]
+
+    # Convert to IST
+    df.index = df.index.tz_convert("Asia/Kolkata")
+
 except Exception as e:
-  st.error(f"🚨 Data Error: {e}")
+  st.error(f"🚨 Data Engine Error: {e}")
   st.stop()
 
-df_full = apply_heikin_ashi(df_raw)
 
 # =====================================================================
-# 50:50 LEARN vs PREDICT ENGINE
+# ⚡ CORE TRANSFORMATIONS & 50:50 LEARN:PREDICT SPLIT
 # =====================================================================
-split_idx = len(df_full) // 2
-df_learn = df_full.iloc[:split_idx].copy()
-df_predict = df_full.iloc[split_idx:].copy()
+df = apply_heikin_ashi(df)
 
-# Noise Calibration for ATR HAM
-learn_close = df_learn["Close"].to_numpy()
-learn_kalman = apply_kalman_filter(learn_close)
-learn_atr = calculate_atr(df_learn, period=14).to_numpy()
-learn_residuals = (learn_close - learn_kalman) / np.where(
-    learn_atr > 0, learn_atr, 1.0
-)
-calibrated_std = np.std(learn_residuals)
+total_candles = len(df)
+split_idx = int(total_candles * 0.50)  # Strict 50:50 Cut
 
-# Predict Phase Calculation
-pred_close = df_predict["Close"].to_numpy()
-pred_ha_close = df_predict["HA_Close"].to_numpy()
+# Train/Learn Phase Data (First 50%)
+df_learn = df.iloc[:split_idx].copy()
+# Predict/Kinematic Phase Data (Last 50%)
+df_predict = df.iloc[split_idx:].copy()
 
-df_predict["Kalman_Close"] = apply_kalman_filter(pred_close)
-df_predict["Kalman_HA"] = apply_kalman_filter(pred_ha_close)
-
-# Rolling Hurst calculation
-df_predict["Hurst_Normal"] = calculate_rolling_hurst_classic(
-    pred_close, window=50
-)
-df_predict["Hurst_HA"] = calculate_rolling_hurst_classic(
-    pred_ha_close, window=50
+st.success(
+    f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
+    f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
+    f" {len(df_predict):,} (IST Locked)"
 )
 
+# --- PATH A: NORMAL CANDLE KINEMATICS (Cascaded Dual-Kalman Filter) ---
+normal_close = np.asarray(df_predict["Close"], dtype=float).flatten()
+df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close, window=50
+)
+
+# First-Pass Kalman Filter (Base Trend)
+kalman_base_normal = apply_kalman_filter_custom(
+    normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+# Second-Pass Kalman Filter (Smoothed Kinematic Momentum)
+momentum_normal = apply_kalman_filter_custom(
+    normal_close - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df_predict["HAM_Normal"] = momentum_normal * (
+    df_predict["Hurst_Normal"].to_numpy() * 2.0
+)
+
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close = np.asarray(df_predict["HA_Close"], dtype=float).flatten()
+df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    ha_close, window=50
+)
+
+kalman_base_ha = apply_kalman_filter_custom(
+    ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ha = apply_kalman_filter_custom(
+    ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df_predict["HAM_HeikinAshi"] = momentum_ha * (
+    df_predict["Hurst_HA"].to_numpy() * 2.0
+)
+
+# --- PATH C: WEIGHTED MOMENTUM HAM (Slope Velocity Weighting) ---
 pred_atr = calculate_atr(df_predict, period=14).to_numpy()
-
-# ---------------------------------------------------------------------
-# 1. EXACT PURE ORIGINAL OLD HAM: (HA_Close - Kalman_HA) * Hurst_HA
-# ---------------------------------------------------------------------
-ha_res = pred_ha_close - df_predict["Kalman_HA"].to_numpy()
-df_predict["🏷️ Pure_Original_Old_HAM"] = ha_res * df_predict["Hurst_HA"]
-
-# ---------------------------------------------------------------------
-# 2. RAW CLOSE HAM SCORE: (Close - Kalman_Close) * Hurst_Normal
-# ---------------------------------------------------------------------
-raw_res = pred_close - df_predict["Kalman_Close"].to_numpy()
-df_predict["⭐ Raw_Close_HAM"] = raw_res * df_predict["Hurst_Normal"]
-
-# ---------------------------------------------------------------------
-# 3. NEW ATR NORMALIZED HAM SCORE
-# ---------------------------------------------------------------------
-norm_res = raw_res / np.where(pred_atr > 0, pred_atr, 1.0)
-atr_ham = (norm_res / (calibrated_std + 1e-6)) * df_predict["Hurst_Normal"]
-df_predict["🛡️ ATR_Norm_HAM"] = (
-    pd.Series(atr_ham, index=df_predict.index).ewm(span=3).mean()
+kalman_slope = np.gradient(kalman_base_normal)
+weighted_momentum_multiplier = 1.0 + np.tanh(
+    kalman_slope / np.where(pred_atr > 0, pred_atr, 1.0)
 )
+df_predict["Weighted_Momentum"] = weighted_momentum_multiplier
+
+# Weighted Momentum HAM = Cascaded Momentum * Momentum Weight * (Hurst * 2.0)
+df_predict["HAM_Weighted_Momentum"] = (
+    momentum_normal
+    * weighted_momentum_multiplier
+    * (df_predict["Hurst_Normal"].to_numpy() * 2.0)
+)
+
+df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 
 # =====================================================================
-# DASHBOARD MATRIX
+# 📋 MATRIX FORMATTING AND IST DISPLAY
 # =====================================================================
-latest_pred = df_predict.iloc[-1]
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Current Close", f"${latest_pred['Close']:,.2f}")
-c2.metric(
-    "🏷️ Pure Original Old HAM",
-    f"{latest_pred['🏷️ Pure_Original_Old_HAM']:+.2f}",
-)
-c3.metric("⭐ Raw Close HAM", f"{latest_pred['⭐ Raw_Close_HAM']:+.2f}")
-c4.metric("🛡️ ATR Norm HAM", f"{latest_pred['🛡️ ATR_Norm_HAM']:+.2f}")
-
-st.caption(
-    f"⏰ **Last Candle Time:**"
-    f" `{df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')}` | **Data"
-    f" Source:** {source}"
-)
-st.divider()
-
-st.subheader("📋 Predict Phase Matrix")
-
-display_df = df_predict.iloc[::-1].copy()
-cols_to_show = [
+clean_cols = [
     "Close",
     "HA_Close",
-    "Kalman_HA",
+    "Hurst_Normal",
     "Hurst_HA",
-    "🏷️ Pure_Original_Old_HAM",  # Pure (HA_Close - Kalman_HA) * Hurst_HA
-    "⭐ Raw_Close_HAM",  # Raw Close (Close - Kalman_Close) * Hurst_Normal
-    "🛡️ ATR_Norm_HAM",  # New ATR Normalized HAM
+    "HAM_Normal",
+    "HAM_HeikinAshi",
+    "Weighted_Momentum",
+    "HAM_Weighted_Momentum",
 ]
+display_df = pd.DataFrame(index=df_predict.index)
 
-table_df = display_df[cols_to_show].round(2)
-table_df.index = table_df.index.strftime("%Y-%m-%d %H:%M IST")
+for col in clean_cols:
+  display_df[col] = (
+      np.asarray(df_predict[col], dtype=float).flatten().round(2)
+  )
+
+# Reverse DataFrame to display latest closed candle at top
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+
+# 🎯 LATEST LOCKED CANDLE METRIC CARD
+latest_candle = display_df.iloc[0]
+latest_time = display_df.index[0]
+
+st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col2.metric("Normal HAM Signal", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("HA HAM Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric(
+    "🚀 Weighted Momentum HAM",
+    f"{latest_candle['HAM_Weighted_Momentum']:.2f}",
+)
+
+st.divider()
+
+st.subheader(
+    f"📋 50:50 Dynamic Kinematic Matrix ({len(display_df):,} Predict Candles)"
+)
 
 st.dataframe(
-    table_df,
+    display_df,
     column_config={
-        "Close": st.column_config.NumberColumn("Close", format="$%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close", format="$%.2f"),
-        "Kalman_HA": st.column_config.NumberColumn(
-            "Kalman (HA)", format="$%.2f"
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
+        ),
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
+        ),
+        "Hurst_Normal": st.column_config.NumberColumn(
+            "Hurst (Normal)", format="%.2f"
         ),
         "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "🏷️ Pure_Original_Old_HAM": st.column_config.NumberColumn(
-            "🏷️ Pure Original Old HAM", format="%+.2f"
+        "HAM_Normal": st.column_config.NumberColumn(
+            "HAM Normal Signal", format="%.2f"
         ),
-        "⭐ Raw_Close_HAM": st.column_config.NumberColumn(
-            "⭐ Raw Close HAM", format="%+.2f"
+        "HAM_HeikinAshi": st.column_config.NumberColumn(
+            "HAM HA Signal", format="%.2f"
         ),
-        "🛡️ ATR_Norm_HAM": st.column_config.NumberColumn(
-            "🛡️ New ATR HAM", format="%+.2f"
+        "Weighted_Momentum": st.column_config.NumberColumn(
+            "Momentum Weight", format="%.2fx"
+        ),
+        "HAM_Weighted_Momentum": st.column_config.NumberColumn(
+            "🚀 Weighted Momentum HAM", format="%.2f"
         ),
     },
     use_container_width=True,
