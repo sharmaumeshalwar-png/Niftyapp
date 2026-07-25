@@ -9,13 +9,13 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Dual Engine Matrix (1H + 15M)", layout="wide"
+    page_title="BTC Dual Engine Matrix (50:50 Hybrid HAM)", layout="wide"
 )
 st.title("⚡ BTC-USD Dual-Engine Kinematic Matrix (1H & 15M)")
 st.write(
-    "🎯 **Synchronized Dual Timeframe Engine:** 1-Hour & 15-Minute Kinematic "
-    "Matrix + Hurst Difference Column | IST Locked [Strict Zero Future"
-    " Leakage]"
+    "🎯 **Synchronized Dual Timeframe Engine:** 1-Hour (2-Year Lookback) &"
+    " 15-Minute Kinematic Matrix + Dynamic 50:50 Hybrid HAM Column | IST"
+    " Locked [Strict Zero Future Leakage]"
 )
 
 # Sidebar Controls
@@ -101,6 +101,18 @@ def apply_heikin_ashi(df_in):
   df_out["HA_Low"] = ha_low
   df_out["HA_Close"] = ha_close
   return df_out
+
+
+def calculate_atr(df_in, period=14):
+  """Calculates Average True Range for dynamic volatility standardization."""
+  high = df_in["High"]
+  low = df_in["Low"]
+  close = df_in["Close"].shift(1)
+  tr = np.maximum(
+      high - low,
+      np.maximum(np.abs(high - close), np.abs(low - close)),
+  )
+  return tr.rolling(period).mean().fillna(method="bfill")
 
 
 # =====================================================================
@@ -206,7 +218,7 @@ def fetch_coinbase_data(start_dt, now_dt, granularity=3600):
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
-def get_robust_timeframe_data(interval="1h", days=60):
+def get_robust_timeframe_data(interval="1h", days=730):
   now = datetime.now(timezone.utc)
   start_dt = now - timedelta(days=days)
   granularity_map = {"1h": 3600, "15m": 900}
@@ -229,12 +241,10 @@ def get_robust_timeframe_data(interval="1h", days=60):
   raise ValueError(f"Failed to fetch data for interval: {interval}")
 
 
-# Fetch Sync Data (60 Days Window)
+# Fetch Sync Data (1H = 2 Years / 730 Days, 15M = 60 Days)
 try:
-  with st.spinner(
-      "🔄 Synchronizing 1-Hour & 15-Minute Streams (Zero Leakage)..."
-  ):
-    df_1h_raw, source_1h = get_robust_timeframe_data(interval="1h", days=60)
+  with st.spinner("🔄 Synchronizing 1H (2-Year Data) & 15M Streams..."):
+    df_1h_raw, source_1h = get_robust_timeframe_data(interval="1h", days=730)
     df_1h_raw.sort_index(inplace=True)
     df_1h_raw = df_1h_raw[~df_1h_raw.index.duplicated(keep="first")].iloc[:-1]
     df_1h_raw.index = df_1h_raw.index.tz_convert("Asia/Kolkata")
@@ -251,52 +261,69 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ 1-HOUR ENGINE PROCESSING
+# ⚡ 1-HOUR ENGINE PROCESSING (50:50 HYBRID + MAGICAL HAM)
 # =====================================================================
 df_1h = apply_heikin_ashi(df_1h_raw)
 
+# 1. 50:50 Hybrid Price Construction (New Theory)
+df_1h["Hybrid_Price"] = 0.5 * df_1h["Close"] + 0.5 * df_1h["HA_Close"]
+hybrid_series_1h = df_1h["Hybrid_Price"].to_numpy()
+
+# 2. Kalman Baseline on Hybrid Price
+kalman_base_1h_hybrid = apply_kalman_filter_custom(
+    hybrid_series_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+df_1h["1H_Kalman_Baseline"] = kalman_base_1h_hybrid
+
+# 3. Dynamic Multipliers (ATR + Velocity + Hurst)
+atr_1h = calculate_atr(df_1h, period=14).to_numpy()
+raw_residual_1h = hybrid_series_1h - kalman_base_1h_hybrid
+norm_residual_1h = np.where(atr_1h > 0, raw_residual_1h / atr_1h, 0.0)
+
+kalman_velocity_1h = np.gradient(kalman_base_1h_hybrid) / np.where(
+    atr_1h > 0, atr_1h, 1.0
+)
+velocity_mult_1h = 1.0 + np.tanh(kalman_velocity_1h)
+
+hurst_1h_hybrid = calculate_rolling_hurst_vectorized(
+    hybrid_series_1h, window=50
+)
+df_1h["1H_Hurst_Hybrid"] = hurst_1h_hybrid
+hurst_gain_1h = 2.0 * hurst_1h_hybrid
+
+# 4. NEW MAGICAL HYBRID HAM COLUMN
+magical_hybrid_ham_1h = norm_residual_1h * velocity_mult_1h * hurst_gain_1h
+df_1h["1H_Magical_Hybrid_HAM"] = pd.Series(
+    magical_hybrid_ham_1h, index=df_1h.index
+).ewm(span=3).mean()
+
+# Normal & HA Legacy Baselines
 normal_close_1h = np.asarray(df_1h["Close"], dtype=float).flatten()
 df_1h["1H_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_1h, window=50
 )
-kalman_base_1h_norm = apply_kalman_filter_custom(
-    normal_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_1h_norm = apply_kalman_filter_custom(
-    normal_close_1h - kalman_base_1h_norm, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_1h["1H_HAM_Normal"] = momentum_1h_norm * (
-    df_1h["1H_Hurst_Normal"].to_numpy() * 2.0
+df_1h["1H_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
+    apply_kalman_filter_custom(normal_close_1h), window=50
 )
 
 ha_close_1h = np.asarray(df_1h["HA_Close"], dtype=float).flatten()
 df_1h["1H_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     ha_close_1h, window=50
 )
-kalman_base_1h_ha = apply_kalman_filter_custom(
-    ha_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
+df_1h["1H_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    apply_kalman_filter_custom(ha_close_1h), window=50
 )
-momentum_1h_ha = apply_kalman_filter_custom(
-    ha_close_1h - kalman_base_1h_ha, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_1h["1H_HAM_HA"] = momentum_1h_ha * (df_1h["1H_Hurst_HA"].to_numpy() * 2.0)
 
 df_1h_clean = df_1h[[
     "Close",
     "HA_Close",
+    "Hybrid_Price",
     "1H_Hurst_Normal",
+    "1H_Kalman_Hurst_Norm",
     "1H_Hurst_HA",
-    "1H_HAM_Normal",
-    "1H_HAM_HA",
+    "1H_Kalman_Hurst_HA",
+    "1H_Magical_Hybrid_HAM",
 ]].copy()
-df_1h_clean.columns = [
-    "1H_Close",
-    "1H_HA_Close",
-    "1H_Hurst_Normal",
-    "1H_Hurst_HA",
-    "1H_HAM_Normal",
-    "1H_HAM_HA",
-]
 
 
 # =====================================================================
@@ -308,63 +335,40 @@ normal_close_15m = np.asarray(df_15m["Close"], dtype=float).flatten()
 df_15m["15M_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_15m, window=50
 )
-kalman_base_15m_norm = apply_kalman_filter_custom(
-    normal_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_15m_norm = apply_kalman_filter_custom(
-    normal_close_15m - kalman_base_15m_norm,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
-)
-df_15m["15M_HAM_Normal"] = momentum_15m_norm * (
-    df_15m["15M_Hurst_Normal"].to_numpy() * 2.0
+df_15m["15M_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
+    apply_kalman_filter_custom(normal_close_15m), window=50
 )
 
 ha_close_15m = np.asarray(df_15m["HA_Close"], dtype=float).flatten()
 df_15m["15M_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     ha_close_15m, window=50
 )
-kalman_base_15m_ha = apply_kalman_filter_custom(
-    ha_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_15m_ha = apply_kalman_filter_custom(
-    ha_close_15m - kalman_base_15m_ha, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_15m["15M_HAM_HA"] = momentum_15m_ha * (
-    df_15m["15M_Hurst_HA"].to_numpy() * 2.0
+df_15m["15M_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    apply_kalman_filter_custom(ha_close_15m), window=50
 )
 
 df_15m_clean = df_15m[[
     "Close",
     "HA_Close",
     "15M_Hurst_Normal",
+    "15M_Kalman_Hurst_Norm",
     "15M_Hurst_HA",
-    "15M_HAM_Normal",
-    "15M_HAM_HA",
+    "15M_Kalman_Hurst_HA",
 ]].copy()
-df_15m_clean.columns = [
-    "15M_Close",
-    "15M_HA_Close",
-    "15M_Hurst_Normal",
-    "15M_Hurst_HA",
-    "15M_HAM_Normal",
-    "15M_HAM_HA",
-]
 
 
 # =====================================================================
-# 📋 UNIFIED MERGE & NEW HURST DIFFERENTIAL COLUMN
+# 📋 UNIFIED MERGE & MATRIX RENDERING
 # =====================================================================
-# Forward fill 1-Hour values across 15-minute intervals
-combined_df = df_15m_clean.join(df_1h_clean, how="left").ffill()
+combined_df = df_15m_clean.join(
+    df_1h_clean, how="left", lsuffix="_15m", rsuffix="_1h"
+).ffill()
 
-# 🎯 NEW COLUMN: (15M Hurst HA - 1H Hurst HA)
-combined_df["Hurst_HA_Diff"] = (
-    combined_df["15M_Hurst_HA"] - combined_df["1H_Hurst_HA"]
+# Differential Metrics
+combined_df["Kalman_Hurst_HA_Diff"] = (
+    combined_df["15M_Kalman_Hurst_HA"] - combined_df["1H_Kalman_Hurst_HA"]
 )
 
-# Display latest candle at top
 display_df = combined_df.iloc[::-1].copy()
 
 # Lock Status Timestamps
@@ -375,44 +379,53 @@ st.markdown("### 🔒 **LOCKED FINAL CANDLES (IST)**")
 
 c1, c2, c3 = st.columns([2, 2, 1.5])
 with c1:
-  st.info(f"⏰ **1-Hour Locked Candle:** `{locked_1h_time}`")
+  st.info(f"⏰ **1-Hour Locked Candle (2-Yr Engine):** `{locked_1h_time}`")
   m1, m2 = st.columns(2)
-  m1.metric("1H HA Close", f"${df_1h_clean['1H_HA_Close'].iloc[-1]:,.2f}")
-  m2.metric("1H Hurst HA", f"{df_1h_clean['1H_Hurst_HA'].iloc[-1]:.2f}")
+  m1.metric("1H Hybrid Price", f"${df_1h_clean['Hybrid_Price'].iloc[-1]:,.2f}")
+  m2.metric(
+      "1H Magical Hybrid HAM",
+      f"{df_1h_clean['1H_Magical_Hybrid_HAM'].iloc[-1]:+.2f}",
+  )
 
 with c2:
   st.info(f"⚡ **15-Min Locked Candle:** `{locked_15m_time}`")
   n1, n2 = st.columns(2)
-  n1.metric("15M HA Close", f"${df_15m_clean['15M_HA_Close'].iloc[-1]:,.2f}")
-  n2.metric("15M Hurst HA", f"{df_15m_clean['15M_Hurst_HA'].iloc[-1]:.2f}")
+  n1.metric("15M HA Close", f"${df_15m_clean['HA_Close'].iloc[-1]:,.2f}")
+  n2.metric(
+      "15M Kalman Hurst HA",
+      f"{df_15m_clean['15M_Kalman_Hurst_HA'].iloc[-1]:.2f}",
+  )
 
 with c3:
-  latest_diff = combined_df["Hurst_HA_Diff"].iloc[-1]
+  latest_diff = combined_df["Kalman_Hurst_HA_Diff"].iloc[-1]
   st.metric(
-      "📊 Hurst HA Diff (15M - 1H)",
+      "📊 Kalman Hurst HA Diff (15M-1H)",
       f"{latest_diff:+.2f}",
       delta_color="normal",
   )
 
 st.divider()
 
-st.subheader("📋 Unified Dual-Engine Matrix with Hurst Difference Column")
+st.subheader(
+    "📋 Unified Dual-Engine Matrix (Featuring 1H 50:50 Hybrid Magical HAM)"
+)
 
-# Reordered Column Layout (Matching Exact DataFrame Keys)
 ordered_cols = [
-    "1H_Close",
-    "1H_HA_Close",
-    "1H_Hurst_Normal",
-    "1H_Hurst_HA",
-    "1H_HAM_Normal",
-    "1H_HAM_HA",
-    "15M_Close",
-    "15M_HA_Close",
+    "Close_15m",
+    "HA_Close_15m",
     "15M_Hurst_Normal",
+    "15M_Kalman_Hurst_Norm",
     "15M_Hurst_HA",
-    "Hurst_HA_Diff",
-    "15M_HAM_Normal",
-    "15M_HAM_HA",
+    "15M_Kalman_Hurst_HA",
+    "Close_1h",
+    "HA_Close_1h",
+    "Hybrid_Price",
+    "1H_Hurst_Normal",
+    "1H_Kalman_Hurst_Norm",
+    "1H_Hurst_HA",
+    "1H_Kalman_Hurst_HA",
+    "1H_Magical_Hybrid_HAM",  # New Column Added Here
+    "Kalman_Hurst_HA_Diff",
 ]
 
 display_df = display_df[ordered_cols].round(2)
@@ -421,42 +434,48 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 st.dataframe(
     display_df,
     column_config={
-        "1H_Close": st.column_config.NumberColumn("1H Close", format="$%.2f"),
-        "1H_HA_Close": st.column_config.NumberColumn(
-            "1H HA Close", format="$%.2f"
-        ),
-        "1H_Hurst_Normal": st.column_config.NumberColumn(
-            "1H Hurst Norm", format="%.2f"
-        ),
-        "1H_Hurst_HA": st.column_config.NumberColumn(
-            "1H Hurst HA", format="%.2f"
-        ),
-        "1H_HAM_Normal": st.column_config.NumberColumn(
-            "1H HAM Norm", format="%.2f"
-        ),
-        "1H_HAM_HA": st.column_config.NumberColumn(
-            "1H HAM HA", format="%.2f"
-        ),
-        "15M_Close": st.column_config.NumberColumn(
+        "Close_15m": st.column_config.NumberColumn(
             "15M Close", format="$%.2f"
         ),
-        "15M_HA_Close": st.column_config.NumberColumn(
+        "HA_Close_15m": st.column_config.NumberColumn(
             "15M HA Close", format="$%.2f"
         ),
         "15M_Hurst_Normal": st.column_config.NumberColumn(
             "15M Hurst Norm", format="%.2f"
         ),
+        "15M_Kalman_Hurst_Norm": st.column_config.NumberColumn(
+            "15M KalHurst Norm", format="%.2f"
+        ),
         "15M_Hurst_HA": st.column_config.NumberColumn(
             "15M Hurst HA", format="%.2f"
         ),
-        "Hurst_HA_Diff": st.column_config.NumberColumn(
-            "Hurst HA Diff (15M-1H)", format="%+.2f"
+        "15M_Kalman_Hurst_HA": st.column_config.NumberColumn(
+            "15M KalHurst HA", format="%.2f"
         ),
-        "15M_HAM_Normal": st.column_config.NumberColumn(
-            "15M HAM Norm", format="%.2f"
+        "Close_1h": st.column_config.NumberColumn("1H Close", format="$%.2f"),
+        "HA_Close_1h": st.column_config.NumberColumn(
+            "1H HA Close", format="$%.2f"
         ),
-        "15M_HAM_HA": st.column_config.NumberColumn(
-            "15M HAM HA", format="%.2f"
+        "Hybrid_Price": st.column_config.NumberColumn(
+            "1H 50:50 Hybrid Price", format="$%.2f"
+        ),
+        "1H_Hurst_Normal": st.column_config.NumberColumn(
+            "1H Hurst Norm", format="%.2f"
+        ),
+        "1H_Kalman_Hurst_Norm": st.column_config.NumberColumn(
+            "1H KalHurst Norm", format="%.2f"
+        ),
+        "1H_Hurst_HA": st.column_config.NumberColumn(
+            "1H Hurst HA", format="%.2f"
+        ),
+        "1H_Kalman_Hurst_HA": st.column_config.NumberColumn(
+            "1H KalHurst HA", format="%.2f"
+        ),
+        "1H_Magical_Hybrid_HAM": st.column_config.NumberColumn(
+            "⭐ 1H Magical Hybrid HAM", format="%+.2f"
+        ),
+        "Kalman_Hurst_HA_Diff": st.column_config.NumberColumn(
+            "KalHurst HA Diff", format="%+.2f"
         ),
     },
     use_container_width=True,
