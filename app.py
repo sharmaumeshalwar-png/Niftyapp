@@ -112,7 +112,7 @@ def calculate_atr(df_in, period=14):
       high - low,
       np.maximum(np.abs(high - close), np.abs(low - close)),
   )
-  return tr.rolling(period).mean().fillna(method="bfill")
+  return tr.rolling(period).mean().bfill()
 
 
 # =====================================================================
