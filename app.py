@@ -23,6 +23,10 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
   st.cache_data.clear()
   st.rerun()
 
+st.sidebar.success(
+    "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **50:50 Split Stream:** CONNECTED"
+)
+
 
 # =====================================================================
 # MATHEMATICAL ENGINES
@@ -104,14 +108,18 @@ def calculate_atr(df_in, period=14):
 
 
 # =====================================================================
-# DATA FETCH ENGINE
+# DUAL SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
 @st.cache_data(ttl=3600)
 def fetch_binance_1h_2yr(start_ts, end_ts):
   endpoint = "https://api.binance.com/api/v3/klines"
   all_candles = []
   current_start = start_ts
-  headers = {"User-Agent": "Mozilla/5.0"}
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      )
+  }
 
   while current_start < end_ts:
     params = {
@@ -160,17 +168,80 @@ def fetch_binance_1h_2yr(start_ts, end_ts):
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
+@st.cache_data(ttl=3600)
+def fetch_coinbase_1h_2yr(start_dt, now_dt):
+  endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+  headers = {"User-Agent": "Mozilla/5.0"}
+  current_end = now_dt
+  all_candles = []
+
+  while current_end > start_dt:
+    current_start = max(start_dt, current_end - timedelta(hours=300))
+    params = {
+        "granularity": 3600,
+        "start": current_start.isoformat(),
+        "end": current_end.isoformat(),
+    }
+    try:
+      res = requests.get(
+          endpoint, params=params, headers=headers, timeout=10
+      ).json()
+      if isinstance(res, list) and len(res) > 0:
+        all_candles.extend(res)
+      else:
+        break
+      current_end = current_start
+      time.sleep(0.05)
+    except Exception:
+      break
+
+  if len(all_candles) < 500:
+    return None
+
+  cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+  df_raw = pd.DataFrame(all_candles, columns=cols)
+  num_cols = ["Open", "High", "Low", "Close", "Volume"]
+  df_raw[num_cols] = df_raw[num_cols].astype(float)
+  df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
+  df_raw.set_index("Timestamp", inplace=True)
+  return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def get_robust_2year_data():
+  now = datetime.now(timezone.utc)
+  start_dt = now - timedelta(days=730)
+
+  # Try Primary Source: Binance
+  try:
+    df = fetch_binance_1h_2yr(
+        int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
+    )
+    if df is not None and len(df) >= 500:
+      return df, "Binance REST API (1H)"
+  except Exception:
+    pass
+
+  # Fallback Source: Coinbase Pro
+  try:
+    df = fetch_coinbase_1h_2yr(start_dt, now)
+    if df is not None and len(df) >= 500:
+      return df, "Coinbase Pro API (1H)"
+  except Exception:
+    pass
+
+  return None, None
+
+
 # Fetch & Safeguard Data
 try:
   with st.spinner("🔄 Fetching 2-Year Dataset..."):
-    now = datetime.now(timezone.utc)
-    start_dt = now - timedelta(days=730)
-    df_raw = fetch_binance_1h_2yr(
-        int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
-    )
+    df_raw, source = get_robust_2year_data()
 
     if df_raw is None:
-      st.error("🚨 Fetch Error: Please click 'Force Refresh Engine'.")
+      st.error(
+          "🚨 Fetch Error: Unable to fetch data from Binance or Coinbase API."
+          " Please click 'Force Refresh Engine' in sidebar."
+      )
       st.stop()
 
     df_raw.sort_index(inplace=True)
@@ -246,7 +317,13 @@ c2.metric("Predict Hurst", f"{latest_pred['Hurst_Normal']:.2f}")
 c3.metric("⭐ Old HAM Score", f"{latest_pred['⭐ Old_HAM_Score']:+.2f}")
 c4.metric("🛡️ ATR Norm HAM", f"{latest_pred['🛡️ ATR_Norm_HAM']:+.2f}")
 
+st.caption(
+    f"⏰ **Last Candle Time:**"
+    f" `{df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')}` | **Data"
+    f" Source:** {source}"
+)
 st.divider()
+
 st.subheader("📋 Predict Phase Matrix (Comparing Both HAM Formulas)")
 
 display_df = df_predict.iloc[::-1].copy()
