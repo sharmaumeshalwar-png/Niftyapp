@@ -229,7 +229,7 @@ def get_robust_timeframe_data(interval="1h", days=60):
   raise ValueError(f"Failed to fetch data for interval: {interval}")
 
 
-# Fetch Sync Data (60 Days Window for High Density Stream)
+# Fetch Sync Data (60 Days Window)
 try:
   with st.spinner(
       "🔄 Synchronizing 1-Hour & 15-Minute Streams (Zero Leakage)..."
@@ -279,9 +279,7 @@ kalman_base_1h_ha = apply_kalman_filter_custom(
 momentum_1h_ha = apply_kalman_filter_custom(
     ha_close_1h - kalman_base_1h_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df_1h["1H_HAM_HeikinAshi"] = momentum_1h_ha * (
-    df_1h["1H_Hurst_HA"].to_numpy() * 2.0
-)
+df_1h["1H_HAM_HA"] = momentum_1h_ha * (df_1h["1H_Hurst_HA"].to_numpy() * 2.0)
 
 df_1h_clean = df_1h[[
     "Close",
@@ -289,7 +287,7 @@ df_1h_clean = df_1h[[
     "1H_Hurst_Normal",
     "1H_Hurst_HA",
     "1H_HAM_Normal",
-    "1H_HAM_HeikinAshi",
+    "1H_HAM_HA",
 ]].copy()
 df_1h_clean.columns = [
     "1H_Close",
@@ -333,7 +331,7 @@ kalman_base_15m_ha = apply_kalman_filter_custom(
 momentum_15m_ha = apply_kalman_filter_custom(
     ha_close_15m - kalman_base_15m_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df_15m["15M_HAM_HeikinAshi"] = momentum_15m_ha * (
+df_15m["15M_HAM_HA"] = momentum_15m_ha * (
     df_15m["15M_Hurst_HA"].to_numpy() * 2.0
 )
 
@@ -343,7 +341,7 @@ df_15m_clean = df_15m[[
     "15M_Hurst_Normal",
     "15M_Hurst_HA",
     "15M_HAM_Normal",
-    "15M_HAM_HeikinAshi",
+    "15M_HAM_HA",
 ]].copy()
 df_15m_clean.columns = [
     "15M_Close",
@@ -400,21 +398,21 @@ st.divider()
 
 st.subheader("📋 Unified Dual-Engine Matrix with Hurst Difference Column")
 
-# Reordered Column Layout including the new Differential Column
+# Reordered Column Layout (Matching Exact DataFrame Keys)
 ordered_cols = [
     "1H_Close",
     "1H_HA_Close",
     "1H_Hurst_Normal",
     "1H_Hurst_HA",
     "1H_HAM_Normal",
-    "1H_HAM_HeikinAshi",
+    "1H_HAM_HA",
     "15M_Close",
     "15M_HA_Close",
     "15M_Hurst_Normal",
     "15M_Hurst_HA",
-    "Hurst_HA_Diff",  # <-- NEW COLUMN (15M_Hurst_HA - 1H_Hurst_HA)
+    "Hurst_HA_Diff",
     "15M_HAM_Normal",
-    "15M_HAM_HeikinAshi",
+    "15M_HAM_HA",
 ]
 
 display_df = display_df[ordered_cols].round(2)
