@@ -25,8 +25,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
   st.rerun()
 
 st.sidebar.success(
-  "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
-  " CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
+    " CONNECTED"
 )
 
 
@@ -214,6 +214,7 @@ def fetch_coinbase_data(start_dt, now_dt):
   df_raw[num_cols] = df_raw[num_cols].astype(float)
   df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
   df_raw.set_index("Timestamp", inplace=True)
+  df_raw.sort_index(ascending=True, inplace=True)
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
@@ -294,7 +295,7 @@ momentum_ha_full = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH C: WEIGHTED MOMENTUM HAM (Pure Causal Slope) ---
+# --- PATH C: WEIGHTED MOMENTUM HAM (Pure Causal Slope + Kalman Filter) ---
 full_atr = calculate_atr(df, period=14).to_numpy()
 
 kalman_series = pd.Series(kalman_base_normal_full)
@@ -305,9 +306,14 @@ weighted_momentum_multiplier = 1.0 + np.tanh(
 )
 df["Weighted_Momentum"] = weighted_momentum_multiplier
 
+# 🟢 KALMAN FILTER APPLIED ON WEIGHTED MOMENTUM (initial_p=0.50)
+df["Weighted_Momentum_Kalman"] = apply_kalman_filter_custom(
+    weighted_momentum_multiplier, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+
 df["HAM_Weighted_Momentum"] = (
     momentum_normal_full
-    * weighted_momentum_multiplier
+    * df["Weighted_Momentum_Kalman"].to_numpy()
     * (df["Hurst_Normal"].to_numpy() * 2.0)
 )
 
@@ -341,6 +347,7 @@ clean_cols = [
     "HAM_Normal",
     "HAM_HeikinAshi",
     "Weighted_Momentum",
+    "Weighted_Momentum_Kalman",  # New Column Added Here
     "HAM_Weighted_Momentum",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
@@ -395,7 +402,10 @@ st.dataframe(
             "HAM HA Signal", format="%.2f"
         ),
         "Weighted_Momentum": st.column_config.NumberColumn(
-            "Momentum Weight", format="%.2fx"
+            "Raw Weight", format="%.2fx"
+        ),
+        "Weighted_Momentum_Kalman": st.column_config.NumberColumn(
+            "Filtered Weight (Kalman)", format="%.2fx"
         ),
         "HAM_Weighted_Momentum": st.column_config.NumberColumn(
             "🚀 Weighted Momentum HAM", format="%.2f"
