@@ -9,13 +9,13 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (50:50 Split)", layout="wide"
+    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Multi-HAM Matrix"
     " (Cascaded Dual-Kalman Kinematics) | 50:50 Learn:Predict Split | IST Locked"
-    " [Zero Leakage]"
+    " [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -25,7 +25,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
   st.rerun()
 
 st.sidebar.success(
-  "🛡️ **Leak Protection:** ACTIVE\n\n🔒 **Dual REST Stream:** CONNECTED"
+  "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
+  " CONNECTED"
 )
 
 
@@ -104,21 +105,22 @@ def apply_heikin_ashi(df_in):
 
 
 def calculate_atr(df_in, period=14):
+  """FIXED: Zero Future Leakage ATR Engine."""
   high = df_in["High"]
   low = df_in["Low"]
   close = df_in["Close"].shift(1)
   tr = np.maximum(
       high - low, np.maximum(np.abs(high - close), np.abs(low - close))
   )
-  return tr.rolling(period).mean().bfill()
+  # 🔥 FIXED LEAK: Swapped .bfill() to .ffill().fillna(0.0)
+  return tr.rolling(period).mean().ffill().fillna(0.0)
 
 
 # =====================================================================
-# RELIABLE DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
+# DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
 @st.cache_data(ttl=3600)
 def fetch_binance_data(start_ts, end_ts):
-  """Attempts fetching 2 years from Binance."""
   endpoint = "https://api.binance.com/api/v3/klines"
   all_candles = []
   current_start = start_ts
@@ -177,7 +179,6 @@ def fetch_binance_data(start_ts, end_ts):
 
 @st.cache_data(ttl=3600)
 def fetch_coinbase_data(start_dt, now_dt):
-  """Fallback engine using Coinbase Pro Pagination."""
   endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
   headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -247,7 +248,7 @@ try:
     df.sort_index(inplace=True)
     df = df[~df.index.duplicated(keep="first")]
 
-    # 🔒 STRICT LEAKAGE PREVENTION: Drop the unclosed running candle
+    # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
     df = df.iloc[:-1]
 
     # Convert to IST
@@ -266,9 +267,7 @@ df = apply_heikin_ashi(df)
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)  # Strict 50:50 Cut
 
-# Train/Learn Phase Data (First 50%)
 df_learn = df.iloc[:split_idx].copy()
-# Predict/Kinematic Phase Data (Last 50%)
 df_predict = df.iloc[split_idx:].copy()
 
 st.success(
@@ -277,13 +276,13 @@ st.success(
     f" {len(df_predict):,} (IST Locked)"
 )
 
-# --- PATH A: NORMAL CANDLE KINEMATICS (Cascaded Dual-Kalman Filter) ---
+# --- PATH A: NORMAL CANDLE KINEMATICS ---
 normal_close = np.asarray(df_predict["Close"], dtype=float).flatten()
 df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close, window=50
 )
 
-# First-Pass Kalman Filter (Base Trend)
+# First-Pass Kalman Filter
 kalman_base_normal = apply_kalman_filter_custom(
     normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
@@ -311,15 +310,19 @@ df_predict["HAM_HeikinAshi"] = momentum_ha * (
     df_predict["Hurst_HA"].to_numpy() * 2.0
 )
 
-# --- PATH C: WEIGHTED MOMENTUM HAM (Slope Velocity Weighting) ---
+# --- PATH C: WEIGHTED MOMENTUM HAM (Pure Causal Slope) ---
 pred_atr = calculate_atr(df_predict, period=14).to_numpy()
-kalman_slope = np.gradient(kalman_base_normal)
+
+# 🔥 FIXED LEAK: Replaced np.gradient with Causal Backward Difference (Y_t - Y_t-1)
+kalman_series = pd.Series(kalman_base_normal)
+kalman_slope = kalman_series.diff().fillna(0.0).to_numpy()
+
 weighted_momentum_multiplier = 1.0 + np.tanh(
     kalman_slope / np.where(pred_atr > 0, pred_atr, 1.0)
 )
 df_predict["Weighted_Momentum"] = weighted_momentum_multiplier
 
-# Weighted Momentum HAM = Cascaded Momentum * Momentum Weight * (Hurst * 2.0)
+# Weighted Momentum HAM = Cascaded Momentum * Causal Multiplier * (Hurst * 2.0)
 df_predict["HAM_Weighted_Momentum"] = (
     momentum_normal
     * weighted_momentum_multiplier
