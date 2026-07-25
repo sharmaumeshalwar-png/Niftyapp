@@ -13,8 +13,8 @@ st.set_page_config(
 )
 st.title("⚡ BTC-USD 1-Hour Engine (Multi-HAM Matrix)")
 st.write(
-    "🎯 **50:50 Learn:Predict Architecture:** Pure Old HAM vs Old HAM vs New ATR"
-    " Normalized HAM"
+    "🎯 **50:50 Learn:Predict Architecture:** Exact Original HA HAM vs Raw Close"
+    " HAM vs New ATR HAM"
 )
 
 # Sidebar Controls
@@ -46,17 +46,20 @@ def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.0005, r_val=0.2):
   return filtered
 
 
-def calculate_rolling_hurst(price_series, window=50):
+def calculate_rolling_hurst_classic(price_series, window=50):
+  """Classic Hurst Exponent using Simple Relative Price Returns."""
   arr = np.asarray(price_series, dtype=float).flatten()
   s = pd.Series(arr)
-  log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+
+  # Simple percent returns for exact classic matching
+  returns = s.pct_change().fillna(0.0).to_numpy()
   hurst_values = np.full(len(arr), 0.5)
 
-  if len(log_returns) < window:
+  if len(returns) < window:
     return hurst_values
 
   windows = np.lib.stride_tricks.sliding_window_view(
-      log_returns, window_shape=window
+      returns, window_shape=window
   )
   means = np.mean(windows, axis=1, keepdims=True)
   cum_dev = np.cumsum(windows - means, axis=1)
@@ -211,7 +214,6 @@ def get_robust_2year_data():
   now = datetime.now(timezone.utc)
   start_dt = now - timedelta(days=730)
 
-  # Primary Source: Binance
   try:
     df = fetch_binance_1h_2yr(
         int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
@@ -221,7 +223,6 @@ def get_robust_2year_data():
   except Exception:
     pass
 
-  # Fallback Source: Coinbase Pro
   try:
     df = fetch_coinbase_1h_2yr(start_dt, now)
     if df is not None and len(df) >= 500:
@@ -239,8 +240,7 @@ try:
 
     if df_raw is None:
       st.error(
-          "🚨 Fetch Error: Unable to fetch data from Binance or Coinbase API."
-          " Please click 'Force Refresh Engine' in sidebar."
+          "🚨 Fetch Error: Unable to fetch data. Click 'Force Refresh Engine'."
       )
       st.stop()
 
@@ -276,31 +276,27 @@ pred_ha_close = df_predict["HA_Close"].to_numpy()
 df_predict["Kalman_Close"] = apply_kalman_filter(pred_close)
 df_predict["Kalman_HA"] = apply_kalman_filter(pred_ha_close)
 
-df_predict["Hurst_Normal"] = calculate_rolling_hurst(pred_close, window=50)
-df_predict["Hurst_HA"] = calculate_rolling_hurst(pred_ha_close, window=50)
+# Rolling Hurst calculation
+df_predict["Hurst_Normal"] = calculate_rolling_hurst_classic(
+    pred_close, window=50
+)
+df_predict["Hurst_HA"] = calculate_rolling_hurst_classic(
+    pred_ha_close, window=50
+)
 
 pred_atr = calculate_atr(df_predict, period=14).to_numpy()
+
+# ---------------------------------------------------------------------
+# 1. EXACT PURE ORIGINAL OLD HAM: (HA_Close - Kalman_HA) * Hurst_HA
+# ---------------------------------------------------------------------
+ha_res = pred_ha_close - df_predict["Kalman_HA"].to_numpy()
+df_predict["🏷️ Pure_Original_Old_HAM"] = ha_res * df_predict["Hurst_HA"]
+
+# ---------------------------------------------------------------------
+# 2. RAW CLOSE HAM SCORE: (Close - Kalman_Close) * Hurst_Normal
+# ---------------------------------------------------------------------
 raw_res = pred_close - df_predict["Kalman_Close"].to_numpy()
-
-# ---------------------------------------------------------------------
-# 1. EXACT PURE OLD HAM SCORE: (Close - Kalman) * Hurst
-# ---------------------------------------------------------------------
-df_predict["🏷️ Pure_Old_HAM"] = raw_res * df_predict["Hurst_Normal"]
-
-# ---------------------------------------------------------------------
-# 2. OLD HAM SCORE (With Velocity Multiplier & 3-EMA)
-# ---------------------------------------------------------------------
-kalman_slope = np.gradient(df_predict["Kalman_Close"].to_numpy())
-velocity_mult = 1.0 + np.tanh(
-    kalman_slope / np.where(pred_atr > 0, pred_atr, 1.0)
-)
-hurst_gain = 2.0 * df_predict["Hurst_Normal"]
-
-classic_ham = raw_res * velocity_mult * hurst_gain
-# .ewm(span=3).mean() hi aapka 3-Period EMA hai
-df_predict["⭐ Old_HAM_EMA3"] = (
-    pd.Series(classic_ham, index=df_predict.index).ewm(span=3).mean()
-)
+df_predict["⭐ Raw_Close_HAM"] = raw_res * df_predict["Hurst_Normal"]
 
 # ---------------------------------------------------------------------
 # 3. NEW ATR NORMALIZED HAM SCORE
@@ -319,8 +315,11 @@ latest_pred = df_predict.iloc[-1]
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current Close", f"${latest_pred['Close']:,.2f}")
-c2.metric("🏷️ Pure Old HAM", f"{latest_pred['🏷️ Pure_Old_HAM']:+.2f}")
-c3.metric("⭐ Old HAM (3-EMA)", f"{latest_pred['⭐ Old_HAM_EMA3']:+.2f}")
+c2.metric(
+    "🏷️ Pure Original Old HAM",
+    f"{latest_pred['🏷️ Pure_Original_Old_HAM']:+.2f}",
+)
+c3.metric("⭐ Raw Close HAM", f"{latest_pred['⭐ Raw_Close_HAM']:+.2f}")
 c4.metric("🛡️ ATR Norm HAM", f"{latest_pred['🛡️ ATR_Norm_HAM']:+.2f}")
 
 st.caption(
@@ -330,16 +329,17 @@ st.caption(
 )
 st.divider()
 
-st.subheader("📋 Predict Phase Matrix (3 HAM Variants)")
+st.subheader("📋 Predict Phase Matrix")
 
 display_df = df_predict.iloc[::-1].copy()
 cols_to_show = [
     "Close",
-    "Kalman_Close",
-    "Hurst_Normal",
-    "🏷️ Pure_Old_HAM",  # Straight (Close - Kalman) * Hurst
-    "⭐ Old_HAM_EMA3",  # Old HAM with Velocity + 3-EMA
-    "🛡️ ATR_Norm_HAM",  # New Normalized HAM
+    "HA_Close",
+    "Kalman_HA",
+    "Hurst_HA",
+    "🏷️ Pure_Original_Old_HAM",  # Pure (HA_Close - Kalman_HA) * Hurst_HA
+    "⭐ Raw_Close_HAM",  # Raw Close (Close - Kalman_Close) * Hurst_Normal
+    "🛡️ ATR_Norm_HAM",  # New ATR Normalized HAM
 ]
 
 table_df = display_df[cols_to_show].round(2)
@@ -349,17 +349,16 @@ st.dataframe(
     table_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close", format="$%.2f"),
-        "Kalman_Close": st.column_config.NumberColumn(
-            "Kalman (Close)", format="$%.2f"
+        "HA_Close": st.column_config.NumberColumn("HA Close", format="$%.2f"),
+        "Kalman_HA": st.column_config.NumberColumn(
+            "Kalman (HA)", format="$%.2f"
         ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Norm)", format="%.2f"
+        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
+        "🏷️ Pure_Original_Old_HAM": st.column_config.NumberColumn(
+            "🏷️ Pure Original Old HAM", format="%+.2f"
         ),
-        "🏷️ Pure_Old_HAM": st.column_config.NumberColumn(
-            "🏷️ Pure Old HAM", format="%+.2f"
-        ),
-        "⭐ Old_HAM_EMA3": st.column_config.NumberColumn(
-            "⭐ Old HAM (3-EMA)", format="%+.2f"
+        "⭐ Raw_Close_HAM": st.column_config.NumberColumn(
+            "⭐ Raw Close HAM", format="%+.2f"
         ),
         "🛡️ ATR_Norm_HAM": st.column_config.NumberColumn(
             "🛡️ New ATR HAM", format="%+.2f"
