@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 1H Dual HAM Matrix (Learn:Predict)", layout="wide"
+    page_title="BTC 1H Multi-HAM Matrix (Learn:Predict)", layout="wide"
 )
-st.title("⚡ BTC-USD 1-Hour Engine (Dual HAM: Classic vs ATR)")
+st.title("⚡ BTC-USD 1-Hour Engine (Multi-HAM Matrix)")
 st.write(
-    "🎯 **50:50 Learn:Predict Architecture:** Purana Classic HAM + New ATR"
-    " Normalized HAM in Separate Columns"
+    "🎯 **50:50 Learn:Predict Architecture:** Pure Old HAM vs Old HAM vs New ATR"
+    " Normalized HAM"
 )
 
 # Sidebar Controls
@@ -211,7 +211,7 @@ def get_robust_2year_data():
   now = datetime.now(timezone.utc)
   start_dt = now - timedelta(days=730)
 
-  # Try Primary Source: Binance
+  # Primary Source: Binance
   try:
     df = fetch_binance_1h_2yr(
         int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
@@ -232,7 +232,7 @@ def get_robust_2year_data():
   return None, None
 
 
-# Fetch & Safeguard Data
+# Fetch Data
 try:
   with st.spinner("🔄 Fetching 2-Year Dataset..."):
     df_raw, source = get_robust_2year_data()
@@ -260,7 +260,7 @@ split_idx = len(df_full) // 2
 df_learn = df_full.iloc[:split_idx].copy()
 df_predict = df_full.iloc[split_idx:].copy()
 
-# Learn Phase Noise Calibration for ATR HAM
+# Noise Calibration for ATR HAM
 learn_close = df_learn["Close"].to_numpy()
 learn_kalman = apply_kalman_filter(learn_close)
 learn_atr = calculate_atr(df_learn, period=14).to_numpy()
@@ -283,7 +283,12 @@ pred_atr = calculate_atr(df_predict, period=14).to_numpy()
 raw_res = pred_close - df_predict["Kalman_Close"].to_numpy()
 
 # ---------------------------------------------------------------------
-# 1. PURANA / CLASSIC HAM SCORE (Dollar Gap Based)
+# 1. EXACT PURE OLD HAM SCORE: (Close - Kalman) * Hurst
+# ---------------------------------------------------------------------
+df_predict["🏷️ Pure_Old_HAM"] = raw_res * df_predict["Hurst_Normal"]
+
+# ---------------------------------------------------------------------
+# 2. OLD HAM SCORE (With Velocity Multiplier & 3-EMA)
 # ---------------------------------------------------------------------
 kalman_slope = np.gradient(df_predict["Kalman_Close"].to_numpy())
 velocity_mult = 1.0 + np.tanh(
@@ -292,12 +297,13 @@ velocity_mult = 1.0 + np.tanh(
 hurst_gain = 2.0 * df_predict["Hurst_Normal"]
 
 classic_ham = raw_res * velocity_mult * hurst_gain
-df_predict["⭐ Old_HAM_Score"] = (
+# .ewm(span=3).mean() hi aapka 3-Period EMA hai
+df_predict["⭐ Old_HAM_EMA3"] = (
     pd.Series(classic_ham, index=df_predict.index).ewm(span=3).mean()
 )
 
 # ---------------------------------------------------------------------
-# 2. NEW ATR NORMALIZED HAM SCORE
+# 3. NEW ATR NORMALIZED HAM SCORE
 # ---------------------------------------------------------------------
 norm_res = raw_res / np.where(pred_atr > 0, pred_atr, 1.0)
 atr_ham = (norm_res / (calibrated_std + 1e-6)) * df_predict["Hurst_Normal"]
@@ -313,8 +319,8 @@ latest_pred = df_predict.iloc[-1]
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current Close", f"${latest_pred['Close']:,.2f}")
-c2.metric("Predict Hurst", f"{latest_pred['Hurst_Normal']:.2f}")
-c3.metric("⭐ Old HAM Score", f"{latest_pred['⭐ Old_HAM_Score']:+.2f}")
+c2.metric("🏷️ Pure Old HAM", f"{latest_pred['🏷️ Pure_Old_HAM']:+.2f}")
+c3.metric("⭐ Old HAM (3-EMA)", f"{latest_pred['⭐ Old_HAM_EMA3']:+.2f}")
 c4.metric("🛡️ ATR Norm HAM", f"{latest_pred['🛡️ ATR_Norm_HAM']:+.2f}")
 
 st.caption(
@@ -324,16 +330,16 @@ st.caption(
 )
 st.divider()
 
-st.subheader("📋 Predict Phase Matrix (Comparing Both HAM Formulas)")
+st.subheader("📋 Predict Phase Matrix (3 HAM Variants)")
 
 display_df = df_predict.iloc[::-1].copy()
 cols_to_show = [
     "Close",
-    "HA_Close",
     "Kalman_Close",
     "Hurst_Normal",
-    "⭐ Old_HAM_Score",  # Purana Formula
-    "🛡️ ATR_Norm_HAM",  # New ATR Formula
+    "🏷️ Pure_Old_HAM",  # Straight (Close - Kalman) * Hurst
+    "⭐ Old_HAM_EMA3",  # Old HAM with Velocity + 3-EMA
+    "🛡️ ATR_Norm_HAM",  # New Normalized HAM
 ]
 
 table_df = display_df[cols_to_show].round(2)
@@ -343,18 +349,20 @@ st.dataframe(
     table_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close", format="$%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close", format="$%.2f"),
         "Kalman_Close": st.column_config.NumberColumn(
             "Kalman (Close)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
             "Hurst (Norm)", format="%.2f"
         ),
-        "⭐ Old_HAM_Score": st.column_config.NumberColumn(
-            "⭐ Purana HAM Score", format="%+.2f"
+        "🏷️ Pure_Old_HAM": st.column_config.NumberColumn(
+            "🏷️ Pure Old HAM", format="%+.2f"
+        ),
+        "⭐ Old_HAM_EMA3": st.column_config.NumberColumn(
+            "⭐ Old HAM (3-EMA)", format="%+.2f"
         ),
         "🛡️ ATR_Norm_HAM": st.column_config.NumberColumn(
-            "🛡️ New ATR HAM Score", format="%+.2f"
+            "🛡️ New ATR HAM", format="%+.2f"
         ),
     },
     use_container_width=True,
