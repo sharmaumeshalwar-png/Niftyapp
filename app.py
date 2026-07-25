@@ -112,14 +112,18 @@ def calculate_atr(df_in, period=14):
 
 
 # =====================================================================
-# 2-YEAR DATA FETCH ENGINE
+# ROBUST DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
 @st.cache_data(ttl=3600)
 def fetch_binance_1h_2yr(start_ts, end_ts):
   endpoint = "https://api.binance.com/api/v3/klines"
   all_candles = []
   current_start = start_ts
-  headers = {"User-Agent": "Mozilla/5.0"}
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      )
+  }
 
   while current_start < end_ts:
     params = {
@@ -128,19 +132,21 @@ def fetch_binance_1h_2yr(start_ts, end_ts):
         "startTime": current_start,
         "limit": 1000,
     }
-    res = requests.get(
-        endpoint, params=params, headers=headers, timeout=10
-    ).json()
+    try:
+      res = requests.get(
+          endpoint, params=params, headers=headers, timeout=10
+      ).json()
+      if not isinstance(res, list) or len(res) == 0:
+        break
 
-    if not isinstance(res, list) or len(res) == 0:
+      all_candles.extend(res)
+      last_candle_time = res[-1][0]
+      if last_candle_time <= current_start:
+        break
+      current_start = last_candle_time + 1
+      time.sleep(0.02)
+    except Exception:
       break
-
-    all_candles.extend(res)
-    last_candle_time = res[-1][0]
-    if last_candle_time <= current_start:
-      break
-    current_start = last_candle_time + 1
-    time.sleep(0.02)
 
   if len(all_candles) < 500:
     return None
@@ -167,14 +173,83 @@ def fetch_binance_1h_2yr(start_ts, end_ts):
   return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
-# Load 2 Years (730 Days) Data
-try:
-  with st.spinner("🔄 Loading 2-Year 1H Dataset..."):
-    now = datetime.now(timezone.utc)
-    start_dt = now - timedelta(days=730)
-    df_raw = fetch_binance_1h_2yr(
+@st.cache_data(ttl=3600)
+def fetch_coinbase_1h_2yr(start_dt, now_dt):
+  endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+  headers = {"User-Agent": "Mozilla/5.0"}
+  current_end = now_dt
+  all_candles = []
+
+  while current_end > start_dt:
+    current_start = max(start_dt, current_end - timedelta(hours=300))
+    params = {
+        "granularity": 3600,
+        "start": current_start.isoformat(),
+        "end": current_end.isoformat(),
+    }
+    try:
+      res = requests.get(
+          endpoint, params=params, headers=headers, timeout=10
+      ).json()
+      if isinstance(res, list) and len(res) > 0:
+        all_candles.extend(res)
+      else:
+        break
+      current_end = current_start
+      time.sleep(0.05)
+    except Exception:
+      break
+
+  if len(all_candles) < 500:
+    return None
+
+  cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+  df_raw = pd.DataFrame(all_candles, columns=cols)
+  num_cols = ["Open", "High", "Low", "Close", "Volume"]
+  df_raw[num_cols] = df_raw[num_cols].astype(float)
+  df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
+  df_raw.set_index("Timestamp", inplace=True)
+  return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def get_robust_2year_data():
+  now = datetime.now(timezone.utc)
+  start_dt = now - timedelta(days=730)
+
+  # Try Primary Source: Binance
+  try:
+    df = fetch_binance_1h_2yr(
         int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
     )
+    if df is not None and len(df) >= 500:
+      return df, "Binance REST API (1H)"
+  except Exception:
+    pass
+
+  # Fallback Source: Coinbase Pro
+  try:
+    df = fetch_coinbase_1h_2yr(start_dt, now)
+    if df is not None and len(df) >= 500:
+      return df, "Coinbase Pro API (1H)"
+  except Exception:
+    pass
+
+  return None, None
+
+
+# Fetch & Safeguard Data
+try:
+  with st.spinner("🔄 Loading 2-Year 1H Dataset..."):
+    df_raw, source = get_robust_2year_data()
+
+    if df_raw is None:
+      st.error(
+          "🚨 Data Fetch Error: Unable to retrieve dataset from Binance or"
+          " Coinbase APIs. Please click 'Force Refresh Engine' in the sidebar to"
+          " retry."
+      )
+      st.stop()
+
     df_raw.sort_index(inplace=True)
     df_raw = df_raw[~df_raw.index.duplicated(keep="first")].iloc[:-1]
     df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
@@ -200,7 +275,6 @@ df_predict = df_full.iloc[
 # ---------------------------------------------------------------------
 # 1. LEARN PHASE (In-Sample Calibration)
 # ---------------------------------------------------------------------
-# Extract Baseline Volatility / Residual Standard Deviation from Learn Set
 learn_close = df_learn["Close"].to_numpy()
 learn_kalman = apply_kalman_filter(learn_close)
 learn_atr = calculate_atr(df_learn, period=14).to_numpy()
@@ -269,7 +343,9 @@ c3.metric("Predict Hurst (Normal)", f"{latest_pred['Hurst_Normal']:.2f}")
 c4.metric("⭐ Predict HAM Score", f"{latest_pred['Predict_HAM_Score']:+.2f}")
 
 st.caption(
-    f"⏰ **Last Candle Time:** `{df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')}`"
+    f"⏰ **Last Candle Time:**"
+    f" `{df_predict.index[-1].strftime('%Y-%m-%d %H:%M IST')}` | **Data"
+    f" Source:** {source}"
 )
 st.divider()
 
