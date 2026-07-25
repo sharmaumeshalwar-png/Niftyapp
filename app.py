@@ -15,7 +15,7 @@ st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Multi-HAM Matrix"
     " (Cascaded Dual-Kalman Kinematics) | 50:50 Learn:Predict Split | IST Locked"
-    " [Strict Zero Leakage]"
+    " [Strict Zero Leakage & Continuous Warmup]"
 )
 
 # Sidebar Controls
@@ -75,7 +75,9 @@ def calculate_rolling_hurst_vectorized(price_series, window=50):
   h_calculated = np.full(len(rs_ratio), 0.5)
   h_calculated[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
 
-  hurst_values[window - 1 :] = np.clip(h_calculated, 0.0, 1.0)
+  hurst_values[window - 1 : window - 1 + len(h_calculated)] = np.clip(
+      h_calculated, 0.0, 1.0
+  )
   return hurst_values
 
 
@@ -112,7 +114,6 @@ def calculate_atr(df_in, period=14):
   tr = np.maximum(
       high - low, np.maximum(np.abs(high - close), np.abs(low - close))
   )
-  # 🔥 FIXED LEAK: Swapped .bfill() to .ffill().fillna(0.0)
   return tr.rolling(period).mean().ffill().fillna(0.0)
 
 
@@ -260,76 +261,73 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ CORE TRANSFORMATIONS & 50:50 LEARN:PREDICT SPLIT
+# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS (Eliminates Cold-Start Bias)
 # =====================================================================
 df = apply_heikin_ashi(df)
 
+# --- PATH A: NORMAL CANDLE KINEMATICS (Full Continuously Warm Engine) ---
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close_full, window=50
+)
+
+kalman_base_normal_full = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_normal_full = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal_full,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+)
+df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=50)
+
+kalman_base_ha_full = apply_kalman_filter_custom(
+    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ha_full = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
+
+# --- PATH C: WEIGHTED MOMENTUM HAM (Pure Causal Slope) ---
+full_atr = calculate_atr(df, period=14).to_numpy()
+
+kalman_series = pd.Series(kalman_base_normal_full)
+kalman_slope = kalman_series.diff().fillna(0.0).to_numpy()
+
+weighted_momentum_multiplier = 1.0 + np.tanh(
+    kalman_slope / np.where(full_atr > 0, full_atr, 1.0)
+)
+df["Weighted_Momentum"] = weighted_momentum_multiplier
+
+df["HAM_Weighted_Momentum"] = (
+    momentum_normal_full
+    * weighted_momentum_multiplier
+    * (df["Hurst_Normal"].to_numpy() * 2.0)
+)
+
+
+# =====================================================================
+# ⚡ 50:50 LEARN:PREDICT SPLIT (Post-Calculated Data Split)
+# =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)  # Strict 50:50 Cut
 
 df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
+df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
+
 st.success(
     f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
     f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
     f" {len(df_predict):,} (IST Locked)"
 )
-
-# --- PATH A: NORMAL CANDLE KINEMATICS ---
-normal_close = np.asarray(df_predict["Close"], dtype=float).flatten()
-df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close, window=50
-)
-
-# First-Pass Kalman Filter
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-# Second-Pass Kalman Filter (Smoothed Kinematic Momentum)
-momentum_normal = apply_kalman_filter_custom(
-    normal_close - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_predict["HAM_Normal"] = momentum_normal * (
-    df_predict["Hurst_Normal"].to_numpy() * 2.0
-)
-
-# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
-ha_close = np.asarray(df_predict["HA_Close"], dtype=float).flatten()
-df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    ha_close, window=50
-)
-
-kalman_base_ha = apply_kalman_filter_custom(
-    ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_ha = apply_kalman_filter_custom(
-    ha_close - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df_predict["HAM_HeikinAshi"] = momentum_ha * (
-    df_predict["Hurst_HA"].to_numpy() * 2.0
-)
-
-# --- PATH C: WEIGHTED MOMENTUM HAM (Pure Causal Slope) ---
-pred_atr = calculate_atr(df_predict, period=14).to_numpy()
-
-# 🔥 FIXED LEAK: Replaced np.gradient with Causal Backward Difference (Y_t - Y_t-1)
-kalman_series = pd.Series(kalman_base_normal)
-kalman_slope = kalman_series.diff().fillna(0.0).to_numpy()
-
-weighted_momentum_multiplier = 1.0 + np.tanh(
-    kalman_slope / np.where(pred_atr > 0, pred_atr, 1.0)
-)
-df_predict["Weighted_Momentum"] = weighted_momentum_multiplier
-
-# Weighted Momentum HAM = Cascaded Momentum * Causal Multiplier * (Hurst * 2.0)
-df_predict["HAM_Weighted_Momentum"] = (
-    momentum_normal
-    * weighted_momentum_multiplier
-    * (df_predict["Hurst_Normal"].to_numpy() * 2.0)
-)
-
-df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 
 # =====================================================================
