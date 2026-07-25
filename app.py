@@ -229,7 +229,7 @@ def get_robust_timeframe_data(interval="1h", days=60):
   raise ValueError(f"Failed to fetch data for interval: {interval}")
 
 
-# Fetch Sync Data (60 Days Window)
+# Fetch Sync Data
 try:
   with st.spinner(
       "🔄 Synchronizing 1-Hour & 15-Minute Streams (Zero Leakage)..."
@@ -263,7 +263,6 @@ df_1h["1H_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 kalman_base_1h_norm = apply_kalman_filter_custom(
     normal_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-# 🎯 NEW: Kalman Hurst (Normal Close)
 df_1h["1H_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
     kalman_base_1h_norm, window=50
 )
@@ -283,7 +282,6 @@ df_1h["1H_Hurst_HA"] = calculate_rolling_hurst_vectorized(
 kalman_base_1h_ha = apply_kalman_filter_custom(
     ha_close_1h, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-# 🎯 NEW: Kalman Hurst (HA Close)
 df_1h["1H_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     kalman_base_1h_ha, window=50
 )
@@ -318,7 +316,6 @@ df_15m["15M_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 kalman_base_15m_norm = apply_kalman_filter_custom(
     normal_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-# 🎯 NEW: Kalman Hurst (Normal Close)
 df_15m["15M_Kalman_Hurst_Norm"] = calculate_rolling_hurst_vectorized(
     kalman_base_15m_norm, window=50
 )
@@ -341,7 +338,6 @@ df_15m["15M_Hurst_HA"] = calculate_rolling_hurst_vectorized(
 kalman_base_15m_ha = apply_kalman_filter_custom(
     ha_close_15m, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-# 🎯 NEW: Kalman Hurst (HA Close)
 df_15m["15M_Kalman_Hurst_HA"] = calculate_rolling_hurst_vectorized(
     kalman_base_15m_ha, window=50
 )
@@ -366,10 +362,12 @@ df_15m_clean = df_15m[[
 
 
 # =====================================================================
-# 📋 UNIFIED MERGE & DIFFERENTIAL COLUMNS
+# 📋 UNIFIED MERGE & DIFFERENTIAL COLUMNS (FIXED JOIN ERROR)
 # =====================================================================
-# Forward fill 1-Hour values across 15-minute intervals
-combined_df = df_15m_clean.join(df_1h_clean, how="left").ffill()
+# Added explicit lsuffix and rsuffix to fix overlapping column name error
+combined_df = df_15m_clean.join(
+    df_1h_clean, how="left", lsuffix="_15m", rsuffix="_1h"
+).ffill()
 
 # 🎯 DIFFERENTIAL COLUMNS:
 combined_df["Hurst_HA_Diff"] = (
@@ -418,18 +416,18 @@ st.divider()
 
 st.subheader("📋 Unified Dual-Engine Matrix with Kalman Hurst")
 
-# Exact Ordered Column Array Matching DataFrame Keys
+# Exact Ordered Column Array Matching Explicit Join Suffix Keys
 ordered_cols = [
-    "Close_x",  # 15M Close
-    "HA_Close_x",  # 15M HA Close
+    "Close_15m",
+    "HA_Close_15m",
     "15M_Hurst_Normal",
     "15M_Kalman_Hurst_Norm",
     "15M_Hurst_HA",
     "15M_Kalman_Hurst_HA",
     "15M_HAM_Normal",
     "15M_HAM_HA",
-    "Close_y",  # 1H Close
-    "HA_Close_y",  # 1H HA Close
+    "Close_1h",
+    "HA_Close_1h",
     "1H_Hurst_Normal",
     "1H_Kalman_Hurst_Norm",
     "1H_Hurst_HA",
@@ -446,8 +444,10 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 st.dataframe(
     display_df,
     column_config={
-        "Close_x": st.column_config.NumberColumn("15M Close", format="$%.2f"),
-        "HA_Close_x": st.column_config.NumberColumn(
+        "Close_15m": st.column_config.NumberColumn(
+            "15M Close", format="$%.2f"
+        ),
+        "HA_Close_15m": st.column_config.NumberColumn(
             "15M HA Close", format="$%.2f"
         ),
         "15M_Hurst_Normal": st.column_config.NumberColumn(
@@ -468,8 +468,8 @@ st.dataframe(
         "15M_HAM_HA": st.column_config.NumberColumn(
             "15M HAM HA", format="%.2f"
         ),
-        "Close_y": st.column_config.NumberColumn("1H Close", format="$%.2f"),
-        "HA_Close_y": st.column_config.NumberColumn(
+        "Close_1h": st.column_config.NumberColumn("1H Close", format="$%.2f"),
+        "HA_Close_1h": st.column_config.NumberColumn(
             "1H HA Close", format="$%.2f"
         ),
         "1H_Hurst_Normal": st.column_config.NumberColumn(
