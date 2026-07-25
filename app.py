@@ -13,8 +13,9 @@ st.set_page_config(
 )
 st.title("⚡ BTC-USD Dual-Engine Kinematic Matrix (1H & 15M)")
 st.write(
-    "🎯 **Synchronized Dual Timeframe Engine:** 1-Hour Intact Architecture + "
-    "15-Minute High Frequency Matrix | IST Locked [Strict Zero Future Leakage]"
+    "🎯 **Synchronized Dual Timeframe Engine:** 1-Hour & 15-Minute Kinematic "
+    "Matrix + Hurst Difference Column | IST Locked [Strict Zero Future"
+    " Leakage]"
 )
 
 # Sidebar Controls
@@ -228,7 +229,7 @@ def get_robust_timeframe_data(interval="1h", days=60):
   raise ValueError(f"Failed to fetch data for interval: {interval}")
 
 
-# Fetch Sync Data (Last 60 Days Timeframe Window)
+# Fetch Sync Data (60 Days Window for High Density Stream)
 try:
   with st.spinner(
       "🔄 Synchronizing 1-Hour & 15-Minute Streams (Zero Leakage)..."
@@ -250,7 +251,7 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ 1-HOUR ENGINE PROCESSING (SIDE A)
+# ⚡ 1-HOUR ENGINE PROCESSING
 # =====================================================================
 df_1h = apply_heikin_ashi(df_1h_raw)
 
@@ -301,7 +302,7 @@ df_1h_clean.columns = [
 
 
 # =====================================================================
-# ⚡ 15-MINUTE ENGINE PROCESSING (SIDE B)
+# ⚡ 15-MINUTE ENGINE PROCESSING
 # =====================================================================
 df_15m = apply_heikin_ashi(df_15m_raw)
 
@@ -355,53 +356,65 @@ df_15m_clean.columns = [
 
 
 # =====================================================================
-# 📋 UNIFIED TIME-ALIGNED MATRIX MERGE
+# 📋 UNIFIED MERGE & NEW HURST DIFFERENTIAL COLUMN
 # =====================================================================
-# Forward fill 1-Hour values across 15-minute sub-intervals to keep matrix completely filled
+# Forward fill 1-Hour values across 15-minute intervals
 combined_df = df_15m_clean.join(df_1h_clean, how="left").ffill()
+
+# 🎯 NEW COLUMN: (15M Hurst HA - 1H Hurst HA)
+combined_df["Hurst_HA_Diff"] = (
+    combined_df["15M_Hurst_HA"] - combined_df["1H_Hurst_HA"]
+)
 
 # Display latest candle at top
 display_df = combined_df.iloc[::-1].copy()
 
-# Lock Timestamps
+# Lock Status Timestamps
 locked_1h_time = df_1h_clean.index[-1].strftime("%Y-%m-%d %H:%M IST")
 locked_15m_time = df_15m_clean.index[-1].strftime("%Y-%m-%d %H:%M IST")
 
 st.markdown("### 🔒 **LOCKED FINAL CANDLES (IST)**")
 
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns([2, 2, 1.5])
 with c1:
   st.info(f"⏰ **1-Hour Locked Candle:** `{locked_1h_time}`")
-  m1, m2, m3 = st.columns(3)
-  m1.metric("1H Close", f"${df_1h_clean['1H_Close'].iloc[-1]:,.2f}")
-  m2.metric("1H HAM Normal", f"{df_1h_clean['1H_HAM_Normal'].iloc[-1]:.2f}")
-  m3.metric("1H HAM HA", f"{df_1h_clean['1H_HAM_HA'].iloc[-1]:.2f}")
+  m1, m2 = st.columns(2)
+  m1.metric("1H HA Close", f"${df_1h_clean['1H_HA_Close'].iloc[-1]:,.2f}")
+  m2.metric("1H Hurst HA", f"{df_1h_clean['1H_Hurst_HA'].iloc[-1]:.2f}")
 
 with c2:
   st.info(f"⚡ **15-Min Locked Candle:** `{locked_15m_time}`")
-  n1, n2, n3 = st.columns(3)
-  n1.metric("15M Close", f"${df_15m_clean['15M_Close'].iloc[-1]:,.2f}")
-  n2.metric("15M HAM Normal", f"{df_15m_clean['15M_HAM_Normal'].iloc[-1]:.2f}")
-  n3.metric("15M HAM HA", f"{df_15m_clean['15M_HAM_HA'].iloc[-1]:.2f}")
+  n1, n2 = st.columns(2)
+  n1.metric("15M HA Close", f"${df_15m_clean['15M_HA_Close'].iloc[-1]:,.2f}")
+  n2.metric("15M Hurst HA", f"{df_15m_clean['15M_Hurst_HA'].iloc[-1]:.2f}")
+
+with c3:
+  latest_diff = combined_df["Hurst_HA_Diff"].iloc[-1]
+  st.metric(
+      "📊 Hurst HA Diff (15M - 1H)",
+      f"{latest_diff:+.2f}",
+      delta_color="normal",
+  )
 
 st.divider()
 
-st.subheader("📋 Unified Dual-Engine Kinematic Matrix (1H & 15M Side-By-Side)")
+st.subheader("📋 Unified Dual-Engine Matrix with Hurst Difference Column")
 
-# Reorder columns: 1-Hour First (Intact), then 15-Minute Next
+# Reordered Column Layout including the new Differential Column
 ordered_cols = [
     "1H_Close",
     "1H_HA_Close",
     "1H_Hurst_Normal",
     "1H_Hurst_HA",
     "1H_HAM_Normal",
-    "1H_HAM_HA",
+    "1H_HAM_HeikinAshi",
     "15M_Close",
     "15M_HA_Close",
     "15M_Hurst_Normal",
     "15M_Hurst_HA",
+    "Hurst_HA_Diff",  # <-- NEW COLUMN (15M_Hurst_HA - 1H_Hurst_HA)
     "15M_HAM_Normal",
-    "15M_HAM_HA",
+    "15M_HAM_HeikinAshi",
 ]
 
 display_df = display_df[ordered_cols].round(2)
@@ -437,6 +450,9 @@ st.dataframe(
         ),
         "15M_Hurst_HA": st.column_config.NumberColumn(
             "15M Hurst HA", format="%.2f"
+        ),
+        "Hurst_HA_Diff": st.column_config.NumberColumn(
+            "Hurst HA Diff (15M-1H)", format="%+.2f"
         ),
         "15M_HAM_Normal": st.column_config.NumberColumn(
             "15M HAM Norm", format="%.2f"
