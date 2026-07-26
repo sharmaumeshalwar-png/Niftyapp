@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics & SL Gap Engine", layout="wide"
+    page_title="BTC Kinematics & Kalman SL Gap Engine", layout="wide"
 )
-st.title("⚡ BTC Dynamic TSL & SL Gap Engine")
+st.title("⚡ BTC Dynamic TSL & Kalman SL Gap Engine")
 st.write(
-    "🎯 **1-Hour Liquidity Engine:** Tracking Dynamic TSL, Long/Short SL"
-    " Levels & Candle-to-Candle SL Shift Gaps"
+    "🎯 **1-Hour Liquidity Engine:** Tracking Dynamic TSL, Raw SL Gaps,"
+    " & Kalman Filtered (P=0.50) Smooth SL Shift Gaps"
 )
 
 # Sidebar Controls
@@ -28,7 +28,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 # MATHEMATICAL ENGINES
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.0001, r_val=0.001
+    data_array, initial_p=0.50, q_val=0.0001, r_val=0.001
 ):
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
@@ -175,7 +175,9 @@ def fetch_binance_data_robust(start_ts, end_ts):
 
 # --- FETCH DATA ---
 try:
-    with st.spinner("🔄 Fetching Market Data & Calculating SL Gaps..."):
+    with st.spinner(
+        "🔄 Fetching Market Data & Applying Kalman Filter to SL Gaps..."
+    ):
         now = datetime.now(timezone.utc)
         start_dt = now - timedelta(days=180)
         df = fetch_binance_data_robust(
@@ -242,7 +244,7 @@ df["Dynamic_Long_SL"] = df["Low"] - (
 )
 
 # =====================================================================
-# NEW: CALCULATE SL UP / DOWN GAPS
+# CALCULATE SL GAPS & APPLY KALMAN FILTER (P=0.50)
 # =====================================================================
 df["Long_SL_Gap"] = (
     df["Dynamic_Long_SL"] - df["Dynamic_Long_SL"].shift(1)
@@ -250,6 +252,14 @@ df["Long_SL_Gap"] = (
 df["Short_SL_Gap"] = (
     df["Dynamic_Short_SL"] - df["Dynamic_Short_SL"].shift(1)
 ).fillna(0.0)
+
+# KALMAN FILTER 0.50 ON SL GAPS
+df["Kalman_Long_SL_Gap"] = apply_kalman_filter_custom(
+    df["Long_SL_Gap"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.001
+)
+df["Kalman_Short_SL_Gap"] = apply_kalman_filter_custom(
+    df["Short_SL_Gap"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.001
+)
 
 
 # SL Behavior
@@ -323,9 +333,11 @@ clean_cols = [
     "Close",
     "TSL",
     "Dynamic_Long_SL",
-    "Long_SL_Gap",  # Added Gap Column
+    "Long_SL_Gap",
+    "Kalman_Long_SL_Gap",  # Added Kalman Column
     "Dynamic_Short_SL",
-    "Short_SL_Gap",  # Added Gap Column
+    "Short_SL_Gap",
+    "Kalman_Short_SL_Gap",  # Added Kalman Column
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff",
@@ -337,8 +349,10 @@ display_df["Close"] = display_df["Close"].round(2)
 display_df["TSL"] = display_df["TSL"].round(2)
 display_df["Dynamic_Long_SL"] = display_df["Dynamic_Long_SL"].round(2)
 display_df["Long_SL_Gap"] = display_df["Long_SL_Gap"].round(2)
+display_df["Kalman_Long_SL_Gap"] = display_df["Kalman_Long_SL_Gap"].round(2)
 display_df["Dynamic_Short_SL"] = display_df["Dynamic_Short_SL"].round(2)
 display_df["Short_SL_Gap"] = display_df["Short_SL_Gap"].round(2)
+display_df["Kalman_Short_SL_Gap"] = display_df["Kalman_Short_SL_Gap"].round(2)
 display_df["HAM_Normal"] = display_df["HAM_Normal"].round(2)
 display_df["HAM_HeikinAshi"] = display_df["HAM_HeikinAshi"].round(2)
 display_df["HAM_Diff"] = display_df["HAM_Diff"].round(2)
@@ -351,18 +365,20 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current Close", f"${latest['Close']:,.2f}")
 c2.metric("Active TSL", f"${latest['TSL']:,.2f}")
 c3.metric(
-    "Long SL Gap",
-    f"${latest['Long_SL_Gap']:,.2f}",
-    delta=f"{latest['Long_SL_Gap']:.2f} pts",
+    "Kalman Long Gap",
+    f"${latest['Kalman_Long_SL_Gap']:,.2f}",
+    delta=f"Raw: {latest['Long_SL_Gap']:.2f} pts",
 )
 c4.metric(
-    "Short SL Gap",
-    f"${latest['Short_SL_Gap']:,.2f}",
-    delta=f"{latest['Short_SL_Gap']:.2f} pts",
+    "Kalman Short Gap",
+    f"${latest['Kalman_Short_SL_Gap']:,.2f}",
+    delta=f"Raw: {latest['Short_SL_Gap']:.2f} pts",
 )
 
 st.divider()
-st.subheader("📋 Candle-by-Candle Stop Loss Shift & Liquidity Matrix")
+st.subheader(
+    "📋 Candle-by-Candle Stop Loss Shift & Kalman Filtered Gap Matrix"
+)
 
 st.dataframe(
     display_df,
@@ -373,13 +389,19 @@ st.dataframe(
             "Long SL Level ($)", format="$%.2f"
         ),
         "Long_SL_Gap": st.column_config.NumberColumn(
-            "Long SL Shift Gap ($)", format="$%.2f"
+            "Raw Long Gap ($)", format="$%.2f"
+        ),
+        "Kalman_Long_SL_Gap": st.column_config.NumberColumn(
+            "Kalman Long Gap (P=0.50)", format="$%.2f"
         ),
         "Dynamic_Short_SL": st.column_config.NumberColumn(
             "Short SL Level ($)", format="$%.2f"
         ),
         "Short_SL_Gap": st.column_config.NumberColumn(
-            "Short SL Shift Gap ($)", format="$%.2f"
+            "Raw Short Gap ($)", format="$%.2f"
+        ),
+        "Kalman_Short_SL_Gap": st.column_config.NumberColumn(
+            "Kalman Short Gap (P=0.50)", format="$%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "HAM Normal", format="%.2f"
