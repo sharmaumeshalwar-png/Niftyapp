@@ -98,36 +98,43 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# DATA FETCHING
+# SAFE DATA FETCHING ENGINE
 # =====================================================================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
 def fetch_binance_data(start_ts, end_ts):
     endpoint = "https://api.binance.com/api/v3/klines"
     all_candles = []
     current_start = start_ts
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    while current_start < end_ts:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "limit": 1000,
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
-        if not isinstance(res, list) or len(res) == 0:
-            break
-        all_candles.extend(res)
-        last_candle_time = res[-1][0]
-        if last_candle_time <= current_start:
-            break
-        current_start = last_candle_time + 1
-        time.sleep(0.02)
+    try:
+        while current_start < end_ts:
+            params = {
+                "symbol": "BTCUSDT",
+                "interval": "1h",
+                "startTime": current_start,
+                "limit": 1000,
+            }
+            res = requests.get(
+                endpoint, params=params, headers=headers, timeout=10
+            )
+            data = res.json()
 
-    if len(all_candles) < 2000:
-        return None
+            if not isinstance(data, list) or len(data) == 0:
+                break
+
+            all_candles.extend(data)
+            last_candle_time = data[-1][0]
+            if last_candle_time <= current_start:
+                break
+            current_start = last_candle_time + 1
+            time.sleep(0.02)
+    except Exception as e:
+        st.warning(f"Binance API Fetch Alert: {e}")
+
+    # Flexible check: at least 200 candles required
+    if len(all_candles) < 200:
+        return pd.DataFrame()
 
     cols = [
         "OpenTime",
@@ -153,19 +160,27 @@ def fetch_binance_data(start_ts, end_ts):
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
+# --- FETCH & SAFE EXECUTION ---
 try:
     with st.spinner("🔄 Fetching Data & Updating TSL Engine..."):
         now = datetime.now(timezone.utc)
-        start_dt = now - timedelta(days=730)
+        start_dt = now - timedelta(days=365)  # 1 year data for speed & stability
         df = fetch_binance_data(
             int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
         )
+
+        if df.empty:
+            st.error(
+                "❌ Could not fetch candle data from Binance API. Please click"
+                " 'Force Refresh Engine' or check network/IP restriction."
+            )
+            st.stop()
 
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")].iloc[:-1]
         df.index = df.index.tz_convert("Asia/Kolkata")
 except Exception as e:
-    st.error(f"Data Error: {e}")
+    st.error(f"Data Processing Error: {e}")
     st.stop()
 
 # =====================================================================
@@ -239,7 +254,7 @@ def analyze_sl_behavior(row):
 df["SL_Behavior"] = df.apply(analyze_sl_behavior, axis=1)
 
 # =====================================================================
-# ADDED TSL (TRAILING STOP LOSS) COLUMN LOGIC
+# TSL (TRAILING STOP LOSS) COLUMN LOGIC
 # =====================================================================
 abs_ham = df["HAM_Normal"].abs()
 df["SL_Distance"] = np.where(
@@ -270,7 +285,6 @@ for i in range(1, len(df)):
     if closes[i] > curr_short_sl:
         curr_short_sl = highs[i] + distances[i]
 
-    # Assign single TSL column based on current market trend (HAM)
     if ham_vals[i] >= 0:
         tsl_arr[i] = curr_long_sl
     else:
@@ -286,7 +300,7 @@ df_predict = df.iloc[split_idx:].copy().dropna()
 
 clean_cols = [
     "Close",
-    "TSL",  # Added TSL column
+    "TSL",
     "Dynamic_Long_SL",
     "Dynamic_Short_SL",
     "HAM_Normal",
