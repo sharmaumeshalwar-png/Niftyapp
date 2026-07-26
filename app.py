@@ -289,6 +289,9 @@ momentum_ha_full = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
 
+# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+
 
 # =====================================================================
 # ⚡ 50:50 LEARN:PREDICT SPLIT
@@ -318,6 +321,7 @@ clean_cols = [
     "Hurst_HA",
     "HAM_Normal",
     "HAM_HeikinAshi",
+    "HAM_Diff",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -335,10 +339,11 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric("📊 HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
 
 st.divider()
 
@@ -364,6 +369,9 @@ st.dataframe(
         ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA Signal", format="%.2f"
+        ),
+        "HAM_Diff": st.column_config.NumberColumn(
+            "📊 HAM Diff (Normal - HA)", format="%.2f"
         ),
     },
     use_container_width=True,
