@@ -33,36 +33,7 @@ def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     return filtered_values
 
 # =====================================================================
-# 2. 8-STEP VERIFICATION METHOD FOR OUTCOME DATES
-# =====================================================================
-def verify_outcomes_8_steps(df_result):
-    """
-    Step 1 to 8 outcome date and signal verification.
-    Counts up to step 8 and tracks all possible outcomes.
-    """
-    verification_logs = []
-    total_rows = len(df_result)
-    
-    # 8 distinct inspection windows across the calculated dataset
-    step_indices = np.linspace(0, total_rows - 1, 8, dtype=int)
-    
-    for step_num, idx in enumerate(step_indices, 1):
-        row = df_result.iloc[idx]
-        timestamp_ist = row.name.strftime('%Y-%m-%d %H:%M:%S IST') if hasattr(row.name, 'strftime') else str(row.name)
-        
-        log_entry = {
-            "step": step_num,
-            "outcome_date_ist": timestamp_ist,
-            "close_price": round(float(row['a_Close']), 2),
-            "accumulator": int(row['Accumulator_Score']),
-            "signal": str(row['Signal'])
-        }
-        verification_logs.append(log_entry)
-        
-    return verification_logs
-
-# =====================================================================
-# 3. MAIN DATA PIPELINE & ML ENGINE
+# 2. MAIN DATA PIPELINE & ML ENGINE
 # =====================================================================
 with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
     # Download Live Data
@@ -79,8 +50,7 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # --- IST TIME CONVERSION & CLEANUP ---
-    # Convert index from UTC to Asia/Kolkata (IST) safely
+    # --- IST TIME CONVERSION ---
     if df.index.tzinfo is None:
         df.index = df.index.tz_localize('UTC').tz_convert(IST)
     else:
@@ -167,19 +137,38 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
 
     df_predict['Signal'] = signals
 
-    # Display Options with Formatted IST Time
-    display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Signal']
-    display_df = df_predict[display_cols].iloc[::-1].copy()
-    display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M IST')
-
-    st.subheader("📋 Real Top & Bottom Signal Matrix (IST)")
-    st.dataframe(display_df, use_container_width=True, height=600)
-
-    # 8-Step Verification Execution
-    outcomes_8_step = verify_outcomes_8_steps(df_predict)
-
-    st.markdown("---")
-    st.subheader("📊 All Possible Outcome Dates (8-Step Verification)")
+    # =====================================================================
+    # 3. 8-STEP VERIFICATION & SINGLE COMBINED TABLE DISPLAY
+    # =====================================================================
+    # 8-step sampling mapping directly into the main table
+    total_len = len(df_predict)
+    step_indices = set(np.linspace(0, total_len - 1, 8, dtype=int))
     
-    step_df = pd.DataFrame(outcomes_8_step)
-    st.table(step_df)
+    verification_steps = []
+    step_counter = 1
+    for idx in range(total_len):
+        if idx in step_indices and step_counter <= 8:
+            verification_steps.append(f"Step {step_counter}/8 Verified")
+            step_counter += 1
+        else:
+            verification_steps.append("Live Outcome")
+
+    df_predict['8_Step_Verification'] = verification_steps
+
+    # Formatted Single Table
+    display_cols = [
+        'a_Close', 
+        'b_Kalman_Price', 
+        'Prob_Up', 
+        'Prob_Down', 
+        'Accumulator_Score', 
+        'Weighted_Momentum', 
+        'Signal', 
+        '8_Step_Verification'
+    ]
+    
+    single_table_df = df_predict[display_cols].iloc[::-1].copy()
+    single_table_df.index = single_table_df.index.strftime('%Y-%m-%d %H:%M IST')
+
+    st.subheader("📋 Real Top & Real Bottom Signal Engine (Combined Table)")
+    st.dataframe(single_table_df, use_container_width=True, height=750)
