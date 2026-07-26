@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics & Dynamic TSL Engine", layout="wide"
+    page_title="BTC Kinematics & SL Gap Engine", layout="wide"
 )
-st.title("⚡ BTC Dynamic TSL Kinematic Engine")
+st.title("⚡ BTC Dynamic TSL & SL Gap Engine")
 st.write(
-    "🎯 **1-Hour Liquidity & TSL Tracker:** Existing Kinematic Engine with"
-    " Multi-Endpoint Failover"
+    "🎯 **1-Hour Liquidity Engine:** Tracking Dynamic TSL, Long/Short SL"
+    " Levels & Candle-to-Candle SL Shift Gaps"
 )
 
 # Sidebar Controls
@@ -98,19 +98,17 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# MULTI-ENDPOINT SAFE DATA FETCHING ENGINE
+# MULTI-ENDPOINT DATA FETCHING
 # =====================================================================
 @st.cache_data(ttl=1800)
 def fetch_binance_data_robust(start_ts, end_ts):
-    # Binance Backup Endpoints List
     endpoints = [
         "https://api.binance.com/api/v3/klines",
         "https://api1.binance.com/api/v3/klines",
         "https://api2.binance.com/api/v3/klines",
         "https://api3.binance.com/api/v3/klines",
-        "https://data-api.binance.vision/api/v3/klines",  # Public historical node
+        "https://data-api.binance.vision/api/v3/klines",
     ]
-
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -170,25 +168,23 @@ def fetch_binance_data_robust(start_ts, end_ts):
                 df_raw.set_index("Timestamp", inplace=True)
                 return df_raw[["Open", "High", "Low", "Close", "Volume"]]
         except Exception:
-            continue  # Try next endpoint if current fails
+            continue
 
     return pd.DataFrame()
 
 
-# --- FETCH & SAFE EXECUTION ---
+# --- FETCH DATA ---
 try:
-    with st.spinner("🔄 Attempting Multi-Node Fetch for BTC Data..."):
+    with st.spinner("🔄 Fetching Market Data & Calculating SL Gaps..."):
         now = datetime.now(timezone.utc)
-        start_dt = now - timedelta(days=180)  # 6-Month light load
+        start_dt = now - timedelta(days=180)
         df = fetch_binance_data_robust(
             int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
         )
 
         if df.empty:
             st.error(
-                "❌ All Binance API nodes are currently blocked on your local"
-                " ISP/Network. Please try using a VPN, or use Bybit/CCXT"
-                " fallback."
+                "❌ Data fetch error. Click 'Force Refresh Engine' or turn on VPN."
             )
             st.stop()
 
@@ -200,7 +196,7 @@ except Exception as e:
     st.stop()
 
 # =====================================================================
-# KINEMATICS & SL CALCULATIONS
+# KINEMATICS & DYNAMIC STOP LOSS ENGINE
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -232,7 +228,7 @@ df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# --- ATR & DYNAMIC STOP LOSS ENGINE ---
+# --- ATR & DYNAMIC STOP LOSS LEVELS ---
 tr1 = df["High"] - df["Low"]
 tr2 = (df["High"] - df["Close"].shift(1)).abs()
 tr3 = (df["Low"] - df["Close"].shift(1)).abs()
@@ -245,7 +241,18 @@ df["Dynamic_Long_SL"] = df["Low"] - (
     df["ATR"] * (1.5 - df["Hurst_Normal"] * 0.5)
 )
 
+# =====================================================================
+# NEW: CALCULATE SL UP / DOWN GAPS
+# =====================================================================
+df["Long_SL_Gap"] = (
+    df["Dynamic_Long_SL"] - df["Dynamic_Long_SL"].shift(1)
+).fillna(0.0)
+df["Short_SL_Gap"] = (
+    df["Dynamic_Short_SL"] - df["Dynamic_Short_SL"].shift(1)
+).fillna(0.0)
 
+
+# SL Behavior
 def analyze_sl_behavior(row):
     diff = row["HAM_Diff"]
     high = row["High"]
@@ -268,7 +275,7 @@ def analyze_sl_behavior(row):
 df["SL_Behavior"] = df.apply(analyze_sl_behavior, axis=1)
 
 # =====================================================================
-# TSL (TRAILING STOP LOSS) COLUMN LOGIC
+# TSL (TRAILING STOP LOSS) COLUMN
 # =====================================================================
 abs_ham = df["HAM_Normal"].abs()
 df["SL_Distance"] = np.where(
@@ -307,7 +314,7 @@ for i in range(1, len(df)):
 df["TSL"] = tsl_arr
 
 # =====================================================================
-# DISPLAY
+# DISPLAY TABLE
 # =====================================================================
 split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy().dropna()
@@ -316,7 +323,9 @@ clean_cols = [
     "Close",
     "TSL",
     "Dynamic_Long_SL",
+    "Long_SL_Gap",  # Added Gap Column
     "Dynamic_Short_SL",
+    "Short_SL_Gap",  # Added Gap Column
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff",
@@ -327,7 +336,9 @@ display_df = df_predict[clean_cols].copy().iloc[::-1]
 display_df["Close"] = display_df["Close"].round(2)
 display_df["TSL"] = display_df["TSL"].round(2)
 display_df["Dynamic_Long_SL"] = display_df["Dynamic_Long_SL"].round(2)
+display_df["Long_SL_Gap"] = display_df["Long_SL_Gap"].round(2)
 display_df["Dynamic_Short_SL"] = display_df["Dynamic_Short_SL"].round(2)
+display_df["Short_SL_Gap"] = display_df["Short_SL_Gap"].round(2)
 display_df["HAM_Normal"] = display_df["HAM_Normal"].round(2)
 display_df["HAM_HeikinAshi"] = display_df["HAM_HeikinAshi"].round(2)
 display_df["HAM_Diff"] = display_df["HAM_Diff"].round(2)
@@ -339,11 +350,19 @@ st.markdown(f"### 🔒 **LAST CANDLE STATUS (IST):** `{display_df.index[0]}`")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current Close", f"${latest['Close']:,.2f}")
 c2.metric("Active TSL", f"${latest['TSL']:,.2f}")
-c3.metric("Short SL Target", f"${latest['Dynamic_Short_SL']:,.2f}")
-c4.metric("Market SL Behavior", latest["SL_Behavior"])
+c3.metric(
+    "Long SL Gap",
+    f"${latest['Long_SL_Gap']:,.2f}",
+    delta=f"{latest['Long_SL_Gap']:.2f} pts",
+)
+c4.metric(
+    "Short SL Gap",
+    f"${latest['Short_SL_Gap']:,.2f}",
+    delta=f"{latest['Short_SL_Gap']:.2f} pts",
+)
 
 st.divider()
-st.subheader("📋 Candle-by-Candle Stop Loss & Liquidity Matrix")
+st.subheader("📋 Candle-by-Candle Stop Loss Shift & Liquidity Matrix")
 
 st.dataframe(
     display_df,
@@ -353,8 +372,14 @@ st.dataframe(
         "Dynamic_Long_SL": st.column_config.NumberColumn(
             "Long SL Level ($)", format="$%.2f"
         ),
+        "Long_SL_Gap": st.column_config.NumberColumn(
+            "Long SL Shift Gap ($)", format="$%.2f"
+        ),
         "Dynamic_Short_SL": st.column_config.NumberColumn(
             "Short SL Level ($)", format="$%.2f"
+        ),
+        "Short_SL_Gap": st.column_config.NumberColumn(
+            "Short SL Shift Gap ($)", format="$%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "HAM Normal", format="%.2f"
