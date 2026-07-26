@@ -54,23 +54,34 @@ def apply_causal_kalman(series, process_variance=1e-5, measurement_variance=0.50
     return filtered_values
 
 
-# 2. Condition 4: Rolling Hurst Exponent (Strictly 30-Candle Window)
+# 2. Condition 4: Rolling Hurst Exponent (Strictly 30-Candle Window & Bound [0.0 - 1.0])
 def calculate_rolling_hurst_30(price_series, window=30):
     """
-    Fast Causal Rolling Hurst Exponent strictly using a 30-candle window.
+    Causal Rolling Hurst Exponent (Window = 30)
+    Calculated on log-returns for numerical stability.
+    Output is strictly bounded between 0.0 and 1.0.
     """
     vals = np.asarray(price_series, dtype=float).flatten()
     n = len(vals)
     hurst_arr = np.full(n, 0.5)
+
+    # Log returns to prevent extreme volatility swings
+    log_returns = np.zeros(n)
+    log_returns[1:] = np.log(vals[1:] / vals[:-1])
+
     lags = np.arange(2, 10)
     log_lags = np.log(lags)
 
     for i in range(window, n):
-        sub_window = vals[i - window : i]
+        sub_window = log_returns[i - window : i]
         tau = [
             max(np.std(sub_window[l:] - sub_window[:-l]), 1e-8) for l in lags
         ]
-        hurst_arr[i] = np.polyfit(log_lags, np.log(tau), 1)[0]
+        
+        slope = np.polyfit(log_lags, np.log(tau), 1)[0]
+        
+        # Lock strictly inside standard [0.0, 1.0] range
+        hurst_arr[i] = np.clip(slope, 0.0, 1.0)
 
     return hurst_arr
 
@@ -254,7 +265,7 @@ df["kalman"] = apply_causal_kalman(df["Close"], measurement_variance=0.50)
 diff = df["Close"] - df["kalman"]
 df["weighted_momentum"] = diff.ewm(span=14, adjust=False).mean()
 
-# Condition 4: Hurst of Close (30 Candle Window)
+# Condition 4: Hurst of Close (30 Candle Window, Strictly 0.0 - 1.0 Range)
 df["hurst"] = calculate_rolling_hurst_30(df["Close"], window=30)
 
 # Condition 5: HAM (Hurst * Weighted Momentum)
@@ -344,7 +355,7 @@ st.dataframe(
             "Weighted Momentum", format="%.2f"
         ),
         "hurst": st.column_config.NumberColumn(
-            "Hurst (30 Win)", format="%.2f"
+            "Hurst (0.0-1.0)", format="%.2f"
         ),
         "ham": st.column_config.NumberColumn(
             "🚀 Normal HAM Signal", format="%.2f"
