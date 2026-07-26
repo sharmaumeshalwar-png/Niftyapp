@@ -14,7 +14,7 @@ st.set_page_config(
 st.title("⚡ BTC Dynamic TSL Kinematic Engine")
 st.write(
     "🎯 **1-Hour Liquidity & TSL Tracker:** Existing Kinematic Engine with"
-    " Integrated Dynamic TSL Column"
+    " Multi-Endpoint Failover"
 )
 
 # Sidebar Controls
@@ -98,81 +98,97 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# SAFE DATA FETCHING ENGINE
+# MULTI-ENDPOINT SAFE DATA FETCHING ENGINE
 # =====================================================================
 @st.cache_data(ttl=1800)
-def fetch_binance_data(start_ts, end_ts):
-    endpoint = "https://api.binance.com/api/v3/klines"
-    all_candles = []
-    current_start = start_ts
-    headers = {"User-Agent": "Mozilla/5.0"}
-
-    try:
-        while current_start < end_ts:
-            params = {
-                "symbol": "BTCUSDT",
-                "interval": "1h",
-                "startTime": current_start,
-                "limit": 1000,
-            }
-            res = requests.get(
-                endpoint, params=params, headers=headers, timeout=10
-            )
-            data = res.json()
-
-            if not isinstance(data, list) or len(data) == 0:
-                break
-
-            all_candles.extend(data)
-            last_candle_time = data[-1][0]
-            if last_candle_time <= current_start:
-                break
-            current_start = last_candle_time + 1
-            time.sleep(0.02)
-    except Exception as e:
-        st.warning(f"Binance API Fetch Alert: {e}")
-
-    # Flexible check: at least 200 candles required
-    if len(all_candles) < 200:
-        return pd.DataFrame()
-
-    cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
+def fetch_binance_data_robust(start_ts, end_ts):
+    # Binance Backup Endpoints List
+    endpoints = [
+        "https://api.binance.com/api/v3/klines",
+        "https://api1.binance.com/api/v3/klines",
+        "https://api2.binance.com/api/v3/klines",
+        "https://api3.binance.com/api/v3/klines",
+        "https://data-api.binance.vision/api/v3/klines",  # Public historical node
     ]
-    df_raw = pd.DataFrame(all_candles, columns=cols)
-    num_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(
-        df_raw["OpenTime"], unit="ms", utc=True
-    )
-    df_raw.set_index("Timestamp", inplace=True)
-    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+    }
+
+    for endpoint in endpoints:
+        all_candles = []
+        current_start = start_ts
+        try:
+            while current_start < end_ts:
+                params = {
+                    "symbol": "BTCUSDT",
+                    "interval": "1h",
+                    "startTime": current_start,
+                    "limit": 1000,
+                }
+                res = requests.get(
+                    endpoint, params=params, headers=headers, timeout=5
+                )
+
+                if res.status_code != 200:
+                    break
+
+                data = res.json()
+                if not isinstance(data, list) or len(data) == 0:
+                    break
+
+                all_candles.extend(data)
+                last_candle_time = data[-1][0]
+                if last_candle_time <= current_start:
+                    break
+                current_start = last_candle_time + 1
+                time.sleep(0.01)
+
+            if len(all_candles) >= 200:
+                cols = [
+                    "OpenTime",
+                    "Open",
+                    "High",
+                    "Low",
+                    "Close",
+                    "Volume",
+                    "CloseTime",
+                    "QuoteVolume",
+                    "Trades",
+                    "TakerBase",
+                    "TakerQuote",
+                    "Ignore",
+                ]
+                df_raw = pd.DataFrame(all_candles, columns=cols)
+                num_cols = ["Open", "High", "Low", "Close", "Volume"]
+                df_raw[num_cols] = df_raw[num_cols].astype(float)
+                df_raw["Timestamp"] = pd.to_datetime(
+                    df_raw["OpenTime"], unit="ms", utc=True
+                )
+                df_raw.set_index("Timestamp", inplace=True)
+                return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+        except Exception:
+            continue  # Try next endpoint if current fails
+
+    return pd.DataFrame()
 
 
 # --- FETCH & SAFE EXECUTION ---
 try:
-    with st.spinner("🔄 Fetching Data & Updating TSL Engine..."):
+    with st.spinner("🔄 Attempting Multi-Node Fetch for BTC Data..."):
         now = datetime.now(timezone.utc)
-        start_dt = now - timedelta(days=365)  # 1 year data for speed & stability
-        df = fetch_binance_data(
+        start_dt = now - timedelta(days=180)  # 6-Month light load
+        df = fetch_binance_data_robust(
             int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
         )
 
         if df.empty:
             st.error(
-                "❌ Could not fetch candle data from Binance API. Please click"
-                " 'Force Refresh Engine' or check network/IP restriction."
+                "❌ All Binance API nodes are currently blocked on your local"
+                " ISP/Network. Please try using a VPN, or use Bybit/CCXT"
+                " fallback."
             )
             st.stop()
 
@@ -180,7 +196,7 @@ try:
         df = df[~df.index.duplicated(keep="first")].iloc[:-1]
         df.index = df.index.tz_convert("Asia/Kolkata")
 except Exception as e:
-    st.error(f"Data Processing Error: {e}")
+    st.error(f"Data Engine Error: {e}")
     st.stop()
 
 # =====================================================================
@@ -222,7 +238,6 @@ tr2 = (df["High"] - df["Close"].shift(1)).abs()
 tr3 = (df["Low"] - df["Close"].shift(1)).abs()
 df["ATR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1).rolling(14).mean()
 
-# Dynamic SL Limits
 df["Dynamic_Short_SL"] = df["High"] + (
     df["ATR"] * (1.5 - df["Hurst_Normal"] * 0.5)
 )
@@ -231,7 +246,6 @@ df["Dynamic_Long_SL"] = df["Low"] - (
 )
 
 
-# --- SL SWEEP BEHAVIOR ENGINE ---
 def analyze_sl_behavior(row):
     diff = row["HAM_Diff"]
     high = row["High"]
