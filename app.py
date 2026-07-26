@@ -2,18 +2,20 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from sklearn.ensemble import RandomForestClassifier
 
-# Page Configuration
-st.set_page_config(page_title="BTC Master Kinematics Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Pure Kinematic Action Master Engine")
-st.write("🎯 **Pure Direct Crypto Signals:** Multiplied Shock-Acceleration Engine & 5-Channel Bounded Oscillator (100% Leak-Proof)")
+# Page Setup
+st.set_page_config(page_title="Real Top & Bottom Detection Engine", layout="wide")
+st.title("⚡ Live Double Kalman - Real Top & Real Bottom Signal Engine")
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Fixed Loop & Real-Time Safe)
+# 1. KALMAN FILTER FUNCTION
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0: return []
-    x, p = data_array[0], initial_p  
+def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+    if len(data_array) == 0:
+        return []
+    x = data_array[0]
+    p = initial_p
     filtered_values = []
     for z in data_array:
         p = p + q_val
@@ -23,178 +25,117 @@ def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.
         filtered_values.append(x)
     return filtered_values
 
-def calculate_rolling_hurst(price_series, window=100):
-    hurst_values = np.full(len(price_series), 0.5) 
-    log_returns = np.log(price_series / np.roll(price_series, 1))
-    log_returns[0] = 0
+with st.spinner("Fetching Live Market Data & Calculating Signals..."):
+    # Live Data Download (Bitcoin / Nifty)
+    raw_df = yf.download("BTC-USD", period="60d", interval="1h")
     
-    for i in range(window, len(price_series)):
-        window_data = log_returns[i-window+1:i+1]
-        cum_dev = np.cumsum(window_data - np.mean(window_data))
-        r_val = np.max(cum_dev) - np.min(cum_dev)
-        s_val = np.std(window_data) + 1e-10
-        rs_ratio = r_val / s_val
-        h = np.log(rs_ratio) / np.log(window)
-        hurst_values[i] = np.clip(h, 0.0, 1.0)
-    return hurst_values
-
-# -----------------------------------------------------------------
-# 🛡️ SYSTEM DATA INGESTION (BTC-USD Setup - 2y, 1h)
-# -----------------------------------------------------------------
-df = None
-with st.spinner("Fetching 2-Year Hourly Bitcoin Data from Yahoo Finance..."):
-    try:
-        # Crypto ticker 'BTC-USD' strictly 2 saal ka data aur 1 hourly intervals
-        df = yf.download(tickers="BTC-USD", period="2y", interval="1h")
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        if len(df) > 120: 
-            df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
-            df = df.iloc[:-1] # Live Running Candle Protection (Strictly No Leakage)
-            
-            # Crypto standard UTC timezone locking
-            if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC')
-            else:
-                df.index = df.index.tz_convert('UTC')
-        else:
-            st.error("🚨 Error: Insufficient data lines from Yahoo Finance.")
-            st.stop()
-    except Exception as e:
-        st.error(f"🚨 API Failure: {e}")
+    if raw_df.empty:
+        st.error("Data download error. Please refresh.")
         st.stop()
 
-# 🔥 CRITICAL DATA SCIENCE RULE: 50:50 split FIRST to prevent lookahead leakage globally
-split_idx = int(len(df) * 0.50)
-df_predict = df.iloc[split_idx:].copy()
+    df = pd.DataFrame(index=raw_df.index)
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in raw_df.columns:
+            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
 
-st.success(f"🟢 **Synced & Secured {len(df_predict)} Pure Live Bitcoin Candles (No Leakage)!**")
+    df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
+    df.index = pd.to_datetime(df.index)
 
-# =====================================================================
-# ⚡ NON-LINEAR HURST KINEMATICS CORE
-# =====================================================================
-df_predict['Close_Raw'] = df_predict['Close']
-close_arr = df_predict['Close_Raw'].values
+    # Base Price Kalman
+    df['a_Close'] = df['Close']
+    df['b_Kalman_Price'] = apply_kalman_filter(df['a_Close'].values, initial_p=50.0)
+    df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
 
-# 1. Base Kalman System & Innovation Error Extraction
-df_predict['Kalman_Baseline'] = apply_kalman_filter_custom(close_arr, initial_p=50.0, q_val=0.0005, r_val=0.2)
-df_predict['Kalman_Innovation'] = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
+    # Microstructure Features
+    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
+    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
+    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(24).std() + 1e-10)
+    df['Flow_Velocity'] = df['c_Combined'].diff(1)
 
-# 2. Pure Hurst Base Calculation
-df_predict['Hurst'] = calculate_rolling_hurst(close_arr, window=100)
+    df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
 
-# 3. MODIFICATION 1: HURST VELOCITY ENGINE
-df_predict['Hurst_Velocity'] = df_predict['Hurst'].diff(5).fillna(0.0)
-df_predict['Hurst_Acceleration'] = np.exp(df_predict['Hurst_Velocity'] * 3.0)
+    features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    df.dropna(subset=features + ['Target'], inplace=True)
 
-# 4. MODIFICATION 2: KALMAN ERROR ENERGY COUPLING
-df_predict['Error_Energy'] = df_predict['Kalman_Innovation'].rolling(window=20, min_periods=1).std().fillna(1.0)
-df_predict['Shock_Index'] = np.abs(df_predict['Kalman_Innovation']) / (df_predict['Error_Energy'] + 1e-10)
+    # ML Training (50:50 Split)
+    split_idx = int(len(df) * 0.50)
+    df_train = df.iloc[:split_idx]
+    df_predict = df.iloc[split_idx:].copy()
 
-# 5. Raw Price-based Weighted Momentum
-raw_weighted_momentum = df_predict['Close_Raw'] - df_predict['Kalman_Baseline']
-df_predict['Weighted_Momentum'] = apply_kalman_filter_custom(raw_weighted_momentum.values, initial_p=0.50, q_val=0.001, r_val=0.1)
+    model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
+    model.fit(df_train[features], df_train['Target'])
 
-df_predict['Hurst_Amp_Momentum'] = (
-    df_predict['Weighted_Momentum'] * (df_predict['Hurst'] * 2.0) * df_predict['Hurst_Acceleration'] * (1.0 + df_predict['Shock_Index'] * 0.5)
-)
+    probs = model.predict_proba(df_predict[features])
+    df_predict['Prob_Down'] = probs[:, 0]
+    df_predict['Prob_Up'] = probs[:, 1]
 
-# 6. 🔥 PAJI'S MULTIPLIED CUSTOM ENGINE (100% Leak-Proof Formula)
-raw_multiplied_drift = (df_predict['Hurst_Acceleration'] * df_predict['Shock_Index']) * df_predict['Hurst_Amp_Momentum']
+    # Accumulator & Weighted Momentum Calculation
+    accumulator = 0
+    scores, raw_momentum = [], []
 
-# ✨ Adaptive Energy Scaling for Crypto Volatility
-df_predict['Dynamic_Energy_Factor'] = np.where(df_predict['Hurst'] < 0.48, raw_multiplied_drift * 0.3, raw_multiplied_drift * 1.5)
+    prob_ups = df_predict['Prob_Up'].values
+    prob_downs = df_predict['Prob_Down'].values
+    closes = df_predict['a_Close'].values
+    kalmans = df_predict['b_Kalman_Price'].values
 
-smoothed_drift = apply_kalman_filter_custom(df_predict['Dynamic_Energy_Factor'].values, initial_p=1.0, q_val=0.005, r_val=0.5)
-
-# Bounded range engine (-100 to +100 Scaling using Hyperbolic Tangent)
-df_predict['Kinematic_Drift_Score'] = np.tanh(np.array(smoothed_drift) * 0.03) * 100.0
-
-# Clean NaNs strictly before creating rolling statistical channels
-df_predict.dropna(subset=['Hurst'], inplace=True)
-
-# =====================================================================
-# 📊 1 TO 5 CHANNEL ACCUMULATOR ENGINE
-# =====================================================================
-mom_vals = df_predict['Hurst_Amp_Momentum'].to_numpy()
-rolling_window = 50
-mom_mean = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).mean().to_numpy()
-mom_std = df_predict['Hurst_Amp_Momentum'].rolling(window=rolling_window, min_periods=1).std().fillna(1.0).to_numpy()
-
-channels = np.zeros(len(mom_vals), dtype=int)
-accumulator = np.zeros(len(mom_vals), dtype=int) 
-
-for i in range(len(mom_vals)):
-    val = mom_vals[i]
-    m = mom_mean[i]
-    s = mom_std[i]
-    
-    if val > (m + 1.5 * s):
-        channels[i] = 5
-    elif val > (m + 0.5 * s):
-        channels[i] = 4
-    elif val < (m - 1.5 * s):
-        channels[i] = 1
-    elif val < (m - 0.5 * s):
-        channels[i] = 2
-    else:
-        channels[i] = 3
+    for i in range(len(prob_ups)):
+        p_up, p_down = prob_ups[i], prob_downs[i]
+        if p_up >= 0.55:
+            accumulator += 1
+        elif p_down >= 0.55:
+            accumulator -= 1
+        accumulator = max(-5, min(5, accumulator))
         
-    if i == 0:
-        accumulator[i] = channels[i]
-    else:
-        prev_acc = accumulator[i-1]
-        curr_chan = channels[i]
-        if abs(curr_chan - prev_acc) >= 1:
-            accumulator[i] = curr_chan
+        scores.append(accumulator)
+        raw_momentum.append(closes[i] - kalmans[i])
+
+    df_predict['Accumulator_Score'] = scores
+    df_predict['Weighted_Momentum'] = apply_kalman_filter(raw_momentum, initial_p=0.50)
+
+    # =====================================================================
+    # 2. REAL TOP & REAL BOTTOM SIGNAL ENGINE
+    # =====================================================================
+    signals = []
+    accum_array = df_predict['Accumulator_Score'].values
+    wm_array = df_predict['Weighted_Momentum'].values
+
+    for i in range(len(df_predict)):
+        acc = accum_array[i]
+        wm = wm_array[i]
+        p_up = prob_ups[i]
+        p_down = prob_downs[i]
+
+        # Momentum change check
+        prev_wm = wm_array[i-1] if i > 0 else wm
+
+        # REAL TOP RULE: Accumulator is +5, but momentum drops or Down probability rises
+        if acc == 5 and (wm < prev_wm or p_down > 0.40):
+            signals.append("🔴 REAL TOP (Peak Reversal Warning)")
+        # STRONG BUY
+        elif acc == 5:
+            signals.append("🟢 STRONG BUY (Max Locked +5)")
+
+        # REAL BOTTOM RULE: Accumulator is -5, but momentum rises or Up probability rises
+        elif acc == -5 and (wm > prev_wm or p_up > 0.40):
+            signals.append("🟢 REAL BOTTOM (Valley Recovery Signal)")
+        # STRONG SELL
+        elif acc == -5:
+            signals.append("🔴 STRONG SELL (Max Bearish -5)")
+
+        # MID-RANGE REVERSALS
+        elif acc > 0:
+            signals.append(f"🟢 BULLISH TREND (Score: {acc})")
+        elif acc < 0:
+            signals.append(f"🔴 BEARISH TREND (Score: {acc})")
         else:
-            accumulator[i] = prev_acc
+            signals.append("⚪ NEUTRAL / HOLD")
 
-df_predict['Accumulator_Channel'] = accumulator
+    df_predict['Signal'] = signals
 
-# 🤖 SIGNAL & PROBABILITY GENERATION
-signal_log = []
-prob_up = []
-current_sig = "🔴 SELL"  
+    # UI Output
+    display_cols = ['a_Close', 'b_Kalman_Price', 'Prob_Up', 'Prob_Down', 'Accumulator_Score', 'Weighted_Momentum', 'Signal']
+    display_df = df_predict[display_cols].iloc[::-1].copy()
 
-for i in range(len(df_predict)):
-    acc_chan = accumulator[i]
-    if acc_chan >= 4:
-        current_sig = "🟢 BUY"
-    elif acc_chan <= 2:
-        current_sig = "🔴 SELL"
-    signal_log.append(current_sig)
-    
-    if acc_chan == 5: p = 0.95
-    elif acc_chan == 4: p = 0.75
-    elif acc_chan == 3: p = 0.55 if current_sig == "🟢 BUY" else 0.45
-    elif acc_chan == 2: p = 0.25
-    else: p = 0.05
-    prob_up.append(round(p, 2))
-
-df_predict['Signal'] = signal_log
-df_predict['Prob_Up'] = prob_up
-
-# =====================================================================
-# 📋 MATRIX FORMATTING WITH BOUNDED SCORE
-# =====================================================================
-clean_cols = [
-    'Close_Raw', 
-    'Hurst_Amp_Momentum', 
-    'Kinematic_Drift_Score',  # Pure Fixed range column (-100 to +100)
-    'Accumulator_Channel', 
-    'Signal', 
-    'Prob_Up'
-]
-display_df = df_predict[clean_cols].copy()
-
-for c in ['Close_Raw', 'Hurst_Amp_Momentum', 'Kinematic_Drift_Score']:
-    display_df[c] = display_df[c].round(2)
-
-# Latest on top display in UTC
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime('%Y-%m-%d %H:%M UTC')
-
-st.subheader("📋 5-Channel Kinematic Bounded Bitcoin Action Matrix")
-st.dataframe(display_df, use_container_width=True, height=750)
+    st.subheader("📋 Real Top & Bottom Signal Matrix")
+    st.dataframe(display_df, use_container_width=True, height=700)
