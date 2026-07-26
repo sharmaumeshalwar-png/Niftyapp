@@ -33,9 +33,9 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+    data_array, initial_p=50.0, q_val=0.0001, r_val=0.001
 ):
-    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+    """Sequential single-pass Kalman Filter (Updated q=0.0001, r=0.001 for zero-lag responsiveness)."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -265,13 +265,13 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 )
 
 kalman_base_normal_full = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+    normal_close_full, initial_p=50.0, q_val=0.0001, r_val=0.001
 )
 momentum_normal_full = apply_kalman_filter_custom(
     normal_close_full - kalman_base_normal_full,
     initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
+    q_val=0.0001,
+    r_val=0.001,
 )
 
 # Base HAM Normal Signal
@@ -282,14 +282,17 @@ ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
 kalman_base_ha_full = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+    ha_close_full, initial_p=50.0, q_val=0.0001, r_val=0.001
 )
 momentum_ha_full = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+    ha_close_full - kalman_base_ha_full,
+    initial_p=0.50,
+    q_val=0.0001,
+    r_val=0.001,
 )
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+# --- HAM DIFFERENCE (HAM Normal - HAM HA) ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
 
