@@ -13,10 +13,8 @@ st.set_page_config(
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Multi-HAM Matrix"
-    " (Cascaded Dual-Kalman Kinematics + Direct HAM Fisher) | 50:50"
-    " Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous"
-    " Warmup]"
+    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
+    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
 )
 
 # Sidebar Controls
@@ -83,27 +81,6 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-def calculate_fisher_transform_from_series(series_input, window=10):
-    """Calculates Fisher Transform directly from any input series (e.g. HAM Signal)."""
-    s = pd.Series(series_input, dtype=float)
-    roll_min = s.rolling(window).min()
-    roll_max = s.rolling(window).max()
-
-    denom = roll_max - roll_min
-    denom = np.where(denom == 0, 1e-8, denom)
-
-    # Normalize input series to [-1, 1]
-    raw_x = 2 * ((s - roll_min) / denom) - 1.0
-
-    # Mild smoothing to prevent extreme jump discontinuities
-    x = raw_x.ewm(span=3, adjust=False).mean()
-    x = np.clip(x, -0.999, 0.999)
-
-    # Fisher Transform Formula
-    fisher = 0.5 * np.log((1.0 + x) / (1.0 - x))
-    return fisher.fillna(0.0).to_numpy()
-
-
 def apply_heikin_ashi(df_in):
     """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
     op = np.asarray(df_in["Open"], dtype=float).flatten()
@@ -127,17 +104,6 @@ def apply_heikin_ashi(df_in):
     df_out["HA_Low"] = ha_low
     df_out["HA_Close"] = ha_close
     return df_out
-
-
-def calculate_atr(df_in, period=14):
-    """Zero Future Leakage ATR Engine."""
-    high = df_in["High"]
-    low = df_in["Low"]
-    close = df_in["Close"].shift(1)
-    tr = np.maximum(
-        high - low, np.maximum(np.abs(high - close), np.abs(low - close))
-    )
-    return tr.rolling(period).mean().ffill().fillna(0.0)
 
 
 # =====================================================================
@@ -288,7 +254,7 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS (Eliminates Cold-Start Bias)
+# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -307,7 +273,8 @@ momentum_normal_full = apply_kalman_filter_custom(
     q_val=0.001,
     r_val=0.1,
 )
-# Original Base HAM Normal Signal
+
+# Base HAM Normal Signal
 df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
@@ -321,34 +288,6 @@ momentum_ha_full = apply_kalman_filter_custom(
     ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
 )
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
-
-# --- PATH C: WEIGHTED MOMENTUM HAM ---
-full_atr = calculate_atr(df, period=14).to_numpy()
-
-kalman_series = pd.Series(kalman_base_normal_full)
-kalman_slope = kalman_series.diff().fillna(0.0).to_numpy()
-
-weighted_momentum_multiplier = 1.0 + np.tanh(
-    kalman_slope / np.where(full_atr > 0, full_atr, 1.0)
-)
-df["Weighted_Momentum"] = weighted_momentum_multiplier
-
-df["Weighted_Momentum_Kalman"] = apply_kalman_filter_custom(
-    weighted_momentum_multiplier, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-
-df["HAM_Weighted_Momentum"] = (
-    momentum_normal_full
-    * df["Weighted_Momentum_Kalman"].to_numpy()
-    * (df["Hurst_Normal"].to_numpy() * 2.0)
-)
-
-# =====================================================================
-# 🌟 NEW DIRECT COLUMN: HAM_Normal ko base banakar Fisher Transform
-# =====================================================================
-df["HAM_Fisher_Transform"] = calculate_fisher_transform_from_series(
-    df["HAM_Normal"], window=10
-)
 
 
 # =====================================================================
@@ -378,11 +317,7 @@ clean_cols = [
     "Hurst_Normal",
     "Hurst_HA",
     "HAM_Normal",
-    "HAM_Fisher_Transform",  # 🌟 Direct Fisher calculated on HAM_Normal
     "HAM_HeikinAshi",
-    "Weighted_Momentum",
-    "Weighted_Momentum_Kalman",
-    "HAM_Weighted_Momentum",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -394,25 +329,21 @@ for col in clean_cols:
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 
-# Metric Card
+# Metric Cards Display
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("🎯 HAM Fisher Transform", f"{latest_candle['HAM_Fisher_Transform']:.2f}")
-col4.metric(
-    "Weighted HAM Signal",
-    f"{latest_candle['HAM_Weighted_Momentum']:.2f}",
-)
+col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Dynamic Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -431,20 +362,8 @@ st.dataframe(
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
         ),
-        "HAM_Fisher_Transform": st.column_config.NumberColumn(
-            "🎯 HAM Fisher Transform", format="%.2f"
-        ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA Signal", format="%.2f"
-        ),
-        "Weighted_Momentum": st.column_config.NumberColumn(
-            "Raw Weight", format="%.2fx"
-        ),
-        "Weighted_Momentum_Kalman": st.column_config.NumberColumn(
-            "Filtered Weight (Kalman)", format="%.2fx"
-        ),
-        "HAM_Weighted_Momentum": st.column_config.NumberColumn(
-            "HAM Weighted Signal", format="%.2f"
         ),
     },
     use_container_width=True,
