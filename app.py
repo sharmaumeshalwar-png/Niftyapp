@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
-from datetime import datetime
 import pytz
 
 # =====================================================================
@@ -12,8 +11,8 @@ import pytz
 IST = pytz.timezone('Asia/Kolkata')
 
 # Page Setup
-st.set_page_config(page_title="Real Top & Bottom Detection Engine (IST)", layout="wide")
-st.title("⚡ Live Double Kalman - Real Top & Real Bottom Signal Engine (IST Time)")
+st.set_page_config(page_title="Real Top & Bottom Detection Engine (2-Year 1H)", layout="wide")
+st.title("⚡ Live Double Kalman - Real Top & Real Bottom Signal Engine (2-Year IST)")
 
 # =====================================================================
 # 1. KALMAN FILTER FUNCTION (Leak-Free Pure Math)
@@ -35,9 +34,9 @@ def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
 # =====================================================================
 # 2. MAIN DATA PIPELINE & ML ENGINE
 # =====================================================================
-with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
-    # Download Live Data
-    raw_df = yf.download("BTC-USD", period="60d", interval="1h", progress=False)
+with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."):
+    # Download 2 Years (730d) of 1-Hour Candle Data
+    raw_df = yf.download("BTC-USD", period="730d", interval="1h", progress=False)
     
     if raw_df.empty:
         st.error("Data download error. Please refresh.")
@@ -50,7 +49,7 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # --- IST TIME CONVERSION ---
+    # --- IST TIME CONVERSION (Leak-Free Timezone Alignment) ---
     if df.index.tzinfo is None:
         df.index = df.index.tz_localize('UTC').tz_convert(IST)
     else:
@@ -73,14 +72,16 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
     features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
     df.dropna(subset=features + ['Target'], inplace=True)
 
-    # ML Training (50:50 Split)
+    # 50:50 LEARN : PREDICT SPLIT (2 Years total dataset divided into Year 1 Learn / Year 2 Predict)
     split_idx = int(len(df) * 0.50)
     df_train = df.iloc[:split_idx]
     df_predict = df.iloc[split_idx:].copy()
 
+    # Leak-Free Model Training on first 50% dataset
     model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model.fit(df_train[features], df_train['Target'])
 
+    # Predict on remaining 50% dataset
     probs = model.predict_proba(df_predict[features])
     df_predict['Prob_Down'] = probs[:, 0]
     df_predict['Prob_Up'] = probs[:, 1]
@@ -108,7 +109,7 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
     df_predict['Accumulator_Score'] = scores
     df_predict['Weighted_Momentum'] = apply_kalman_filter(raw_momentum, initial_p=0.50)
 
-    # Signal Generation Engine
+    # Real Top & Real Bottom Signal Engine
     signals = []
     accum_array = df_predict['Accumulator_Score'].values
     wm_array = df_predict['Weighted_Momentum'].values
@@ -138,9 +139,8 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
     df_predict['Signal'] = signals
 
     # =====================================================================
-    # 3. 8-STEP VERIFICATION & SINGLE COMBINED TABLE DISPLAY
+    # 3. 8-STEP VERIFICATION METHOD IN SINGLE COMBINED TABLE
     # =====================================================================
-    # 8-step sampling mapping directly into the main table
     total_len = len(df_predict)
     step_indices = set(np.linspace(0, total_len - 1, 8, dtype=int))
     
@@ -155,7 +155,7 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
 
     df_predict['8_Step_Verification'] = verification_steps
 
-    # Formatted Single Table
+    # Combined Table Display Columns
     display_cols = [
         'a_Close', 
         'b_Kalman_Price', 
@@ -170,5 +170,5 @@ with st.spinner("Fetching Live Market Data & Processing IST Signals..."):
     single_table_df = df_predict[display_cols].iloc[::-1].copy()
     single_table_df.index = single_table_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-    st.subheader("📋 Real Top & Real Bottom Signal Engine (Combined Table)")
+    st.subheader("📋 2-Year Real Top & Real Bottom Signal Engine (1H IST - Single Table)")
     st.dataframe(single_table_df, use_container_width=True, height=750)
