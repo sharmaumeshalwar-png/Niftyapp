@@ -11,8 +11,8 @@ import pytz
 IST = pytz.timezone('Asia/Kolkata')
 
 # Page Setup
-st.set_page_config(page_title="Real Top & Bottom Detection Engine (2-Year 1H)", layout="wide")
-st.title("⚡ Live Double Kalman - Real Top & Real Bottom Signal Engine (2-Year IST)")
+st.set_page_config(page_title="Real Top & Bottom Engine with HAM (2-Year 1H)", layout="wide")
+st.title("⚡ Live Double Kalman + HAM Signal Engine (2-Year IST)")
 
 # =====================================================================
 # 1. KALMAN FILTER FUNCTION (Leak-Free Pure Math)
@@ -32,9 +32,9 @@ def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     return filtered_values
 
 # =====================================================================
-# 2. MAIN DATA PIPELINE & ML ENGINE
+# 2. MAIN DATA PIPELINE & ML ENGINE WITH HAM FEATURES
 # =====================================================================
-with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."):
+with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model with HAM Features..."):
     # Download 2 Years (730d) of 1-Hour Candle Data
     raw_df = yf.download("BTC-USD", period="730d", interval="1h", progress=False)
     
@@ -49,7 +49,7 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # --- IST TIME CONVERSION (Leak-Free Timezone Alignment) ---
+    # --- IST TIME CONVERSION ---
     if df.index.tzinfo is None:
         df.index = df.index.tz_localize('UTC').tz_convert(IST)
     else:
@@ -67,21 +67,37 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(24).std() + 1e-10)
     df['Flow_Velocity'] = df['c_Combined'].diff(1)
 
+    # --- HAM (HAMMER / HANGING MAN) FEATURE CALCULATION ---
+    candle_body = (df['a_Close'] - df['Open']).abs()
+    lower_wick = df[['a_Close', 'Open']].min(axis=1) - df['Low']
+    
+    # HAM Ratio = Lower Wick / Body
+    df['HAM_Ratio'] = lower_wick / (candle_body + 1e-10)
+    
+    # HAM Value: +1 for Bullish Hammer, -1 for Bearish Hanging Man, 0 for Normal Candle
+    ham_conditions = [
+        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] >= df['Open']),  # Bullish Hammer
+        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] < df['Open'])   # Bearish Hanging Man
+    ]
+    df['HAM_Value'] = np.select(ham_conditions, [1, -1], default=0)
+
+    # Target Definition
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
 
-    features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity']
+    # Feature List including HAM Features
+    features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'HAM_Ratio', 'HAM_Value']
     df.dropna(subset=features + ['Target'], inplace=True)
 
-    # 50:50 LEARN : PREDICT SPLIT (2 Years total dataset divided into Year 1 Learn / Year 2 Predict)
+    # 50:50 LEARN : PREDICT SPLIT (2 Years total dataset)
     split_idx = int(len(df) * 0.50)
     df_train = df.iloc[:split_idx]
     df_predict = df.iloc[split_idx:].copy()
 
-    # Leak-Free Model Training on first 50% dataset
+    # Model Training on 1st 50% dataset with HAM Features
     model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model.fit(df_train[features], df_train['Target'])
 
-    # Predict on remaining 50% dataset
+    # Predict on 2nd 50% dataset
     probs = model.predict_proba(df_predict[features])
     df_predict['Prob_Down'] = probs[:, 0]
     df_predict['Prob_Up'] = probs[:, 1]
@@ -139,7 +155,7 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."
     df_predict['Signal'] = signals
 
     # =====================================================================
-    # 3. 8-STEP VERIFICATION METHOD IN SINGLE COMBINED TABLE
+    # 3. 8-STEP VERIFICATION IN SINGLE COMBINED TABLE
     # =====================================================================
     total_len = len(df_predict)
     step_indices = set(np.linspace(0, total_len - 1, 8, dtype=int))
@@ -155,10 +171,12 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."
 
     df_predict['8_Step_Verification'] = verification_steps
 
-    # Combined Table Display Columns
+    # Display Table Columns (with HAM Values)
     display_cols = [
         'a_Close', 
         'b_Kalman_Price', 
+        'HAM_Ratio',
+        'HAM_Value',
         'Prob_Up', 
         'Prob_Down', 
         'Accumulator_Score', 
@@ -170,5 +188,5 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model..."
     single_table_df = df_predict[display_cols].iloc[::-1].copy()
     single_table_df.index = single_table_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-    st.subheader("📋 2-Year Real Top & Real Bottom Signal Engine (1H IST - Single Table)")
+    st.subheader("📋 2-Year Real Top & Bottom Engine with HAM Features (1H IST - Single Table)")
     st.dataframe(single_table_df, use_container_width=True, height=750)
