@@ -10,13 +10,33 @@ import pytz
 # =====================================================================
 IST = pytz.timezone('Asia/Kolkata')
 
-# Page Setup
-st.set_page_config(page_title="Real Top & Bottom Engine with HAM (2-Year 1H)", layout="wide")
-st.title("⚡ Live Double Kalman + HAM Signal Engine (2-Year IST)")
+st.set_page_config(page_title="Real Radar Wave Theory BTC Signal Engine", layout="wide")
+st.title("⚡ Live Double Kalman + PURE RADAR WAVE THEORY Engine (2-Year IST)")
 
 # =====================================================================
-# 1. KALMAN FILTER FUNCTION (Leak-Free Pure Math)
+# 1. PURE RADAR WAVE PHYSICS THEORY FUNCTION
 # =====================================================================
+def apply_radar_wave_theory(price_array, period=24):
+    """
+    Implements Real Radar Physics:
+    1. Electromagnetic Wave Phase Angle & Doppler Shift (Frequency Shift)
+    2. Echo Time Delay Signal Reconstruction
+    """
+    SPEED_OF_LIGHT = 3e8  # c (m/s)
+    CARRIER_FREQ = 10e9   # f0 (10 GHz Radar Frequency)
+    
+    # Step 1: Calculate Price Movement Velocity (v)
+    price_velocity = np.diff(price_array, prepend=price_array[0])
+    
+    # Step 2: Doppler Shift Frequency Equation: fd = (2 * v * f0) / c
+    doppler_shift = (2 * price_velocity * CARRIER_FREQ) / SPEED_OF_LIGHT
+    
+    # Step 3: Target Echo Signal Amplitude via Wave Interference (Phase Shift)
+    wave_phase = np.arctan2(price_velocity, np.std(price_array) + 1e-10)
+    radar_echo_amplitude = np.sin(wave_phase) * np.exp(-0.1 * np.abs(doppler_shift * 1e5))
+    
+    return doppler_shift, radar_echo_amplitude
+
 def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     if len(data_array) == 0:
         return []
@@ -32,10 +52,9 @@ def apply_kalman_filter(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     return filtered_values
 
 # =====================================================================
-# 2. MAIN DATA PIPELINE & ML ENGINE WITH HAM FEATURES
+# 2. MAIN DATA PIPELINE & RADAR WAVE ENGINE
 # =====================================================================
-with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model with HAM Features..."):
-    # Download 2 Years (730d) of 1-Hour Candle Data
+with st.spinner("Fetching Market Data & Applying Pure Doppler Radar Theory..."):
     raw_df = yf.download("BTC-USD", period="730d", interval="1h", progress=False)
     
     if raw_df.empty:
@@ -49,67 +68,67 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model wit
 
     df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
     
-    # --- IST TIME CONVERSION ---
     if df.index.tzinfo is None:
         df.index = df.index.tz_localize('UTC').tz_convert(IST)
     else:
         df.index = df.index.tz_convert(IST)
 
-    # Base Price Kalman
     df['a_Close'] = df['Close']
     df['b_Kalman_Price'] = apply_kalman_filter(df['a_Close'].values, initial_p=50.0)
     df['c_Combined'] = df['a_Close'] - df['b_Kalman_Price']
 
-    # Microstructure Features
+    # --- PURE RADAR WAVE THEORY CALCULATIONS ---
+    doppler_shifts, echo_amps = apply_radar_wave_theory(df['a_Close'].values)
+    df['Radar_Doppler_Shift'] = doppler_shifts
+    df['Radar_Echo_Amplitude'] = echo_amps
+    
+    # Real Radar Signal Wave Rule
+    df['Real_Radar_Signal'] = np.where(
+        (df['Radar_Echo_Amplitude'] > 0.8) & (df['Radar_Doppler_Shift'] < 0), 
+        "📡 RADAR WAVE PEAK (Reversal Echo)", 
+        np.where(
+            (df['Radar_Echo_Amplitude'] < -0.8) & (df['Radar_Doppler_Shift'] > 0), 
+            "📡 RADAR WAVE VALLEY (Echo Bound)", 
+            "📡 NO ECHO DELAY"
+        )
+    )
+
+    # Microstructure & HAM
     df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
     df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
     df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(24).std() + 1e-10)
-    df['Flow_Velocity'] = df['c_Combined'].diff(1)
 
-    # --- HAM (HAMMER / HANGING MAN) FEATURE CALCULATION ---
     candle_body = (df['a_Close'] - df['Open']).abs()
     lower_wick = df[['a_Close', 'Open']].min(axis=1) - df['Low']
-    
-    # HAM Ratio = Lower Wick / Body
     df['HAM_Ratio'] = lower_wick / (candle_body + 1e-10)
     
-    # HAM Value: +1 for Bullish Hammer, -1 for Bearish Hanging Man, 0 for Normal Candle
     ham_conditions = [
-        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] >= df['Open']),  # Bullish Hammer
-        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] < df['Open'])   # Bearish Hanging Man
+        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] >= df['Open']),
+        (df['HAM_Ratio'] >= 2.0) & (df['a_Close'] < df['Open'])
     ]
     df['HAM_Value'] = np.select(ham_conditions, [1, -1], default=0)
 
-    # Target Definition
     df['Target'] = np.where(df['a_Close'] > df['a_Close'].shift(25), 1, 0)
-
-    # Feature List including HAM Features
-    features = ['c_Combined', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'Flow_Velocity', 'HAM_Ratio', 'HAM_Value']
+    features = ['c_Combined', 'Radar_Doppler_Shift', 'Radar_Echo_Amplitude', 'Order_Imbalance', 'Body_Imbalance', 'Normalized_Gap', 'HAM_Ratio', 'HAM_Value']
     df.dropna(subset=features + ['Target'], inplace=True)
 
-    # 50:50 LEARN : PREDICT SPLIT (2 Years total dataset)
+    # 50:50 Learn:Predict Split
     split_idx = int(len(df) * 0.50)
     df_train = df.iloc[:split_idx]
     df_predict = df.iloc[split_idx:].copy()
 
-    # Model Training on 1st 50% dataset with HAM Features
     model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
     model.fit(df_train[features], df_train['Target'])
 
-    # Predict on 2nd 50% dataset
     probs = model.predict_proba(df_predict[features])
     df_predict['Prob_Down'] = probs[:, 0]
     df_predict['Prob_Up'] = probs[:, 1]
 
-    # Accumulator & Weighted Momentum
     accumulator = 0
     scores, raw_momentum = [], []
-
-    prob_ups = df_predict['Prob_Up'].values
-    prob_downs = df_predict['Prob_Down'].values
-    closes = df_predict['a_Close'].values
-    kalmans = df_predict['b_Kalman_Price'].values
+    prob_ups, prob_downs = df_predict['Prob_Up'].values, df_predict['Prob_Down'].values
+    closes, kalmans = df_predict['a_Close'].values, df_predict['b_Kalman_Price'].values
 
     for i in range(len(prob_ups)):
         p_up, p_down = prob_ups[i], prob_downs[i]
@@ -125,16 +144,11 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model wit
     df_predict['Accumulator_Score'] = scores
     df_predict['Weighted_Momentum'] = apply_kalman_filter(raw_momentum, initial_p=0.50)
 
-    # Real Top & Real Bottom Signal Engine
     signals = []
-    accum_array = df_predict['Accumulator_Score'].values
-    wm_array = df_predict['Weighted_Momentum'].values
+    accum_array, wm_array = df_predict['Accumulator_Score'].values, df_predict['Weighted_Momentum'].values
 
     for i in range(len(df_predict)):
-        acc = accum_array[i]
-        wm = wm_array[i]
-        p_up = prob_ups[i]
-        p_down = prob_downs[i]
+        acc, wm, p_up, p_down = accum_array[i], wm_array[i], prob_ups[i], prob_downs[i]
         prev_wm = wm_array[i-1] if i > 0 else wm
 
         if acc == 5 and (wm < prev_wm or p_down > 0.40):
@@ -154,9 +168,7 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model wit
 
     df_predict['Signal'] = signals
 
-    # =====================================================================
-    # 3. 8-STEP VERIFICATION IN SINGLE COMBINED TABLE
-    # =====================================================================
+    # 8-Step Verification
     total_len = len(df_predict)
     step_indices = set(np.linspace(0, total_len - 1, 8, dtype=int))
     
@@ -171,16 +183,16 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model wit
 
     df_predict['8_Step_Verification'] = verification_steps
 
-    # Display Table Columns (with HAM Values)
     display_cols = [
         'a_Close', 
         'b_Kalman_Price', 
-        'HAM_Ratio',
-        'HAM_Value',
+        'Real_Radar_Signal', 
+        'Radar_Doppler_Shift',
+        'Radar_Echo_Amplitude',
+        'HAM_Value', 
         'Prob_Up', 
         'Prob_Down', 
         'Accumulator_Score', 
-        'Weighted_Momentum', 
         'Signal', 
         '8_Step_Verification'
     ]
@@ -188,5 +200,5 @@ with st.spinner("Fetching 2 Years of 1-Hour IST Market Data & Training Model wit
     single_table_df = df_predict[display_cols].iloc[::-1].copy()
     single_table_df.index = single_table_df.index.strftime('%Y-%m-%d %H:%M IST')
 
-    st.subheader("📋 2-Year Real Top & Bottom Engine with HAM Features (1H IST - Single Table)")
+    st.subheader("📋 Pure Doppler Radar Wave Theory Signal Matrix (Single Table)")
     st.dataframe(single_table_df, use_container_width=True, height=750)
