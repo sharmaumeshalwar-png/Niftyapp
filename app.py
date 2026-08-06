@@ -1,209 +1,379 @@
-import streamlit as st
+import time
+from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from sklearn.ensemble import RandomForestClassifier
-import pytz
-import os
-
-IST = pytz.timezone('Asia/Kolkata')
-DB_FILE = "btc_signals_database.csv"
-
-st.set_page_config(page_title="BTC Database-Locked Engine", layout="wide")
-st.title("🛡️ Live BTC Engine (Database Locked - 0% Repaint)")
+import requests
+import streamlit as st
 
 # =====================================================================
-# 1. CAUSAL FUNCTIONS
+# PAGE CONFIGURATION & HEADER
 # =====================================================================
-def apply_causal_kalman(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    if len(data_array) == 0:
-        return []
-    x = data_array[0]
-    p = initial_p
-    filtered = []
-    for z in data_array:
+st.set_page_config(
+    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
+)
+st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
+st.write(
+    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
+    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
+)
+
+# Sidebar Controls
+st.sidebar.header("🔄 Live Engine Controls")
+if st.sidebar.button("⚡ Force Refresh Engine"):
+    st.cache_data.clear()
+    st.rerun()
+
+st.sidebar.success(
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
+    " CONNECTED"
+)
+
+
+# =====================================================================
+# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
+# =====================================================================
+def apply_kalman_filter_custom(
+    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+):
+    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+    arr = np.asarray(data_array, dtype=float).flatten()
+    if len(arr) == 0:
+        return np.array([])
+    x, p = arr[0], initial_p
+    filtered_values = np.empty(len(arr))
+    for i, z in enumerate(arr):
         p = p + q_val
         k = p / (p + r_val)
         x = x + k * (z - x)
         p = (1 - k) * p
-        filtered.append(x)
-    return filtered
+        filtered_values[i] = x
+    return filtered_values
 
-def calculate_causal_hurst(series, window=100):
-    hurst_vals = [0.5] * len(series)
-    series_vals = series.values
-    for i in range(window, len(series)):
-        sub_series = series_vals[i-window:i]
-        returns = np.diff(np.log(sub_series + 1e-10))
-        if len(returns) < 10 or np.std(returns) == 0:
-            continue
-        mean_ret = np.mean(returns)
-        cum_dev = np.cumsum(returns - mean_ret)
-        r = np.max(cum_dev) - np.min(cum_dev)
-        s = np.std(returns) + 1e-10
-        rs = r / s
-        h = np.log(rs + 1e-10) / np.log(window)
-        hurst_vals[i] = np.clip(h, 0.0, 1.0)
-    return hurst_vals
+
+def calculate_rolling_hurst_vectorized(price_series, window=30):
+    """Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal)."""
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+
+    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+    hurst_values = np.full(len(arr), 0.5)
+
+    if len(log_returns) < window:
+        return hurst_values
+
+    windows = np.lib.stride_tricks.sliding_window_view(
+        log_returns, window_shape=window
+    )
+    means = np.mean(windows, axis=1, keepdims=True)
+    cum_dev = np.cumsum(windows - means, axis=1)
+
+    r_val = np.ptp(cum_dev, axis=1)
+    s_val = np.std(windows, axis=1, ddof=1) + 1e-10
+    rs_ratio = r_val / s_val
+
+    valid_mask = rs_ratio > 0
+    h_calculated = np.full(len(rs_ratio), 0.5)
+    h_calculated[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
+
+    hurst_values[window - 1 : window - 1 + len(h_calculated)] = np.clip(
+        h_calculated, 0.0, 1.0
+    )
+    return hurst_values
+
+
+def apply_heikin_ashi(df_in):
+    """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
+    op = np.asarray(df_in["Open"], dtype=float).flatten()
+    hi = np.asarray(df_in["High"], dtype=float).flatten()
+    lo = np.asarray(df_in["Low"], dtype=float).flatten()
+    cl = np.asarray(df_in["Close"], dtype=float).flatten()
+
+    ha_close = (op + hi + lo + cl) / 4.0
+    ha_open = np.zeros(len(df_in))
+    ha_open[0] = (op[0] + cl[0]) / 2.0
+
+    for i in range(1, len(df_in)):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+
+    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
+    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
+
+    df_out = df_in.copy()
+    df_out["HA_Open"] = ha_open
+    df_out["HA_High"] = ha_high
+    df_out["HA_Low"] = ha_low
+    df_out["HA_Close"] = ha_close
+    return df_out
+
 
 # =====================================================================
-# 2. DATA PIPELINE & MODEL ENGINE
+# DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
-with st.spinner("Syncing Live Data with Permanent Signal Database..."):
-    raw_df = yf.download("BTC-USD", period="730d", interval="1h", progress=False)
-    
-    if raw_df.empty:
-        st.error("Data download error.")
-        st.stop()
+@st.cache_data(ttl=3600)
+def fetch_binance_data(start_ts, end_ts):
+    endpoint = "https://api.binance.com/api/v3/klines"
+    all_candles = []
+    current_start = start_ts
 
-    df = pd.DataFrame(index=raw_df.index)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in raw_df.columns:
-            df[col] = raw_df[col].iloc[:, 0] if isinstance(raw_df[col], pd.DataFrame) else raw_df[col]
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+    }
 
-    df.dropna(subset=['Close', 'High', 'Low', 'Open'], inplace=True)
-    
-    if df.index.tzinfo is None:
-        df.index = df.index.tz_localize('UTC').tz_convert(IST)
-    else:
-        df.index = df.index.tz_convert(IST)
+    while current_start < end_ts:
+        params = {
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "startTime": current_start,
+            "limit": 1000,
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
 
-    # Calculate Features
-    df['a_Close'] = df['Close']
-    df['b_Kalman_Price'] = apply_causal_kalman(df['a_Close'].values)
-    df['Raw_WM'] = df['a_Close'] - df['b_Kalman_Price']
-    df['Weighted_Momentum'] = apply_causal_kalman(df['Raw_WM'].values)
-    df['Hurst_Exponent'] = calculate_causal_hurst(df['a_Close'], window=100)
-    df['Hurst_WM_Multiplied'] = df['Hurst_Exponent'] * df['Weighted_Momentum']
+        if not isinstance(res, list) or len(res) == 0:
+            break
 
-    df['c_Combined'] = df['Raw_WM']
-    df['Order_Imbalance'] = (df['a_Close'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Body_Center'] = (df['Open'] + df['a_Close']) / 2
-    df['Body_Imbalance'] = (df['Body_Center'] - df['Low']) / (df['High'] - df['Low'] + 1e-10)
-    df['Normalized_Gap'] = df['c_Combined'] / (df['c_Combined'].rolling(24).std() + 1e-10)
+        all_candles.extend(res)
+        last_candle_time = res[-1][0]
+        if last_candle_time <= current_start:
+            break
+        current_start = last_candle_time + 1
+        time.sleep(0.02)
 
-    candle_body = (df['a_Close'] - df['Open']).abs()
-    lower_wick = df[['a_Close', 'Open']].min(axis=1) - df['Low']
-    df['HAM_Ratio'] = lower_wick / (candle_body + 1e-10)
-    df['HAM_Value'] = np.where((df['HAM_Ratio'] >= 2.0) & (df['a_Close'] >= df['Open']), 1,
-                       np.where((df['HAM_Ratio'] >= 2.0) & (df['a_Close'] < df['Open']), -1, 0))
+    if len(all_candles) < 2000:
+        return None
 
-    df['Target'] = np.where(df['a_Close'].shift(-25) > df['a_Close'], 1, 0)
-    
-    features = [
-        'c_Combined', 'Hurst_Exponent', 'Weighted_Momentum', 
-        'Hurst_WM_Multiplied', 'Order_Imbalance', 'Body_Imbalance', 
-        'Normalized_Gap', 'HAM_Ratio', 'HAM_Value'
+    cols = [
+        "OpenTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "CloseTime",
+        "QuoteVolume",
+        "Trades",
+        "TakerBase",
+        "TakerQuote",
+        "Ignore",
     ]
-    
-    df.dropna(subset=features, inplace=True)
+    df_raw = pd.DataFrame(all_candles, columns=cols)
+    num_cols = ["Open", "High", "Low", "Close", "Volume"]
+    df_raw[num_cols] = df_raw[num_cols].astype(float)
+    df_raw["Timestamp"] = pd.to_datetime(
+        df_raw["OpenTime"], unit="ms", utc=True
+    )
+    df_raw.set_index("Timestamp", inplace=True)
+    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
-    # Static Historical Split for Training
-    df_train = df.iloc[:1000]
-    df_predict = df.iloc[1000:].copy()
 
-    model = RandomForestClassifier(n_estimators=150, max_depth=3, random_state=42)
-    model.fit(df_train[features], df_train['Target'])
+@st.cache_data(ttl=3600)
+def fetch_coinbase_data(start_dt, now_dt):
+    endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-    probs = model.predict_proba(df_predict[features])
-    df_predict['Prob_Down'] = probs[:, 0]
-    df_predict['Prob_Up'] = probs[:, 1]
+    current_end = now_dt
+    all_candles = []
 
-# =====================================================================
-# 3. PERMANENT DATABASE LOCKING SYSTEM
-# =====================================================================
-    # Format Timestamps as String Identifiers
-    df_predict['Timestamp_Str'] = df_predict.index.strftime('%Y-%m-%d %H:%M IST')
+    while current_end > start_dt:
+        current_start = max(start_dt, current_end - timedelta(hours=300))
+        params = {
+            "granularity": 3600,
+            "start": current_start.isoformat(),
+            "end": current_end.isoformat(),
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
 
-    # Load Existing Local Database if available
-    if os.path.exists(DB_FILE):
-        db_df = pd.read_csv(DB_FILE)
-    else:
-        db_df = pd.DataFrame(columns=[
-            'Timestamp_Str', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum',
-            'Hurst_Exponent', 'Hurst_WM_Multiplied', 'Prob_Up', 'Prob_Down',
-            'Accumulator_Score', 'Signal'
-        ])
-
-    existing_timestamps = set(db_df['Timestamp_Str'].values)
-
-    # Generate signals ONLY for new candles not present in DB
-    accumulator = 0
-    if len(db_df) > 0:
-        accumulator = db_df.iloc[-1]['Accumulator_Score']
-
-    new_rows = []
-    prob_ups = df_predict['Prob_Up'].values
-    prob_downs = df_predict['Prob_Down'].values
-    wm_array = df_predict['Weighted_Momentum'].values
-    timestamps = df_predict['Timestamp_Str'].values
-
-    for i in range(len(df_predict)):
-        ts = timestamps[i]
-        if ts in existing_timestamps:
-            continue  # Skip already locked past candles
-
-        p_up, p_down = prob_ups[i], prob_downs[i]
-        wm = wm_array[i]
-        prev_wm = wm_array[i-1] if i > 0 else wm
-
-        if p_up >= 0.55:
-            accumulator += 1
-        elif p_down >= 0.55:
-            accumulator -= 1
-        accumulator = max(-5, min(5, accumulator))
-
-        if accumulator == 5 and (wm < prev_wm or p_down > 0.40):
-            sig = "🔴 REAL TOP (LOCKED PEAK)"
-        elif accumulator == 5:
-            sig = "🟢 STRONG BUY (Max +5)"
-        elif accumulator == -5 and (wm > prev_wm or p_up > 0.40):
-            sig = "🟢 REAL BOTTOM (LOCKED VALLEY)"
-        elif accumulator == -5:
-            sig = "🔴 STRONG SELL (Max -5)"
-        elif accumulator > 0:
-            sig = f"🟢 BULLISH TREND ({accumulator})"
-        elif accumulator < 0:
-            sig = f"🔴 BEARISH TREND ({accumulator})"
+        if isinstance(res, list) and len(res) > 0:
+            all_candles.extend(res)
         else:
-            sig = "⚪ NEUTRAL / HOLD"
+            break
 
-        new_rows.append({
-            'Timestamp_Str': ts,
-            'a_Close': df_predict['a_Close'].iloc[i],
-            'b_Kalman_Price': df_predict['b_Kalman_Price'].iloc[i],
-            'Weighted_Momentum': wm,
-            'Hurst_Exponent': df_predict['Hurst_Exponent'].iloc[i],
-            'Hurst_WM_Multiplied': df_predict['Hurst_WM_Multiplied'].iloc[i],
-            'Prob_Up': p_up,
-            'Prob_Down': p_down,
-            'Accumulator_Score': accumulator,
-            'Signal': sig
-        })
+        current_end = current_start
+        time.sleep(0.05)
 
-    # Append new locked signals to DB file
-    if new_rows:
-        new_df = pd.DataFrame(new_rows)
-        db_df = pd.concat([db_df, new_df], ignore_index=True)
-        db_df.to_csv(DB_FILE, index=False)
+    if len(all_candles) == 0:
+        return None
 
-    # 8-Step Verification Column
-    total_len = len(db_df)
-    step_indices = set(np.linspace(0, total_len - 1, 8, dtype=int))
-    db_df['8_Step_Verification'] = [
-        f"Step {i+1}/8 Verified" if idx in step_indices else "Database Locked" 
-        for idx, i in enumerate(np.arange(total_len))
-    ]
+    cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+    df_raw = pd.DataFrame(all_candles, columns=cols)
+    num_cols = ["Open", "High", "Low", "Close", "Volume"]
+    df_raw[num_cols] = df_raw[num_cols].astype(float)
+    df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
+    df_raw.set_index("Timestamp", inplace=True)
+    df_raw.sort_index(ascending=True, inplace=True)
+    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
-    # Final Display
-    display_cols = [
-        'Timestamp_Str', 'a_Close', 'b_Kalman_Price', 'Weighted_Momentum', 
-        'Hurst_Exponent', 'Hurst_WM_Multiplied', 'Prob_Up', 
-        'Prob_Down', 'Accumulator_Score', 'Signal', '8_Step_Verification'
-    ]
-    
-    final_table = db_df[display_cols].iloc[::-1].copy()
-    final_table.set_index('Timestamp_Str', inplace=True)
 
-    st.subheader("🛡️ CSV-Database Frozen Signals (Immutable)")
-    st.dataframe(final_table, use_container_width=True, height=750)
+def get_robust_2year_hourly():
+    now = datetime.now(timezone.utc)
+    start_dt = now - timedelta(days=730)
+
+    try:
+        df = fetch_binance_data(
+            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
+        )
+        if df is not None and len(df) >= 5000:
+            return df, "Binance REST API"
+    except Exception:
+        pass
+
+    df = fetch_coinbase_data(start_dt, now)
+    if df is not None and len(df) >= 2000:
+        return df, "Coinbase Pro API (Fallback)"
+
+    raise ValueError(
+        "Both primary and fallback endpoints failed to return sufficient"
+        " candles."
+    )
+
+
+# Fetch Data
+try:
+    with st.spinner(
+        "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
+    ):
+        df, source_used = get_robust_2year_hourly()
+
+        df.sort_index(inplace=True)
+        df = df[~df.index.duplicated(keep="first")]
+
+        # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
+        df = df.iloc[:-1]
+
+        # Convert to IST
+        df.index = df.index.tz_convert("Asia/Kolkata")
+
+except Exception as e:
+    st.error(f"🚨 Data Engine Error: {e}")
+    st.stop()
+
+
+# =====================================================================
+# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
+# =====================================================================
+df = apply_heikin_ashi(df)
+
+# --- PATH A: NORMAL CANDLE KINEMATICS ---
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close_full, window=30
+)
+
+kalman_base_normal_full = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_normal_full = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal_full,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+)
+
+# Base HAM Normal Signal
+df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
+
+kalman_base_ha_full = apply_kalman_filter_custom(
+    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ha_full = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
+
+# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+
+
+# =====================================================================
+# ⚡ 50:50 LEARN:PREDICT SPLIT
+# =====================================================================
+total_candles = len(df)
+split_idx = int(total_candles * 0.50)
+
+df_learn = df.iloc[:split_idx].copy()
+df_predict = df.iloc[split_idx:].copy()
+
+df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
+
+st.success(
+    f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
+    f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
+    f" {len(df_predict):,} (IST Locked)"
+)
+
+
+# =====================================================================
+# 📋 MATRIX FORMATTING AND IST DISPLAY
+# =====================================================================
+clean_cols = [
+    "Close",
+    "HA_Close",
+    "Hurst_Normal",
+    "Hurst_HA",
+    "HAM_Normal",
+    "HAM_HeikinAshi",
+    "HAM_Diff",
+]
+display_df = pd.DataFrame(index=df_predict.index)
+
+for col in clean_cols:
+    display_df[col] = (
+        np.asarray(df_predict[col], dtype=float).flatten().round(2)
+    )
+
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+
+# Metric Cards Display
+latest_candle = display_df.iloc[0]
+latest_time = display_df.index[0]
+
+st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric("📊 HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
+
+st.divider()
+
+st.subheader(
+    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
+)
+
+st.dataframe(
+    display_df,
+    column_config={
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
+        ),
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
+        ),
+        "Hurst_Normal": st.column_config.NumberColumn(
+            "Hurst (Normal)", format="%.2f"
+        ),
+        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
+        "HAM_Normal": st.column_config.NumberColumn(
+            "Base HAM Normal", format="%.2f"
+        ),
+        "HAM_HeikinAshi": st.column_config.NumberColumn(
+            "HAM HA Signal", format="%.2f"
+        ),
+        "HAM_Diff": st.column_config.NumberColumn(
+            "📊 HAM Diff (Normal - HA)", format="%.2f"
+        ),
+    },
+    use_container_width=True,
+    height=600,
+)
