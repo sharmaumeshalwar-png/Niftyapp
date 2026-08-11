@@ -13,8 +13,7 @@ st.set_page_config(
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Quantum Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 1 to 100 Quantum Probability Channel | IST"
-    " Locked"
+    "🎯 **1-Hour Timeframe Engine:** Continuous Signed Probability Channel (-100 to +100) | IST Locked"
 )
 
 # Sidebar Controls
@@ -33,8 +32,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
-    " CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:** CONNECTED"
 )
 
 
@@ -94,13 +92,14 @@ def calculate_quantum_wave_mechanics_channel(
     price_series, window=30, decay_factor_multiplier=1.5
 ):
     """
-    Quantum Mechanics Engine mapped to a 1 to 100 Bound Channel.
-    - Direction (+1 for UP, -1 for DOWN) determines signed probability.
-    - Channel Probability is normalized strict 1.0 to 100.0.
+    Quantum Mechanics Engine mapped to a Smooth Signed Channel (-100.0 to +100.0).
+    - UP Velocity -> Positive Magnitude (+1.0 to +100.0)
+    - DOWN Velocity -> Negative Magnitude (-100.0 to -1.0)
+    - Sequential Kalman Filter pass for continuous smooth transitions.
     """
     arr = np.asarray(price_series, dtype=float).flatten()
     n = len(arr)
-    breakout_prob_channel = np.full(n, 50.0)
+    raw_signed_prob = np.zeros(n)
     target_levels = np.full(n, arr[0] if n > 0 else 0.0)
     direction_labels = np.full(n, "NEUTRAL", dtype=object)
     tunnel_status = np.full(n, "BOUNCED", dtype=object)
@@ -136,19 +135,24 @@ def calculate_quantum_wave_mechanics_channel(
         kinetic_energy = abs(velocity)
         decay_factor = np.sqrt(max(0, barrier_dist - kinetic_energy)) / std_v
 
-        # Base exponential probability (0 to 100)
-        raw_prob = np.exp(-decay_factor_multiplier * decay_factor) * 100.0
+        # Base exponential probability magnitude (1 to 100)
+        raw_mag = np.exp(-decay_factor_multiplier * decay_factor) * 100.0
+        channel_mag = np.clip(raw_mag, 1.0, 100.0)
 
-        # Mapping strictly into 1 to 100 scale channel
-        channel_prob = np.clip(raw_prob, 1.0, 100.0)
-
-        breakout_prob_channel[i] = channel_prob
+        # Apply Signed Direction
+        raw_signed_prob[i] = direction_sign * channel_mag
         target_levels[i] = target
         direction_labels[i] = label
         tunnel_status[i] = status
 
+    # Smooth the signed probability curve smoothly across -100 to +100 bounds
+    smooth_signed_prob = apply_kalman_filter_custom(
+        raw_signed_prob, initial_p=0.50, q_val=0.005, r_val=0.05
+    )
+    smooth_signed_prob = np.clip(smooth_signed_prob, -100.0, 100.0)
+
     return (
-        breakout_prob_channel,
+        smooth_signed_prob,
         target_levels,
         direction_labels,
         tunnel_status,
@@ -320,8 +324,8 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-# 1-100 Channel Prob Calculation
-q_prob_channel, q_level, q_dir, q_status = (
+# Smooth Signed Channel Prob Calculation (-100 to +100)
+q_prob_signed, q_level, q_dir, q_status = (
     calculate_quantum_wave_mechanics_channel(
         normal_close_full,
         window=30,
@@ -329,7 +333,7 @@ q_prob_channel, q_level, q_dir, q_status = (
     )
 )
 
-df["Quantum_Prob_Channel_1_100"] = q_prob_channel
+df["Quantum_Prob_Channel_Signed"] = q_prob_signed
 df["Quantum_Target_Level"] = q_level
 df["Target_Direction"] = q_dir
 df["Tunneling_Status"] = q_status
@@ -384,9 +388,12 @@ display_df["Close"] = df_predict["Close"].round(2)
 display_df["Target_Direction"] = df_predict["Target_Direction"]
 display_df["Quantum_Target_Level"] = df_predict["Quantum_Target_Level"].round(2)
 display_df["Tunneling_Status"] = df_predict["Tunneling_Status"]
-display_df["Prob_Channel_1_100"] = df_predict[
-    "Quantum_Prob_Channel_1_100"
-].round(1)
+
+# Format probability to explicitly show + or - sign
+display_df["Signed_Prob_Channel"] = df_predict[
+    "Quantum_Prob_Channel_Signed"
+].apply(lambda x: f"{x:+.1f}")
+
 display_df["Hurst_Normal"] = df_predict["Hurst_Normal"].round(2)
 display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
 display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
@@ -402,7 +409,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Prob Channel (1-100)", f"{latest_candle['Prob_Channel_1_100']:.1f}")
+col2.metric("Signed Prob (-100 to +100)", f"{latest_candle['Signed_Prob_Channel']}")
 col3.metric("Target Level", f"${latest_candle['Quantum_Target_Level']:,.2f}")
 col4.metric("Direction", f"{latest_candle['Target_Direction']}")
 col5.metric("Tunneling Status", f"{latest_candle['Tunneling_Status']}")
@@ -420,7 +427,7 @@ st.dataframe(
         "Target_Direction": st.column_config.TextColumn("🎯 Target Type"),
         "Quantum_Target_Level": st.column_config.NumberColumn("📍 Quantum Target ($)", format="$%.2f"),
         "Tunneling_Status": st.column_config.TextColumn("⚡ Level Status"),
-        "Prob_Channel_1_100": st.column_config.NumberColumn("📊 Prob (1-100 Channel)", format="%.1f"),
+        "Signed_Prob_Channel": st.column_config.TextColumn("📊 Signed Prob (-100 to +100)"),
         "Hurst_Normal": st.column_config.NumberColumn("Hurst Normal", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn("HAM Normal", format="%.2f"),
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
