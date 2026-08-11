@@ -50,8 +50,8 @@ def apply_kalman_filter_custom(
     return filtered_values
 
 
-def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal)."""
+def calculate_rolling_hurst_vectorized(price_series, window=200):
+    """Vectorized Trailing R/S Hurst Exponent (Updated Window = 200 Strict Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -261,14 +261,9 @@ df = apply_heikin_ashi(df)
 # --- PATH A: NORMAL CANDLE KINEMATICS ---
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 
-# 1. Primary Hurst Exponent
+# Rolling Hurst with window=200
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
-)
-
-# 2. 🔥 HURST ON HURST (Normal) 🔥
-df["Hurst_of_Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    df["Hurst_Normal"].to_numpy(), window=30
+    normal_close_full, window=200
 )
 
 kalman_base_normal_full = apply_kalman_filter_custom(
@@ -288,12 +283,9 @@ df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 
-# 1. Primary Hurst Exponent (HA)
-df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-
-# 2. 🔥 HURST ON HURST (Heikin-Ashi) 🔥
-df["Hurst_of_Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    df["Hurst_HA"].to_numpy(), window=30
+# Rolling Hurst (HA) with window=200
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    ha_close_full, window=200
 )
 
 kalman_base_ha_full = apply_kalman_filter_custom(
@@ -318,12 +310,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=[
-        "Hurst_Normal",
-        "Hurst_HA",
-        "Hurst_of_Hurst_Normal",
-        "Hurst_of_Hurst_HA",
-    ],
+    subset=["Hurst_Normal", "Hurst_HA"],
     inplace=True,
 )
 
@@ -341,9 +328,7 @@ clean_cols = [
     "Close",
     "HA_Close",
     "Hurst_Normal",
-    "Hurst_of_Hurst_Normal",
     "Hurst_HA",
-    "Hurst_of_Hurst_HA",
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff",
@@ -367,10 +352,8 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric(
-    "Hurst of Hurst (Norm)", f"{latest_candle['Hurst_of_Hurst_Normal']:.2f}"
-)
-col4.metric("Hurst of Hurst (HA)", f"{latest_candle['Hurst_of_Hurst_HA']:.2f}")
+col3.metric("Hurst Normal (200)", f"{latest_candle['Hurst_Normal']:.2f}")
+col4.metric("Hurst HA (200)", f"{latest_candle['Hurst_HA']:.2f}")
 
 st.divider()
 
@@ -388,14 +371,10 @@ st.dataframe(
             "HA Close ($)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Normal)", format="%.2f"
+            "Hurst Normal (200)", format="%.2f"
         ),
-        "Hurst_of_Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst on Hurst (Norm)", format="%.2f"
-        ),
-        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "Hurst_of_Hurst_HA": st.column_config.NumberColumn(
-            "Hurst on Hurst (HA)", format="%.2f"
+        "Hurst_HA": st.column_config.NumberColumn(
+            "Hurst HA (200)", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
