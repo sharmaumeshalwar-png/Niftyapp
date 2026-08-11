@@ -50,8 +50,8 @@ def apply_kalman_filter_custom(
     return filtered_values
 
 
-def calculate_rolling_hurst_vectorized(price_series, window=200):
-    """Vectorized Trailing R/S Hurst Exponent (Updated Window = 200 Strict Causal)."""
+def calculate_rolling_hurst_vectorized(price_series, window=30):
+    """Vectorized Trailing R/S Hurst Exponent (Window = 30 Strict Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -79,6 +79,17 @@ def calculate_rolling_hurst_vectorized(price_series, window=200):
         h_calculated, 0.0, 1.0
     )
     return hurst_values
+
+
+def apply_emd_fast(price_series, window=30):
+    """Trailing Empirical Mode Decomposition (EMD) Approximation - Causal High Frequency IMF Extract."""
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+    
+    # Calculate local mean envelope via rolling operations to extract leading IMF
+    rolling_mean = s.rolling(window=window, min_periods=1).mean().to_numpy()
+    imf_0 = arr - rolling_mean
+    return imf_0
 
 
 def apply_heikin_ashi(df_in):
@@ -261,10 +272,13 @@ df = apply_heikin_ashi(df)
 # --- PATH A: NORMAL CANDLE KINEMATICS ---
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 
-# Rolling Hurst with window=200
+# Rolling Hurst with window=30
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=200
+    normal_close_full, window=30
 )
+
+# 🌊 EMD SIGNAL COLUMN (Empirical Mode Decomposition)
+df["EMD_Signal"] = apply_emd_fast(normal_close_full, window=30)
 
 kalman_base_normal_full = apply_kalman_filter_custom(
     normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -283,9 +297,9 @@ df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 
-# Rolling Hurst (HA) with window=200
+# Rolling Hurst (HA) with window=30
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    ha_close_full, window=200
+    ha_close_full, window=30
 )
 
 kalman_base_ha_full = apply_kalman_filter_custom(
@@ -310,7 +324,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA"],
+    subset=["Hurst_Normal", "Hurst_HA", "EMD_Signal"],
     inplace=True,
 )
 
@@ -329,6 +343,7 @@ clean_cols = [
     "HA_Close",
     "Hurst_Normal",
     "Hurst_HA",
+    "EMD_Signal",
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff",
@@ -351,9 +366,9 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("Hurst Normal (200)", f"{latest_candle['Hurst_Normal']:.2f}")
-col4.metric("Hurst HA (200)", f"{latest_candle['Hurst_HA']:.2f}")
+col2.metric("EMD Cycle Signal", f"{latest_candle['EMD_Signal']:.2f}")
+col3.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col4.metric("Hurst Normal (30)", f"{latest_candle['Hurst_Normal']:.2f}")
 
 st.divider()
 
@@ -371,10 +386,13 @@ st.dataframe(
             "HA Close ($)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst Normal (200)", format="%.2f"
+            "Hurst Normal (30)", format="%.2f"
         ),
         "Hurst_HA": st.column_config.NumberColumn(
-            "Hurst HA (200)", format="%.2f"
+            "Hurst HA (30)", format="%.2f"
+        ),
+        "EMD_Signal": st.column_config.NumberColumn(
+            "🌊 EMD Signal (IMF)", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
