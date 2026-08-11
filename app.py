@@ -9,12 +9,11 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Quantum Wave)", layout="wide"
+    page_title="BTC 2-Year Kinematics Engine (Quantum Wave Flow)", layout="wide"
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Quantum Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Quantum Wave Potential & HAM Kinematics "
-    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
+    "🎯 **1-Hour Timeframe Engine:** Smooth Quantum Probability Flow & Level Targets | IST Locked"
 )
 
 # Sidebar Controls
@@ -23,19 +22,13 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
     st.rerun()
 
-st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
-    " CONNECTED"
-)
+st.sidebar.success("🛡️ **Leak Protection:** ACTIVE | 🔒 **Dual REST Stream:** CONNECTED")
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
+# MATHEMATICAL ENGINES
 # =====================================================================
-def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
-):
-    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -51,10 +44,8 @@ def apply_kalman_filter_custom(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Vectorized Trailing R/S Hurst Exponent (Window = 30 Strict Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
-
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
     hurst_values = np.full(len(arr), 0.5)
 
@@ -81,49 +72,56 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-def calculate_quantum_wave_mechanics(price_series, window=30):
+def calculate_smooth_quantum_wave_levels(price_series, window=30, alpha=0.15):
     """
-    Quantum Wave Mechanics Engine:
-    Computes Quantum Breakout/Tunneling Probability (%) and Wave Phase Shift based on
-    Schrödinger Wave Potential Energy Barriers.
+    Quantum Wave Mechanics with Smooth Probability Flow (No Zig-Zag)
+    and Up/Down Target Level Barriers.
     """
     arr = np.asarray(price_series, dtype=float).flatten()
     n = len(arr)
     breakout_prob = np.full(n, 50.0)
-    quantum_phase = np.full(n, 0.0)
+    target_levels = np.full(n, arr[0] if n > 0 else 0.0)
+    direction_labels = np.full(n, "NEUTRAL", dtype=object)
+
+    raw_prob = 50.0
 
     for i in range(window, n):
         sub_arr = arr[i - window : i + 1]
         current_price = arr[i]
         
-        # Potential Energy Well V(x) - Measure variance / potential barrier
-        mean_v = np.mean(sub_arr)
+        upper_barrier = np.max(sub_arr[:-1])
+        lower_barrier = np.min(sub_arr[:-1])
         std_v = np.std(sub_arr) + 1e-10
-        
-        # Kinetic Energy (Momentum / Price Velocity)
-        kinetic_energy = abs(current_price - sub_arr[-2]) if len(sub_arr) > 1 else 1e-10
-        
-        # Barrier Height (Potential Barrier Distance)
-        barrier_height = max(abs(current_price - np.max(sub_arr[:-1])), abs(current_price - np.min(sub_arr[:-1])))
-        if barrier_height == 0:
-            barrier_height = 1e-10
 
-        # Quantum Tunneling Probability Calculation: T ~ exp(-2 * k * L)
-        decay_factor = np.sqrt(max(0, barrier_height - kinetic_energy)) / (std_v + 1e-5)
-        prob = np.exp(-1.5 * decay_factor) * 100.0
-        breakout_prob[i] = np.clip(prob, 0.0, 100.0)
-
-        # Quantum Phase Angle Calculation (Phase Angle of Wavefunction)
-        detrended = current_price - mean_v
+        # Calculate momentum direction
         velocity = current_price - sub_arr[-2] if len(sub_arr) > 1 else 0.0
-        phase = np.arctan2(velocity, detrended)  # Phase angle in radians (-pi to +pi)
-        quantum_phase[i] = phase
+        
+        if velocity >= 0:
+            barrier_dist = abs(upper_barrier - current_price)
+            target = upper_barrier
+            label = "UP Target"
+        else:
+            barrier_dist = abs(current_price - lower_barrier)
+            target = lower_barrier
+            label = "DOWN Target"
 
-    return breakout_prob, quantum_phase
+        kinetic_energy = abs(velocity)
+        decay_factor = np.sqrt(max(0, barrier_dist - kinetic_energy)) / std_v
+        
+        # Raw probability calculation
+        instant_prob = np.exp(-1.2 * decay_factor) * 100.0
+        
+        # 🌊 Smooth Flow Engine (Eliminates Zig-Zag)
+        raw_prob = (alpha * instant_prob) + ((1 - alpha) * raw_prob)
+        
+        breakout_prob[i] = np.clip(raw_prob, 0.0, 100.0)
+        target_levels[i] = target
+        direction_labels[i] = label
+
+    return breakout_prob, target_levels, direction_labels
 
 
 def apply_heikin_ashi(df_in):
-    """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
     op = np.asarray(df_in["Open"], dtype=float).flatten()
     hi = np.asarray(df_in["High"], dtype=float).flatten()
     lo = np.asarray(df_in["Low"], dtype=float).flatten()
@@ -148,19 +146,14 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
+# DATA FETCH ENGINE
 # =====================================================================
 @st.cache_data(ttl=3600)
 def fetch_binance_data(start_ts, end_ts):
     endpoint = "https://api.binance.com/api/v3/klines"
     all_candles = []
     current_start = start_ts
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     while current_start < end_ts:
         params = {
@@ -169,13 +162,9 @@ def fetch_binance_data(start_ts, end_ts):
             "startTime": current_start,
             "limit": 1000,
         }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
-
+        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
         if not isinstance(res, list) or len(res) == 0:
             break
-
         all_candles.extend(res)
         last_candle_time = res[-1][0]
         if last_candle_time <= current_start:
@@ -186,26 +175,11 @@ def fetch_binance_data(start_ts, end_ts):
     if len(all_candles) < 2000:
         return None
 
-    cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
-    ]
+    cols = ["OpenTime", "Open", "High", "Low", "Close", "Volume", "CloseTime", "QuoteVolume", "Trades", "TakerBase", "TakerQuote", "Ignore"]
     df_raw = pd.DataFrame(all_candles, columns=cols)
     num_cols = ["Open", "High", "Low", "Close", "Volume"]
     df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(
-        df_raw["OpenTime"], unit="ms", utc=True
-    )
+    df_raw["Timestamp"] = pd.to_datetime(df_raw["OpenTime"], unit="ms", utc=True)
     df_raw.set_index("Timestamp", inplace=True)
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
@@ -214,26 +188,17 @@ def fetch_binance_data(start_ts, end_ts):
 def fetch_coinbase_data(start_dt, now_dt):
     endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
     headers = {"User-Agent": "Mozilla/5.0"}
-
     current_end = now_dt
     all_candles = []
 
     while current_end > start_dt:
         current_start = max(start_dt, current_end - timedelta(hours=300))
-        params = {
-            "granularity": 3600,
-            "start": current_start.isoformat(),
-            "end": current_end.isoformat(),
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
-
+        params = {"granularity": 3600, "start": current_start.isoformat(), "end": current_end.isoformat()}
+        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
         if isinstance(res, list) and len(res) > 0:
             all_candles.extend(res)
         else:
             break
-
         current_end = current_start
         time.sleep(0.05)
 
@@ -253,11 +218,8 @@ def fetch_coinbase_data(start_dt, now_dt):
 def get_robust_2year_hourly():
     now = datetime.now(timezone.utc)
     start_dt = now - timedelta(days=730)
-
     try:
-        df = fetch_binance_data(
-            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
-        )
+        df = fetch_binance_data(int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000))
         if df is not None and len(df) >= 5000:
             return df, "Binance REST API"
     except Exception:
@@ -267,178 +229,94 @@ def get_robust_2year_hourly():
     if df is not None and len(df) >= 2000:
         return df, "Coinbase Pro API (Fallback)"
 
-    raise ValueError(
-        "Both primary and fallback endpoints failed to return sufficient"
-        " candles."
-    )
+    raise ValueError("Failed to fetch data.")
 
 
 # Fetch Data
 try:
-    with st.spinner(
-        "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
-    ):
+    with st.spinner("🔄 Fetching Data & Computing Quantum Levels..."):
         df, source_used = get_robust_2year_hourly()
-
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-
-        # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
-        df = df.iloc[:-1]
-
-        # Convert to IST
+        df = df.iloc[:-1]  # Drop unclosed running candle
         df.index = df.index.tz_convert("Asia/Kolkata")
-
 except Exception as e:
     st.error(f"🚨 Data Engine Error: {e}")
     st.stop()
 
 
 # =====================================================================
-# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
+# ⚡ CALCULATIONS
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- PATH A: NORMAL CANDLE KINEMATICS ---
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(normal_close_full, window=30)
 
-# Rolling Hurst with window=30
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
-)
+# ⚛️ SMOOTH QUANTUM PROBABILITY & LEVEL TARGETS
+q_prob, q_level, q_dir = calculate_smooth_quantum_wave_levels(normal_close_full, window=30, alpha=0.15)
+df["Quantum_Flow_Prob"] = q_prob
+df["Quantum_Target_Level"] = q_level
+df["Target_Direction"] = q_dir
 
-# ⚛️ QUANTUM WAVE MECHANICS COLUMNS
-q_prob, q_phase = calculate_quantum_wave_mechanics(normal_close_full, window=30)
-df["Quantum_Breakout_Prob"] = q_prob
-df["Quantum_Phase"] = q_phase
-
-kalman_base_normal_full = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
+kalman_base_normal_full = apply_kalman_filter_custom(normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
 momentum_normal_full = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal_full,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
+    normal_close_full - kalman_base_normal_full, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-
-# Base HAM Normal Signal
 df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
 
-
-# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
-# Rolling Hurst (HA) with window=30
-df["Hurst_HA"] = calculate_rolling_hurst_vectorized(
-    ha_close_full, window=30
-)
-
-kalman_base_ha_full = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_ha_full = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
-)
+kalman_base_ha_full = apply_kalman_filter_custom(ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_ha_full = apply_kalman_filter_custom(ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1)
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
-
-# --- HAM DIFFERENCE (HAM Normal - HAM HA) ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
 
 # =====================================================================
-# ⚡ 50:50 LEARN:PREDICT SPLIT
+# DISPLAY MATRIX
 # =====================================================================
-total_candles = len(df)
-split_idx = int(total_candles * 0.50)
-
-df_learn = df.iloc[:split_idx].copy()
+split_idx = int(len(df) * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
-df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA", "Quantum_Breakout_Prob", "Quantum_Phase"],
-    inplace=True,
-)
-
-st.success(
-    f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
-    f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
-    f" {len(df_predict):,} (IST Locked)"
-)
-
-
-# =====================================================================
-# 📋 MATRIX FORMATTING AND IST DISPLAY
-# =====================================================================
-clean_cols = [
-    "Close",
-    "HA_Close",
-    "Hurst_Normal",
-    "Quantum_Breakout_Prob",
-    "Quantum_Phase",
-    "Hurst_HA",
-    "HAM_Normal",
-    "HAM_HeikinAshi",
-    "HAM_Diff",
-]
 display_df = pd.DataFrame(index=df_predict.index)
-
-for col in clean_cols:
-    display_df[col] = (
-        np.asarray(df_predict[col], dtype=float).flatten().round(2)
-    )
+display_df["Close"] = df_predict["Close"].round(2)
+display_df["Target_Direction"] = df_predict["Target_Direction"]
+display_df["Quantum_Target_Level"] = df_predict["Quantum_Target_Level"].round(2)
+display_df["Quantum_Flow_Prob"] = df_predict["Quantum_Flow_Prob"].round(1)
+display_df["Hurst_Normal"] = df_predict["Hurst_Normal"].round(2)
+display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
+display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
+display_df["HAM_Diff"] = df_predict["HAM_Diff"].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 
-# Metric Cards Display
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Quantum Breakout Prob", f"{latest_candle['Quantum_Breakout_Prob']:.1f}%")
-col3.metric("Quantum Phase Angle", f"{latest_candle['Quantum_Phase']:.2f} rad")
-col4.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col1.metric("Close Price", f"${latest_candle['Close']:,.2f}")
+col2.metric("Flow Probability", f"{latest_candle['Quantum_Flow_Prob']:.1f}%")
+col3.metric("Target Level", f"${latest_candle['Quantum_Target_Level']:,.2f}")
+col4.metric("Direction", f"{latest_candle['Target_Direction']}")
 
 st.divider()
-
-st.subheader(
-    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
-)
 
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn(
-            "Close Price ($)", format="$%.2f"
-        ),
-        "HA_Close": st.column_config.NumberColumn(
-            "HA Close ($)", format="$%.2f"
-        ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst Normal (30)", format="%.2f"
-        ),
-        "Quantum_Breakout_Prob": st.column_config.NumberColumn(
-            "⚛️ Breakout Prob (%)", format="%.1f%%"
-        ),
-        "Quantum_Phase": st.column_config.NumberColumn(
-            "🌀 Quantum Phase (rad)", format="%.2f"
-        ),
-        "Hurst_HA": st.column_config.NumberColumn(
-            "Hurst HA (30)", format="%.2f"
-        ),
-        "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal", format="%.2f"
-        ),
-        "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA Signal", format="%.2f"
-        ),
-        "HAM_Diff": st.column_config.NumberColumn(
-            "📊 HAM Diff (Normal - HA)", format="%.2f"
-        ),
+        "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
+        "Target_Direction": st.column_config.TextColumn("🎯 Target Type"),
+        "Quantum_Target_Level": st.column_config.NumberColumn("📍 Quantum Target ($)", format="$%.2f"),
+        "Quantum_Flow_Prob": st.column_config.NumberColumn("🌊 Flow Prob (%)", format="%.1f%%"),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst Normal", format="%.2f"),
+        "HAM_Normal": st.column_config.NumberColumn("HAM Normal", format="%.2f"),
+        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
+        "HAM_Diff": st.column_config.NumberColumn("HAM Diff", format="%.2f"),
     },
     use_container_width=True,
     height=600,
