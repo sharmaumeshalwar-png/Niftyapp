@@ -13,24 +13,19 @@ st.set_page_config(
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Quantum Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Raw Quantum Wave Mechanics | Target Levels &"
-    " Tunneling Status | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** 1 to 100 Quantum Probability Channel | IST"
+    " Locked"
 )
 
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
-# ⚛️ Dynamic Quantum Decay Factor Sensitivity Adjustment
 sensitivity_factor = st.sidebar.slider(
     "⚛️ Quantum Decay Sensitivity Factor",
     min_value=0.1,
     max_value=5.0,
     value=1.5,
     step=0.1,
-    help=(
-        "Higher value = Sharper breakout sensitivity. Lower value = Smoother"
-        " probability curve."
-    ),
 )
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
@@ -95,13 +90,17 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-def calculate_quantum_wave_mechanics(
+def calculate_quantum_wave_mechanics_channel(
     price_series, window=30, decay_factor_multiplier=1.5
 ):
-    """Quantum Wave Mechanics Engine with Dynamic Sensitivity Factor."""
+    """
+    Quantum Mechanics Engine mapped to a 1 to 100 Bound Channel.
+    - Direction (+1 for UP, -1 for DOWN) determines signed probability.
+    - Channel Probability is normalized strict 1.0 to 100.0.
+    """
     arr = np.asarray(price_series, dtype=float).flatten()
     n = len(arr)
-    breakout_prob = np.full(n, 50.0)
+    breakout_prob_channel = np.full(n, 50.0)
     target_levels = np.full(n, arr[0] if n > 0 else 0.0)
     direction_labels = np.full(n, "NEUTRAL", dtype=object)
     tunnel_status = np.full(n, "BOUNCED", dtype=object)
@@ -124,6 +123,7 @@ def calculate_quantum_wave_mechanics(
             status = (
                 "TUNNELED" if current_price >= upper_barrier else "BOUNCED"
             )
+            direction_sign = 1.0
         else:
             barrier_dist = abs(current_price - lower_barrier)
             target = lower_barrier
@@ -131,19 +131,28 @@ def calculate_quantum_wave_mechanics(
             status = (
                 "TUNNELED" if current_price <= lower_barrier else "BOUNCED"
             )
+            direction_sign = -1.0
 
         kinetic_energy = abs(velocity)
         decay_factor = np.sqrt(max(0, barrier_dist - kinetic_energy)) / std_v
 
-        # Dynamic Adjustable Quantum Exponential Decay
-        prob = np.exp(-decay_factor_multiplier * decay_factor) * 100.0
+        # Base exponential probability (0 to 100)
+        raw_prob = np.exp(-decay_factor_multiplier * decay_factor) * 100.0
 
-        breakout_prob[i] = np.clip(prob, 0.0, 100.0)
+        # Mapping strictly into 1 to 100 scale channel
+        channel_prob = np.clip(raw_prob, 1.0, 100.0)
+
+        breakout_prob_channel[i] = channel_prob
         target_levels[i] = target
         direction_labels[i] = label
         tunnel_status[i] = status
 
-    return breakout_prob, target_levels, direction_labels, tunnel_status
+    return (
+        breakout_prob_channel,
+        target_levels,
+        direction_labels,
+        tunnel_status,
+    )
 
 
 def apply_heikin_ashi(df_in):
@@ -311,13 +320,16 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-# Quantum Calculation with Slider Input
-q_prob, q_level, q_dir, q_status = calculate_quantum_wave_mechanics(
-    normal_close_full,
-    window=30,
-    decay_factor_multiplier=sensitivity_factor,
+# 1-100 Channel Prob Calculation
+q_prob_channel, q_level, q_dir, q_status = (
+    calculate_quantum_wave_mechanics_channel(
+        normal_close_full,
+        window=30,
+        decay_factor_multiplier=sensitivity_factor,
+    )
 )
-df["Quantum_Breakout_Prob"] = q_prob
+
+df["Quantum_Prob_Channel_1_100"] = q_prob_channel
 df["Quantum_Target_Level"] = q_level
 df["Target_Direction"] = q_dir
 df["Tunneling_Status"] = q_status
@@ -372,7 +384,9 @@ display_df["Close"] = df_predict["Close"].round(2)
 display_df["Target_Direction"] = df_predict["Target_Direction"]
 display_df["Quantum_Target_Level"] = df_predict["Quantum_Target_Level"].round(2)
 display_df["Tunneling_Status"] = df_predict["Tunneling_Status"]
-display_df["Quantum_Breakout_Prob"] = df_predict["Quantum_Breakout_Prob"].round(1)
+display_df["Prob_Channel_1_100"] = df_predict[
+    "Quantum_Prob_Channel_1_100"
+].round(1)
 display_df["Hurst_Normal"] = df_predict["Hurst_Normal"].round(2)
 display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
 display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
@@ -388,7 +402,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Quantum Prob", f"{latest_candle['Quantum_Breakout_Prob']:.1f}%")
+col2.metric("Prob Channel (1-100)", f"{latest_candle['Prob_Channel_1_100']:.1f}")
 col3.metric("Target Level", f"${latest_candle['Quantum_Target_Level']:,.2f}")
 col4.metric("Direction", f"{latest_candle['Target_Direction']}")
 col5.metric("Tunneling Status", f"{latest_candle['Tunneling_Status']}")
@@ -396,7 +410,7 @@ col5.metric("Tunneling Status", f"{latest_candle['Tunneling_Status']}")
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -406,7 +420,7 @@ st.dataframe(
         "Target_Direction": st.column_config.TextColumn("🎯 Target Type"),
         "Quantum_Target_Level": st.column_config.NumberColumn("📍 Quantum Target ($)", format="$%.2f"),
         "Tunneling_Status": st.column_config.TextColumn("⚡ Level Status"),
-        "Quantum_Breakout_Prob": st.column_config.NumberColumn("⚛️ Breakout Prob (%)", format="%.1f%%"),
+        "Prob_Channel_1_100": st.column_config.NumberColumn("📊 Prob (1-100 Channel)", format="%.1f"),
         "Hurst_Normal": st.column_config.NumberColumn("Hurst Normal", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn("HAM Normal", format="%.2f"),
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
