@@ -277,8 +277,14 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-# 🌊 EMD SIGNAL COLUMN (Empirical Mode Decomposition)
-df["EMD_Signal"] = apply_emd_fast(normal_close_full, window=30)
+# 🌊 EMD SIGNAL COLUMN
+emd_raw = apply_emd_fast(normal_close_full, window=30)
+df["EMD_Signal"] = emd_raw
+
+# 🎯 KALMAN FILTER ON EMD VALUE (Q = 0.0001)
+df["EMD_Kalman"] = apply_kalman_filter_custom(
+    emd_raw, initial_p=1.0, q_val=0.0001, r_val=0.1
+)
 
 kalman_base_normal_full = apply_kalman_filter_custom(
     normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -324,7 +330,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA", "EMD_Signal"],
+    subset=["Hurst_Normal", "Hurst_HA", "EMD_Signal", "EMD_Kalman"],
     inplace=True,
 )
 
@@ -344,6 +350,7 @@ clean_cols = [
     "Hurst_Normal",
     "Hurst_HA",
     "EMD_Signal",
+    "EMD_Kalman",
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff",
@@ -366,7 +373,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("EMD Cycle Signal", f"{latest_candle['EMD_Signal']:.2f}")
+col2.metric("EMD Kalman (Q=0.0001)", f"{latest_candle['EMD_Kalman']:.2f}")
 col3.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col4.metric("Hurst Normal (30)", f"{latest_candle['Hurst_Normal']:.2f}")
 
@@ -392,7 +399,10 @@ st.dataframe(
             "Hurst HA (30)", format="%.2f"
         ),
         "EMD_Signal": st.column_config.NumberColumn(
-            "🌊 EMD Signal (IMF)", format="%.2f"
+            "🌊 EMD Raw", format="%.2f"
+        ),
+        "EMD_Kalman": st.column_config.NumberColumn(
+            "🎯 EMD Kalman (0.0001)", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
