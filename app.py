@@ -9,11 +9,11 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
+    page_title="BTC 2-Year Kinematics Engine (Quantum Wave)", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) 2-Year Quantum Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
+    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Quantum Wave Potential & HAM Kinematics "
     "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
 )
 
@@ -81,37 +81,45 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-def calculate_local_hurst_fbm(price_series, min_scale=4, max_scale=16):
+def calculate_quantum_wave_mechanics(price_series, window=30):
     """
-    Fractional Brownian Motion (fBM) Time-Varying Local Hurst H(t).
-    Calculates point-wise Hölder regularity / Local Hurst exponent via log-variance scaling.
+    Quantum Wave Mechanics Engine:
+    Computes Quantum Breakout/Tunneling Probability (%) and Wave Phase Shift based on
+    Schrödinger Wave Potential Energy Barriers.
     """
     arr = np.asarray(price_series, dtype=float).flatten()
-    s = pd.Series(arr)
-    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
     n = len(arr)
-    local_h = np.full(n, 0.5)
+    breakout_prob = np.full(n, 50.0)
+    quantum_phase = np.full(n, 0.0)
 
-    scales = np.arange(min_scale, max_scale + 1)
-    log_scales = np.log(scales)
+    for i in range(window, n):
+        sub_arr = arr[i - window : i + 1]
+        current_price = arr[i]
+        
+        # Potential Energy Well V(x) - Measure variance / potential barrier
+        mean_v = np.mean(sub_arr)
+        std_v = np.std(sub_arr) + 1e-10
+        
+        # Kinetic Energy (Momentum / Price Velocity)
+        kinetic_energy = abs(current_price - sub_arr[-2]) if len(sub_arr) > 1 else 1e-10
+        
+        # Barrier Height (Potential Barrier Distance)
+        barrier_height = max(abs(current_price - np.max(sub_arr[:-1])), abs(current_price - np.min(sub_arr[:-1])))
+        if barrier_height == 0:
+            barrier_height = 1e-10
 
-    # Multi-scale variance estimation over small localized trailing window
-    for i in range(max_scale * 2, n):
-        sub_returns = log_returns[i - (max_scale * 2) : i + 1]
-        variances = []
-        for sc in scales:
-            # Rescaled variance over tau steps
-            diffs = sub_returns[sc:] - sub_returns[:-sc]
-            var = np.var(diffs) if len(diffs) > 0 else 1e-10
-            variances.append(var + 1e-10)
+        # Quantum Tunneling Probability Calculation: T ~ exp(-2 * k * L)
+        decay_factor = np.sqrt(max(0, barrier_height - kinetic_energy)) / (std_v + 1e-5)
+        prob = np.exp(-1.5 * decay_factor) * 100.0
+        breakout_prob[i] = np.clip(prob, 0.0, 100.0)
 
-        log_vars = np.log(variances)
-        # Slope of log(Variance) vs log(Scale) gives 2 * H(t)
-        slope = np.polyfit(log_scales, log_vars, 1)[0]
-        h_val = slope / 2.0
-        local_h[i] = np.clip(h_val, 0.0, 1.0)
+        # Quantum Phase Angle Calculation (Phase Angle of Wavefunction)
+        detrended = current_price - mean_v
+        velocity = current_price - sub_arr[-2] if len(sub_arr) > 1 else 0.0
+        phase = np.arctan2(velocity, detrended)  # Phase angle in radians (-pi to +pi)
+        quantum_phase[i] = phase
 
-    return local_h
+    return breakout_prob, quantum_phase
 
 
 def apply_heikin_ashi(df_in):
@@ -299,8 +307,10 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-# 📈 LOCAL HURST fBM H(t) COLUMN
-df["Local_Hurst_fBM"] = calculate_local_hurst_fbm(normal_close_full)
+# ⚛️ QUANTUM WAVE MECHANICS COLUMNS
+q_prob, q_phase = calculate_quantum_wave_mechanics(normal_close_full, window=30)
+df["Quantum_Breakout_Prob"] = q_prob
+df["Quantum_Phase"] = q_phase
 
 kalman_base_normal_full = apply_kalman_filter_custom(
     normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -346,7 +356,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA", "Local_Hurst_fBM"],
+    subset=["Hurst_Normal", "Hurst_HA", "Quantum_Breakout_Prob", "Quantum_Phase"],
     inplace=True,
 )
 
@@ -364,7 +374,8 @@ clean_cols = [
     "Close",
     "HA_Close",
     "Hurst_Normal",
-    "Local_Hurst_fBM",
+    "Quantum_Breakout_Prob",
+    "Quantum_Phase",
     "Hurst_HA",
     "HAM_Normal",
     "HAM_HeikinAshi",
@@ -388,8 +399,8 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Local Hurst fBM H(t)", f"{latest_candle['Local_Hurst_fBM']:.2f}")
-col3.metric("Hurst Normal (30)", f"{latest_candle['Hurst_Normal']:.2f}")
+col2.metric("Quantum Breakout Prob", f"{latest_candle['Quantum_Breakout_Prob']:.1f}%")
+col3.metric("Quantum Phase Angle", f"{latest_candle['Quantum_Phase']:.2f} rad")
 col4.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 
 st.divider()
@@ -410,8 +421,11 @@ st.dataframe(
         "Hurst_Normal": st.column_config.NumberColumn(
             "Hurst Normal (30)", format="%.2f"
         ),
-        "Local_Hurst_fBM": st.column_config.NumberColumn(
-            "📈 Local Hurst fBM H(t)", format="%.2f"
+        "Quantum_Breakout_Prob": st.column_config.NumberColumn(
+            "⚛️ Breakout Prob (%)", format="%.1f%%"
+        ),
+        "Quantum_Phase": st.column_config.NumberColumn(
+            "🌀 Quantum Phase (rad)", format="%.2f"
         ),
         "Hurst_HA": st.column_config.NumberColumn(
             "Hurst HA (30)", format="%.2f"
