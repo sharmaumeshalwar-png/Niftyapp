@@ -4,16 +4,17 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import yfinance as yf
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
+    page_title="Nifty 50 Kinematics Engine (Zero Leakage)", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
+st.title("⚡ NIFTY 50 Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
+    "🎯 **1-Hour Timeframe Engine:** NIFTY 50 History | Pure HAM Kinematics "
     "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
 )
 
@@ -24,8 +25,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
-    " CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Data Source:** "
+    "Yahoo Finance API (`^NSEI`)"
 )
 
 
@@ -107,146 +108,43 @@ def apply_heikin_ashi(df_in):
 
 
 # =====================================================================
-# DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
+# NIFTY 50 DATA FETCH ENGINE (YFINANCE)
 # =====================================================================
-@st.cache_data(ttl=3600)
-def fetch_binance_data(start_ts, end_ts):
-    endpoint = "https://api.binance.com/api/v3/klines"
-    all_candles = []
-    current_start = start_ts
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-    }
-
-    while current_start < end_ts:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "limit": 1000,
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
-
-        if not isinstance(res, list) or len(res) == 0:
-            break
-
-        all_candles.extend(res)
-        last_candle_time = res[-1][0]
-        if last_candle_time <= current_start:
-            break
-        current_start = last_candle_time + 1
-        time.sleep(0.02)
-
-    if len(all_candles) < 2000:
-        return None
-
-    cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
-    ]
-    df_raw = pd.DataFrame(all_candles, columns=cols)
-    num_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(
-        df_raw["OpenTime"], unit="ms", utc=True
+@st.cache_data(ttl=1800)
+def fetch_nifty_data():
+    """YFinance limit: Hourly data (`1h`) Max 730 days limit tak fetch hoti hai."""
+    ticker = "^NSEI"
+    df_raw = yf.download(
+        tickers=ticker, period="2y", interval="1h", progress=False
     )
-    df_raw.set_index("Timestamp", inplace=True)
-    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
+    if df_raw.empty:
+        raise ValueError("YFinance API se Nifty ka data nahi mil paya.")
 
-@st.cache_data(ttl=3600)
-def fetch_coinbase_data(start_dt, now_dt):
-    endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    # MultiIndex columns handle karne ke liye (agar YFinance multi-level tuple de)
+    if isinstance(df_raw.columns, pd.MultiIndex):
+        df_raw.columns = df_raw.columns.get_level_values(0)
 
-    current_end = now_dt
-    all_candles = []
+    df_raw = df_raw[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
-    while current_end > start_dt:
-        current_start = max(start_dt, current_end - timedelta(hours=300))
-        params = {
-            "granularity": 3600,
-            "start": current_start.isoformat(),
-            "end": current_end.isoformat(),
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
+    # Timezone conversion to IST
+    if df_raw.index.tzinfo is None:
+        df_raw.index = df_raw.index.tz_localize("UTC")
 
-        if isinstance(res, list) and len(res) > 0:
-            all_candles.extend(res)
-        else:
-            break
-
-        current_end = current_start
-        time.sleep(0.05)
-
-    if len(all_candles) == 0:
-        return None
-
-    cols = ["time", "Low", "High", "Open", "Close", "Volume"]
-    df_raw = pd.DataFrame(all_candles, columns=cols)
-    num_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
-    df_raw.set_index("Timestamp", inplace=True)
-    df_raw.sort_index(ascending=True, inplace=True)
-    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
-
-
-def get_robust_2year_hourly():
-    now = datetime.now(timezone.utc)
-    start_dt = now - timedelta(days=730)
-
-    try:
-        df = fetch_binance_data(
-            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
-        )
-        if df is not None and len(df) >= 5000:
-            return df, "Binance REST API"
-    except Exception:
-        pass
-
-    df = fetch_coinbase_data(start_dt, now)
-    if df is not None and len(df) >= 2000:
-        return df, "Coinbase Pro API (Fallback)"
-
-    raise ValueError(
-        "Both primary and fallback endpoints failed to return sufficient"
-        " candles."
-    )
+    df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
+    return df_raw
 
 
 # Fetch Data
 try:
-    with st.spinner(
-        "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
-    ):
-        df, source_used = get_robust_2year_hourly()
+    with st.spinner("🔄 Fetching Hourly NIFTY 50 Data (`^NSEI`)..."):
+        df = fetch_nifty_data()
 
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
 
         # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
         df = df.iloc[:-1]
-
-        # Convert to IST
-        df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
     st.error(f"🚨 Data Engine Error: {e}")
@@ -289,7 +187,7 @@ momentum_ha_full = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+# --- HAM DIFFERENCE (HAM Normal - HAM HA) ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
 
@@ -305,7 +203,7 @@ df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 st.success(
-    f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
+    f"🟢 **Synced via Yahoo Finance (^NSEI): {total_candles:,} Total Hourly Candles** | 🧠"
     f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
     f" {len(df_predict):,} (IST Locked)"
 )
@@ -340,7 +238,7 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col1.metric("Locked Close Price", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("📊 HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
@@ -355,10 +253,10 @@ st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn(
-            "Close Price ($)", format="$%.2f"
+            "Close Price (₹)", format="₹%.2f"
         ),
         "HA_Close": st.column_config.NumberColumn(
-            "HA Close ($)", format="$%.2f"
+            "HA Close (₹)", format="₹%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
             "Hurst (Normal)", format="%.2f"
