@@ -9,12 +9,14 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC-USD Phase-Attractor Kinematics Engine", layout="wide"
+    page_title="BTC-USD Phase-Attractor + Benford Engine", layout="wide"
 )
-st.title("⚡ BITCOIN (BTC-USD) Engine (Phase-Attractor Base + Q=0.0001 Kalman)")
+st.title(
+    "⚡ BITCOIN (BTC-USD) Engine (Phase-Attractor + Benford's Law Alignment)"
+)
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Phase Attractor Value as Primary Base → "
-    "Secondary Kalman (Q=0.0001) → Spread Difference | 50:50 Learn:Predict Split | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** Phase Attractor Base → Kalman (Q=0.0001) "
+    "→ Spread Difference + Rolling Benford's Law Anomaly Index | 50:50 Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -24,8 +26,9 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Kalman Setting:** "
-    "Q = 0.0001 across all tiers"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n"
+    "🔒 **Kalman Setting:** Q = 0.0001\n"
+    "📊 **Benford Window:** 30 Rolling Candles"
 )
 
 
@@ -117,23 +120,48 @@ def calculate_phase_space_attractor_value(ham_series, tau=1):
     attractor_value = np.zeros(n)
 
     for i in range(2 * tau, n):
-        # Phase Space Vector: [x, y, z]
         x = ham[i]
         y = ham[i - tau]
         z = ham[i - 2 * tau]
 
-        # Velocity Vectors
         v1 = x - y
         v2 = y - z
 
-        # Attractor Magnitude Radius
         attractor_radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
-
-        # Phase Space Energy Drift Value Calculation
         energy_drift = (x * v1 + y * v2) / attractor_radius
         attractor_value[i] = energy_drift
 
     return attractor_value
+
+
+def calculate_rolling_benford_deviation(price_series, window=30):
+    """
+    Calculates Rolling Mean Absolute Error (MAE) from Theoretical Benford's Law Distribution.
+    Theoretical P(d) = log10(1 + 1/d) for d in [1..9].
+    Lower MAE = Higher Natural Alignment | Higher MAE = Anomaly / Noise / Distortion.
+    """
+    benford_probs = np.log10(1 + 1 / np.arange(1, 10))
+    prices = np.asarray(price_series, dtype=float).flatten()
+
+    # Extract Leading Non-Zero Digit
+    leading_digits = np.zeros(len(prices), dtype=int)
+    for idx, val in enumerate(prices):
+        val_str = f"{abs(val):.8f}".replace(".", "").lstrip("0")
+        if val_str:
+            leading_digits[idx] = int(val_str[0])
+
+    mae_scores = np.zeros(len(prices))
+
+    if len(prices) < window:
+        return leading_digits, mae_scores
+
+    for i in range(window - 1, len(prices)):
+        sub_digits = leading_digits[i - window + 1 : i + 1]
+        counts = np.bincount(sub_digits, minlength=10)[1:10]
+        empirical_probs = counts / window
+        mae_scores[i] = np.mean(np.abs(empirical_probs - benford_probs))
+
+    return leading_digits, mae_scores
 
 
 # =====================================================================
@@ -174,12 +202,17 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL KINEMATICS & PHASE ATTRACTOR PIPELINE (Q = 0.0001)
+# ⚡ FULL KINEMATICS, PHASE ATTRACTOR & BENFORD PIPELINE
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- NORMAL HAM ---
+# --- BENFORD'S LAW ANOMALY ENGINE ---
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Leading_Digit"], df["Benford_Dev_MAE"] = (
+    calculate_rolling_benford_deviation(normal_close_full, window=30)
+)
+
+# --- NORMAL HAM ---
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
@@ -210,17 +243,15 @@ df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# --- 🚀 STEP 1: PHASE ATTRACTOR VALUE (Base Series) ---
+# --- 🚀 PHASE ATTRACTOR PIPELINE ---
 df["Phase_Attractor_Value"] = calculate_phase_space_attractor_value(
     df["HAM_Normal"].to_numpy(), tau=1
 )
 
-# --- 🚀 STEP 2: KALMAN FILTER ON PHASE ATTRACTOR VALUE (Q = 0.0001) ---
 df["Kalman_Phase_Attractor"] = apply_kalman_filter_custom(
     df["Phase_Attractor_Value"].to_numpy(), initial_p=1.0, q_val=0.0001, r_val=0.05
 )
 
-# --- 🚀 STEP 3: PHASE ATTRACTOR MINUS KALMAN PHASE ATTRACTOR ---
 df["Phase_Attractor_Spread"] = (
     df["Phase_Attractor_Value"] - df["Kalman_Phase_Attractor"]
 )
@@ -248,13 +279,11 @@ st.success(
 # =====================================================================
 display_df = pd.DataFrame(index=df_predict.index)
 display_df["Close"] = df_predict["Close"].round(2)
-display_df["HA_Close"] = df_predict["HA_Close"].round(2)
-display_df["Hurst_Normal"] = df_predict["Hurst_Normal"].round(2)
+display_df["First_Digit"] = df_predict["Leading_Digit"]
+display_df["Benford_Dev_MAE"] = df_predict["Benford_Dev_MAE"].round(4)
 display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
-display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
-display_df["HAM_Diff"] = df_predict["HAM_Diff"].round(2)
 
-# New Phase Attractor Pipeline Columns (Rounded to 4 Decimals)
+# Phase Attractor Pipeline Columns
 display_df["Phase_Attractor_Value"] = df_predict["Phase_Attractor_Value"].round(4)
 display_df["Kalman_Phase_Attractor"] = df_predict["Kalman_Phase_Attractor"].round(4)
 display_df["Phase_Attractor_Spread"] = df_predict["Phase_Attractor_Spread"].round(4)
@@ -268,30 +297,29 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Phase Attractor Value", f"{latest_candle['Phase_Attractor_Value']:.4f}")
-col3.metric("Kalman (Q=0.0001)", f"{latest_candle['Kalman_Phase_Attractor']:.4f}")
-col4.metric("💥 Phase Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
+col2.metric("First Digit", f"{int(latest_candle['First_Digit'])}")
+col3.metric("📐 Benford Dev (MAE)", f"{latest_candle['Benford_Dev_MAE']:.4f}")
+col4.metric("Phase Attractor", f"{latest_candle['Phase_Attractor_Value']:.4f}")
+col5.metric("💥 Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Matrix with Q=0.0001 Kalman Pipeline ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Matrix with Benford's Law & Q=0.0001 Pipeline ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
-        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Normal)", format="%.2f"),
+        "First_Digit": st.column_config.NumberColumn("1st Digit", format="%d"),
+        "Benford_Dev_MAE": st.column_config.NumberColumn("📐 Benford MAE (Anomaly)", format="%.4f"),
         "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
-        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
-        "HAM_Diff": st.column_config.NumberColumn("HAM Diff", format="%.2f"),
         "Phase_Attractor_Value": st.column_config.NumberColumn("🌀 Phase Attractor Base", format="%.4f"),
         "Kalman_Phase_Attractor": st.column_config.NumberColumn("🛡️ Kalman (Q=0.0001)", format="%.4f"),
-        "Phase_Attractor_Spread": st.column_config.NumberColumn("⚡ Spread (Base - Kalman)", format="%.4f"),
+        "Phase_Attractor_Spread": st.column_config.NumberColumn("⚡ Attractor Spread", format="%.4f"),
     },
     use_container_width=True,
     height=600,
