@@ -11,10 +11,10 @@ import yfinance as yf
 st.set_page_config(
     page_title="Nifty 50 Kinematics Engine (Phase-Space Theory)", layout="wide"
 )
-st.title("⚡ NIFTY 50 Pure Kinematic Engine (Phase-Space Pattern Filter)")
+st.title("⚡ NIFTY 50 Pure Kinematic Engine (Phase-Space Attractor Values)")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Phase-Space Reconstruction Theory applied to HAM "
-    "to eliminate Random Flips | 50:50 Learn:Predict Split | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** Pure Mathematical Phase-Space Energy Value "
+    "to eliminate Random HAM Flips | 50:50 Learn:Predict Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -24,8 +24,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Theory Filter:** "
-    "Phase-Space Attractor (Zero Flips)"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Theory Output:** "
+    "Pure Phase-Space Attractor Numeric Value"
 )
 
 
@@ -106,18 +106,15 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def calculate_phase_space_attractor(ham_series, tau=1, threshold=0.15):
+def calculate_phase_space_attractor_value(ham_series, tau=1):
     """
-    Phase-Space Attractor Reconstruction Engine to eliminate HAM Flips.
-    Reconstructs 3D Trajectory [HAM_t, HAM_{t-tau}, HAM_{t-2tau}] and calculates Drift.
-    Outputs:
-       +1.0 : True Bullish Pattern Expansion
-       -1.0 : True Bearish Pattern Collapse
-        0.0 : Filtered Noise / Random Flips
+    Phase-Space Attractor Reconstruction Engine.
+    Reconstructs 3D Vector Space [HAM_t, HAM_{t-tau}, HAM_{t-2tau}] and calculates
+    Pure Energy Drift Values. Continuous noise/flips drop close to 0.00.
     """
     ham = np.asarray(ham_series, dtype=float).flatten()
     n = len(ham)
-    pattern_signal = np.zeros(n)
+    attractor_value = np.zeros(n)
 
     for i in range(2 * tau, n):
         # Phase Space Vector: [x, y, z]
@@ -129,21 +126,14 @@ def calculate_phase_space_attractor(ham_series, tau=1, threshold=0.15):
         v1 = x - y
         v2 = y - z
 
-        # Phase Momentum Acceleration
-        acceleration = v1 - v2
+        # Attractor Magnitude Radius
         attractor_radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
 
-        # Energy Drift Normalized
+        # Phase Space Energy Drift Value Calculation
         energy_drift = (x * v1 + y * v2) / attractor_radius
+        attractor_value[i] = energy_drift
 
-        if energy_drift > threshold and acceleration > 0:
-            pattern_signal[i] = 1.0  # Clean UP Trend
-        elif energy_drift < -threshold and acceleration < 0:
-            pattern_signal[i] = -1.0  # Clean DOWN Trend
-        else:
-            pattern_signal[i] = 0.0  # Noisy Flips Destroyed
-
-    return pattern_signal
+    return attractor_value
 
 
 # =====================================================================
@@ -184,7 +174,7 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL KINEMATICS & PHASE SPACE THEORY FILTER
+# ⚡ FULL KINEMATICS & PHASE SPACE ATTRACTOR VALUE CALCULATION
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -221,9 +211,9 @@ df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 # --- HAM DIFFERENCE ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# --- 🚀 SUPER THEORY: PHASE SPACE ATTRACTOR SIGNAL (NO FLIPS) ---
-df["Pattern_Phase_Signal"] = calculate_phase_space_attractor(
-    df["HAM_Normal"].to_numpy(), tau=1, threshold=0.10
+# --- 🚀 PURE PHASE SPACE ATTRACTOR NUMERIC VALUE ---
+df["Phase_Attractor_Value"] = calculate_phase_space_attractor_value(
+    df["HAM_Normal"].to_numpy(), tau=1
 )
 
 
@@ -255,15 +245,8 @@ display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
 display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
 display_df["HAM_Diff"] = df_predict["HAM_Diff"].round(2)
 
-# Theory Output Label Mapping
-def map_signal(val):
-    if val > 0:
-        return "🟢 PERFECT BULLISH"
-    elif val < 0:
-        return "🔴 PERFECT BEARISH"
-    return "⚪ NOISE (FLIP BLOCKED)"
-
-display_df["Pattern_Phase_Signal"] = df_predict["Pattern_Phase_Signal"].apply(map_signal)
+# Pure Numeric Value (Rounded to 4 Decimals for precision)
+display_df["Phase_Attractor_Value"] = df_predict["Phase_Attractor_Value"].round(4)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -278,12 +261,12 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Nifty Close Price", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
-col4.metric("⚛️ Phase Theory Pattern", f"{latest_candle['Pattern_Phase_Signal']}")
+col4.metric("🌀 Phase Attractor Value", f"{latest_candle['Phase_Attractor_Value']:.4f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Kinematic Matrix with Phase-Space Theory ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Kinematic Matrix with Phase Attractor Values ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -295,7 +278,7 @@ st.dataframe(
         "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
         "HAM_Diff": st.column_config.NumberColumn("HAM Diff", format="%.2f"),
-        "Pattern_Phase_Signal": st.column_config.TextColumn("🌀 Phase Attractor Pattern"),
+        "Phase_Attractor_Value": st.column_config.NumberColumn("🌀 Phase Attractor Value", format="%.4f"),
     },
     use_container_width=True,
     height=600,
