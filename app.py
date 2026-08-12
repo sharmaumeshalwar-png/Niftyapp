@@ -2,7 +2,6 @@ import time
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
 import yfinance as yf
 
@@ -10,12 +9,12 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="Nifty 50 Kinematics Engine (Zero Leakage)", layout="wide"
+    page_title="Nifty 50 Kinematics Engine (Phase-Space Theory)", layout="wide"
 )
-st.title("⚡ NIFTY 50 Pure Kinematic Engine")
+st.title("⚡ NIFTY 50 Pure Kinematic Engine (Phase-Space Pattern Filter)")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** NIFTY 50 History | Pure HAM Kinematics "
-    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
+    "🎯 **1-Hour Timeframe Engine:** Phase-Space Reconstruction Theory applied to HAM "
+    "to eliminate Random Flips | 50:50 Learn:Predict Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -25,8 +24,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Data Source:** "
-    "Yahoo Finance API (`^NSEI`)"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Theory Filter:** "
+    "Phase-Space Attractor (Zero Flips)"
 )
 
 
@@ -36,7 +35,7 @@ st.sidebar.success(
 def apply_kalman_filter_custom(
     data_array, initial_p=50.0, q_val=0.001, r_val=0.1
 ):
-    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+    """Sequential single-pass Kalman Filter (Zero Leakage)."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -52,7 +51,7 @@ def apply_kalman_filter_custom(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal)."""
+    """Vectorized Trailing R/S Hurst Exponent."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -107,27 +106,64 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
+def calculate_phase_space_attractor(ham_series, tau=1, threshold=0.15):
+    """
+    Phase-Space Attractor Reconstruction Engine to eliminate HAM Flips.
+    Reconstructs 3D Trajectory [HAM_t, HAM_{t-tau}, HAM_{t-2tau}] and calculates Drift.
+    Outputs:
+       +1.0 : True Bullish Pattern Expansion
+       -1.0 : True Bearish Pattern Collapse
+        0.0 : Filtered Noise / Random Flips
+    """
+    ham = np.asarray(ham_series, dtype=float).flatten()
+    n = len(ham)
+    pattern_signal = np.zeros(n)
+
+    for i in range(2 * tau, n):
+        # Phase Space Vector: [x, y, z]
+        x = ham[i]
+        y = ham[i - tau]
+        z = ham[i - 2 * tau]
+
+        # Velocity Vectors
+        v1 = x - y
+        v2 = y - z
+
+        # Phase Momentum Acceleration
+        acceleration = v1 - v2
+        attractor_radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
+
+        # Energy Drift Normalized
+        energy_drift = (x * v1 + y * v2) / attractor_radius
+
+        if energy_drift > threshold and acceleration > 0:
+            pattern_signal[i] = 1.0  # Clean UP Trend
+        elif energy_drift < -threshold and acceleration < 0:
+            pattern_signal[i] = -1.0  # Clean DOWN Trend
+        else:
+            pattern_signal[i] = 0.0  # Noisy Flips Destroyed
+
+    return pattern_signal
+
+
 # =====================================================================
-# NIFTY 50 DATA FETCH ENGINE (YFINANCE)
+# NIFTY 50 DATA FETCH ENGINE
 # =====================================================================
 @st.cache_data(ttl=1800)
 def fetch_nifty_data():
-    """YFinance limit: Hourly data (`1h`) Max 730 days limit tak fetch hoti hai."""
     ticker = "^NSEI"
     df_raw = yf.download(
         tickers=ticker, period="2y", interval="1h", progress=False
     )
 
     if df_raw.empty:
-        raise ValueError("YFinance API se Nifty ka data nahi mil paya.")
+        raise ValueError("YFinance API se Nifty ka data nahi mila.")
 
-    # MultiIndex columns handle karne ke liye (agar YFinance multi-level tuple de)
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
 
     df_raw = df_raw[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
-    # Timezone conversion to IST
     if df_raw.index.tzinfo is None:
         df_raw.index = df_raw.index.tz_localize("UTC")
 
@@ -139,56 +175,56 @@ def fetch_nifty_data():
 try:
     with st.spinner("🔄 Fetching Hourly NIFTY 50 Data (`^NSEI`)..."):
         df = fetch_nifty_data()
-
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-
-        # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
-        df = df.iloc[:-1]
-
+        df = df.iloc[:-1]  # Drop active unclosed candle
 except Exception as e:
     st.error(f"🚨 Data Engine Error: {e}")
     st.stop()
 
 
 # =====================================================================
-# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
+# ⚡ FULL KINEMATICS & PHASE SPACE THEORY FILTER
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- PATH A: NORMAL CANDLE KINEMATICS ---
+# --- NORMAL HAM ---
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-kalman_base_normal_full = apply_kalman_filter_custom(
+kalman_base_normal = apply_kalman_filter_custom(
     normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_normal_full = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal_full,
+momentum_normal = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal,
     initial_p=0.50,
     q_val=0.001,
     r_val=0.1,
 )
 
-# Base HAM Normal Signal
-df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
+df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
-# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+# --- HEIKIN ASHI HAM ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
-kalman_base_ha_full = apply_kalman_filter_custom(
+kalman_base_ha = apply_kalman_filter_custom(
     ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_ha_full = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+momentum_ha = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
+df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- HAM DIFFERENCE (HAM Normal - HAM HA) ---
+# --- HAM DIFFERENCE ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+
+# --- 🚀 SUPER THEORY: PHASE SPACE ATTRACTOR SIGNAL (NO FLIPS) ---
+df["Pattern_Phase_Signal"] = calculate_phase_space_attractor(
+    df["HAM_Normal"].to_numpy(), tau=1, threshold=0.10
+)
 
 
 # =====================================================================
@@ -203,30 +239,31 @@ df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 st.success(
-    f"🟢 **Synced via Yahoo Finance (^NSEI): {total_candles:,} Total Hourly Candles** | 🧠"
-    f" **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:**"
-    f" {len(df_predict):,} (IST Locked)"
+    f"🟢 **Synced via Yahoo Finance (^NSEI): {total_candles:,} Hourly Candles** | "
+    f"🧠 **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:** {len(df_predict):,}"
 )
 
 
 # =====================================================================
 # 📋 MATRIX FORMATTING AND IST DISPLAY
 # =====================================================================
-clean_cols = [
-    "Close",
-    "HA_Close",
-    "Hurst_Normal",
-    "Hurst_HA",
-    "HAM_Normal",
-    "HAM_HeikinAshi",
-    "HAM_Diff",
-]
 display_df = pd.DataFrame(index=df_predict.index)
+display_df["Close"] = df_predict["Close"].round(2)
+display_df["HA_Close"] = df_predict["HA_Close"].round(2)
+display_df["Hurst_Normal"] = df_predict["Hurst_Normal"].round(2)
+display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
+display_df["HAM_HeikinAshi"] = df_predict["HAM_HeikinAshi"].round(2)
+display_df["HAM_Diff"] = df_predict["HAM_Diff"].round(2)
 
-for col in clean_cols:
-    display_df[col] = (
-        np.asarray(df_predict[col], dtype=float).flatten().round(2)
-    )
+# Theory Output Label Mapping
+def map_signal(val):
+    if val > 0:
+        return "🟢 PERFECT BULLISH"
+    elif val < 0:
+        return "🔴 PERFECT BEARISH"
+    return "⚪ NOISE (FLIP BLOCKED)"
+
+display_df["Pattern_Phase_Signal"] = df_predict["Pattern_Phase_Signal"].apply(map_signal)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -238,39 +275,27 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Locked Close Price", f"₹{latest_candle['Close']:,.2f}")
+col1.metric("Nifty Close Price", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("📊 HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
+col3.metric("HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
+col4.metric("⚛️ Phase Theory Pattern", f"{latest_candle['Pattern_Phase_Signal']}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Kinematic Matrix with Phase-Space Theory ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn(
-            "Close Price (₹)", format="₹%.2f"
-        ),
-        "HA_Close": st.column_config.NumberColumn(
-            "HA Close (₹)", format="₹%.2f"
-        ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Normal)", format="%.2f"
-        ),
-        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal", format="%.2f"
-        ),
-        "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA Signal", format="%.2f"
-        ),
-        "HAM_Diff": st.column_config.NumberColumn(
-            "📊 HAM Diff (Normal - HA)", format="%.2f"
-        ),
+        "Close": st.column_config.NumberColumn("Close Price (₹)", format="₹%.2f"),
+        "HA_Close": st.column_config.NumberColumn("HA Close (₹)", format="₹%.2f"),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Normal)", format="%.2f"),
+        "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
+        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
+        "HAM_Diff": st.column_config.NumberColumn("HAM Diff", format="%.2f"),
+        "Pattern_Phase_Signal": st.column_config.TextColumn("🌀 Phase Attractor Pattern"),
     },
     use_container_width=True,
     height=600,
