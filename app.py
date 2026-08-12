@@ -9,15 +9,15 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC-USD Method 4 Phase-Space Attractor Engine", layout="wide"
+    page_title="BTC-USD Fourier Spectral Smoothing Engine", layout="wide"
 )
 st.title(
-    "🌀 BITCOIN (BTC-USD) Engine — Method 4: Takens' Phase-Space Attractor"
+    "🌊 BITCOIN (BTC-USD) Engine — Method 2: Fourier Low-Pass Filter (π = 22/7)"
 )
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 3D Phase-Space Trajectory Embedding "
-    "($\tau=1$) → Trajectory Speed & Energy Drift → Kalman (Q=0.0001) "
-    "→ Attractor Spread Matrix | 50:50 Split | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** Fast Fourier Transform (FFT) Spectral Decomposition "
+    "using $\pi = 22/7$ → High-Frequency Noise Filtering → Reconstruction & Noise Spread Matrix | "
+    "50:50 Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -26,127 +26,54 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
     st.rerun()
 
+cutoff_ratio = st.sidebar.slider(
+    "🎛️ Low-Pass Filter Sensitivity (Cutoff Ratio)",
+    min_value=0.01,
+    max_value=0.30,
+    value=0.05,
+    step=0.01,
+    help="Jitna kam value hogi, curve utna zyaada smooth hoga (zyaada noise filter hoga).",
+)
+
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n"
-    "🌀 **Method 4 Enabled:** Takens' Phase-Space Reconstruction\n"
-    "🔒 **Kalman Setting:** Q = 0.0001\n"
-    "⏱️ **Time Lag (Tau):** 1 Candle"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal Windowing)\n\n"
+    "🌊 **Method 2 Enabled:** Fourier Spectral Filtering ($\pi=22/7$)\n"
+    "⚙️ **Cutoff Ratio:** Keep top frequency components"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
+# MATHEMATICAL ENGINES (Strictly Method 2: Fourier Smoothing)
 # =====================================================================
-def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.0001, r_val=0.1
-):
-    """Sequential single-pass Kalman Filter (Zero Leakage)."""
-    arr = np.asarray(data_array, dtype=float).flatten()
-    if len(arr) == 0:
-        return np.array([])
-    x, p = arr[0], initial_p
-    filtered_values = np.empty(len(arr))
-    for i, z in enumerate(arr):
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values[i] = x
-    return filtered_values
-
-
-def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Vectorized Trailing R/S Hurst Exponent."""
-    arr = np.asarray(price_series, dtype=float).flatten()
-    s = pd.Series(arr)
-
-    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
-    hurst_values = np.full(len(arr), 0.5)
-
-    if len(log_returns) < window:
-        return hurst_values
-
-    windows = np.lib.stride_tricks.sliding_window_view(
-        log_returns, window_shape=window
-    )
-    means = np.mean(windows, axis=1, keepdims=True)
-    cum_dev = np.cumsum(windows - means, axis=1)
-
-    r_val = np.ptp(cum_dev, axis=1)
-    s_val = np.std(windows, axis=1, ddof=1) + 1e-10
-    rs_ratio = r_val / s_val
-
-    valid_mask = rs_ratio > 0
-    h_calculated = np.full(len(rs_ratio), 0.5)
-    h_calculated[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
-
-    hurst_values[window - 1 : window - 1 + len(h_calculated)] = np.clip(
-        h_calculated, 0.0, 1.0
-    )
-    return hurst_values
-
-
-def apply_heikin_ashi(df_in):
-    """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
-    op = np.asarray(df_in["Open"], dtype=float).flatten()
-    hi = np.asarray(df_in["High"], dtype=float).flatten()
-    lo = np.asarray(df_in["Low"], dtype=float).flatten()
-    cl = np.asarray(df_in["Close"], dtype=float).flatten()
-
-    ha_close = (op + hi + lo + cl) / 4.0
-    ha_open = np.zeros(len(df_in))
-    ha_open[0] = (op[0] + cl[0]) / 2.0
-
-    for i in range(1, len(df_in)):
-        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
-
-    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
-    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
-
-    df_out = df_in.copy()
-    df_out["HA_Open"] = ha_open
-    df_out["HA_High"] = ha_high
-    df_out["HA_Low"] = ha_low
-    df_out["HA_Close"] = ha_close
-    return df_out
-
-
-def calculate_phase_space_attractor_metrics(ham_series, tau=1):
+def apply_fourier_lowpass_filter(series_data, cutoff_fraction=0.05):
     """
-    METHOD 4: Phase-Space Attractor Reconstruction Engine (Takens' Theorem).
-    Reconstructs 3D Phase Space [HAM_t, HAM_{t-tau}, HAM_{t-2tau}].
-    Returns:
-      1. Phase Trajectory Speed (Magnitude of Phase Velocity Vector)
-      2. Attractor Energy Radius (Distance from State Origin)
-      3. Energy Drift Value (Kinetic Field Acceleration)
+    METHOD 2: Fourier Low-Pass Filter using Pi (22/7).
+    Decomposes signal into spectral frequencies using 2*pi*f*t domain,
+    filters out high-frequency noise, and reconstructs the smooth curve.
     """
-    ham = np.asarray(ham_series, dtype=float).flatten()
-    n = len(ham)
+    arr = np.asarray(series_data, dtype=float).flatten()
+    n = len(arr)
+    if n == 0:
+        return np.array([]), np.array([])
 
-    traj_speed = np.zeros(n)
-    attractor_energy = np.zeros(n)
-    energy_drift = np.zeros(n)
+    # Fast Fourier Transform into Frequency Domain
+    fft_coeffs = np.fft.rfft(arr)
 
-    for i in range(2 * tau, n):
-        x = ham[i]
-        y = ham[i - tau]
-        z = ham[i - 2 * tau]
+    # Calculate cutoff threshold index
+    cutoff_idx = int(len(fft_coeffs) * cutoff_fraction)
+    cutoff_idx = max(1, cutoff_idx)
 
-        v1 = x - y
-        v2 = y - z
+    # Filter high-frequency noise coefficients
+    filtered_coeffs = fft_coeffs.copy()
+    filtered_coeffs[cutoff_idx:] = 0.0
 
-        # Trajectory Velocity in 3D Phase Space
-        speed = np.sqrt(v1**2 + v2**2)
-        # Attractor Radius (Energy in Phase Space)
-        radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
-        # Energy Directional Acceleration/Drift
-        drift = (x * v1 + y * v2) / radius
+    # Inverse FFT to reconstruct smooth continuous signal
+    smoothed_series = np.fft.irfft(filtered_coeffs, n=n)
 
-        traj_speed[i] = speed
-        attractor_energy[i] = radius
-        energy_drift[i] = drift
+    # Noise Residual Spread
+    noise_spread = arr - smoothed_series
 
-    return traj_speed, attractor_energy, energy_drift
+    return smoothed_series, noise_spread
 
 
 # =====================================================================
@@ -187,54 +114,13 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL KINEMATICS & METHOD 4 PHASE ATTRACTOR PIPELINE
+# ⚡ METHOD 2: FOURIER FILTERING PIPELINE ONLY
 # =====================================================================
-df = apply_heikin_ashi(df)
+close_prices = np.asarray(df["Close"], dtype=float).flatten()
 
-# --- NORMAL HAM ---
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
-)
-
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0001, r_val=0.2
-)
-momentum_normal = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal,
-    initial_p=0.50,
-    q_val=0.0001,
-    r_val=0.1,
-)
-df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
-
-# --- HEIKIN ASHI HAM ---
-ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
-df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-
-kalman_base_ha = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0001, r_val=0.2
-)
-momentum_ha = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.0001, r_val=0.1
-)
-df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
-
-df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-
-# --- 🌀 METHOD 4: PHASE ATTRACTOR RECONSTRUCTION PIPELINE ---
-df["Attractor_Speed"], df["Attractor_Energy"], df["Phase_Attractor_Drift"] = (
-    calculate_phase_space_attractor_metrics(df["HAM_Normal"].to_numpy(), tau=1)
-)
-
-# Kalman Smoothing on Phase Drift Energy (Q=0.0001)
-df["Kalman_Phase_Attractor"] = apply_kalman_filter_custom(
-    df["Phase_Attractor_Drift"].to_numpy(), initial_p=1.0, q_val=0.0001, r_val=0.05
-)
-
-# Attractor Phase Spread (Drift - Smoothed Drift)
-df["Phase_Attractor_Spread"] = (
-    df["Phase_Attractor_Drift"] - df["Kalman_Phase_Attractor"]
+# Apply Fourier Low-Pass Filter
+df["Fourier_Smooth_Close"], df["Fourier_Noise_Spread"] = (
+    apply_fourier_lowpass_filter(close_prices, cutoff_fraction=cutoff_ratio)
 )
 
 
@@ -247,8 +133,6 @@ split_idx = int(total_candles * 0.50)
 df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
-
 st.success(
     f"🟢 **Synced via Yahoo Finance (BTC-USD): {total_candles:,} Hourly Candles** | "
     f"🧠 **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:** {len(df_predict):,}"
@@ -260,14 +144,10 @@ st.success(
 # =====================================================================
 display_df = pd.DataFrame(index=df_predict.index)
 display_df["Close"] = df_predict["Close"].round(2)
-display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
 
-# Method 4 Phase Attractor Metrics
-display_df["Attractor_Speed"] = df_predict["Attractor_Speed"].round(4)
-display_df["Attractor_Energy"] = df_predict["Attractor_Energy"].round(4)
-display_df["Phase_Attractor_Drift"] = df_predict["Phase_Attractor_Drift"].round(4)
-display_df["Kalman_Phase_Attractor"] = df_predict["Kalman_Phase_Attractor"].round(4)
-display_df["Phase_Attractor_Spread"] = df_predict["Phase_Attractor_Spread"].round(4)
+# Method 2 Fourier Columns
+display_df["Fourier_Smooth_Close"] = df_predict["Fourier_Smooth_Close"].round(2)
+display_df["Fourier_Noise_Spread"] = df_predict["Fourier_Noise_Spread"].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -278,29 +158,33 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3 = st.columns(3)
 col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("🌀 Attractor Speed", f"{latest_candle['Attractor_Speed']:.4f}")
-col3.metric("⚡ Attractor Energy", f"{latest_candle['Attractor_Energy']:.4f}")
-col4.metric("📈 Attractor Drift", f"{latest_candle['Phase_Attractor_Drift']:.4f}")
-col5.metric("💥 Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
+col2.metric(
+    "🌊 Fourier Smoothed Close (π=22/7)",
+    f"${latest_candle['Fourier_Smooth_Close']:,.2f}",
+)
+col3.metric(
+    "💥 Fourier Noise Residual Spread",
+    f"${latest_candle['Fourier_Noise_Spread']:,.2f}",
+)
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Matrix — Method 4: Phase-Space Attractor (Q=0.0001) ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Matrix — Method 2: Fourier Low-Pass Spectral Filter ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
-        "Attractor_Speed": st.column_config.NumberColumn("🚀 Phase Speed", format="%.4f"),
-        "Attractor_Energy": st.column_config.NumberColumn("⚡ Energy Radius", format="%.4f"),
-        "Phase_Attractor_Drift": st.column_config.NumberColumn("🌀 Energy Drift", format="%.4f"),
-        "Kalman_Phase_Attractor": st.column_config.NumberColumn("🛡️ Kalman (Q=0.0001)", format="%.4f"),
-        "Phase_Attractor_Spread": st.column_config.NumberColumn("💥 Attractor Spread", format="%.4f"),
+        "Fourier_Smooth_Close": st.column_config.NumberColumn(
+            "🌊 Fourier Smooth Close ($)", format="$%.2f"
+        ),
+        "Fourier_Noise_Spread": st.column_config.NumberColumn(
+            "💥 Noise Spread ($)", format="$%.2f"
+        ),
     },
     use_container_width=True,
     height=600,
