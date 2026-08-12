@@ -12,11 +12,11 @@ st.set_page_config(
     page_title="BTC-USD Zero-Leakage Fourier Engine", layout="wide"
 )
 st.title(
-    "🛡️ BITCOIN (BTC-USD) Engine — Strictly Causal Causal Fourier (π = 22/7)"
+    "🛡️ BITCOIN (BTC-USD) Engine — Zero-Leakage Fourier Noise Spread (π = 22/7)"
 )
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Rolling Trajectory FFT (No Look-Ahead Bias) "
-    "using $\pi = 22/7$ → Fourier Smooth Close & 1-Bar Fourier Delta | 50:50 Split | IST Locked"
+    "using $\pi = 22/7$ → Fourier Smooth Close & Noise Spread ($\text{Close} - \text{Smooth}$) | 50:50 Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -45,7 +45,7 @@ cutoff_ratio = st.sidebar.slider(
 st.sidebar.success(
     "🛡️ **Leak Protection:** FULLY SECURED\n\n"
     "🔒 **FFT Execution:** Strictly Causal Trailing Window\n"
-    "📊 **3rd Column:** Zero-Leakage Fourier Delta"
+    "📊 **3rd Column:** Zero-Leak Noise Spread ($\text{Close} - \text{Smooth}$)"
 )
 
 
@@ -132,10 +132,8 @@ df["Fourier_Smooth_Close"] = apply_rolling_causal_fourier(
     close_prices, window=window_size, cutoff_fraction=cutoff_ratio
 )
 
-# 2. Causal Fourier Delta (Current - Last)
-df["Fourier_Delta"] = df["Fourier_Smooth_Close"] - df[
-    "Fourier_Smooth_Close"
-].shift(1)
+# 2. 3rd Column: Causal Noise Spread (Close - Fourier Smooth)
+df["Fourier_Noise_Spread"] = df["Close"] - df["Fourier_Smooth_Close"]
 
 
 # =====================================================================
@@ -163,7 +161,7 @@ display_df["Close"] = df_predict["Close"].round(2)
 
 # Method 2 Zero-Leakage Fourier Columns
 display_df["Fourier_Smooth_Close"] = df_predict["Fourier_Smooth_Close"].round(2)
-display_df["Fourier_Delta"] = df_predict["Fourier_Delta"].round(2)
+display_df["Fourier_Noise_Spread"] = df_predict["Fourier_Noise_Spread"].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -181,8 +179,8 @@ col2.metric(
     f"${latest_candle['Fourier_Smooth_Close']:,.2f}",
 )
 col3.metric(
-    "⚡ Zero-Leak Fourier Delta",
-    f"${latest_candle['Fourier_Delta']:,.2f}",
+    "💥 Zero-Leak Noise Spread (Close - Smooth)",
+    f"${latest_candle['Fourier_Noise_Spread']:,.2f}",
 )
 
 st.divider()
@@ -198,8 +196,8 @@ st.dataframe(
         "Fourier_Smooth_Close": st.column_config.NumberColumn(
             "🛡️ Zero-Leak Smooth ($)", format="$%.2f"
         ),
-        "Fourier_Delta": st.column_config.NumberColumn(
-            "⚡ Zero-Leak Delta ($)", format="$%.2f"
+        "Fourier_Noise_Spread": st.column_config.NumberColumn(
+            "💥 Noise Spread ($)", format="$%.2f"
         ),
     },
     use_container_width=True,
