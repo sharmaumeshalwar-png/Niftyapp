@@ -9,14 +9,15 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC-USD Phase-Attractor + Benford Engine", layout="wide"
+    page_title="BTC-USD Method 4 Phase-Space Attractor Engine", layout="wide"
 )
 st.title(
-    "⚡ BITCOIN (BTC-USD) Engine (Phase-Attractor + Benford's Law Alignment)"
+    "🌀 BITCOIN (BTC-USD) Engine — Method 4: Takens' Phase-Space Attractor"
 )
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Phase Attractor Base → Kalman (Q=0.0001) "
-    "→ Spread Difference + Rolling Benford's Law Anomaly Index | 50:50 Split | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** 3D Phase-Space Trajectory Embedding "
+    "($\tau=1$) → Trajectory Speed & Energy Drift → Kalman (Q=0.0001) "
+    "→ Attractor Spread Matrix | 50:50 Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -27,8 +28,9 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n"
+    "🌀 **Method 4 Enabled:** Takens' Phase-Space Reconstruction\n"
     "🔒 **Kalman Setting:** Q = 0.0001\n"
-    "📊 **Benford Window:** 30 Rolling Candles"
+    "⏱️ **Time Lag (Tau):** 1 Candle"
 )
 
 
@@ -109,15 +111,21 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def calculate_phase_space_attractor_value(ham_series, tau=1):
+def calculate_phase_space_attractor_metrics(ham_series, tau=1):
     """
-    Phase-Space Attractor Reconstruction Engine.
-    Reconstructs 3D Vector Space [HAM_t, HAM_{t-tau}, HAM_{t-2tau}] and calculates
-    Pure Energy Drift Values.
+    METHOD 4: Phase-Space Attractor Reconstruction Engine (Takens' Theorem).
+    Reconstructs 3D Phase Space [HAM_t, HAM_{t-tau}, HAM_{t-2tau}].
+    Returns:
+      1. Phase Trajectory Speed (Magnitude of Phase Velocity Vector)
+      2. Attractor Energy Radius (Distance from State Origin)
+      3. Energy Drift Value (Kinetic Field Acceleration)
     """
     ham = np.asarray(ham_series, dtype=float).flatten()
     n = len(ham)
-    attractor_value = np.zeros(n)
+
+    traj_speed = np.zeros(n)
+    attractor_energy = np.zeros(n)
+    energy_drift = np.zeros(n)
 
     for i in range(2 * tau, n):
         x = ham[i]
@@ -127,41 +135,18 @@ def calculate_phase_space_attractor_value(ham_series, tau=1):
         v1 = x - y
         v2 = y - z
 
-        attractor_radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
-        energy_drift = (x * v1 + y * v2) / attractor_radius
-        attractor_value[i] = energy_drift
+        # Trajectory Velocity in 3D Phase Space
+        speed = np.sqrt(v1**2 + v2**2)
+        # Attractor Radius (Energy in Phase Space)
+        radius = np.sqrt(x**2 + y**2 + z**2) + 1e-10
+        # Energy Directional Acceleration/Drift
+        drift = (x * v1 + y * v2) / radius
 
-    return attractor_value
+        traj_speed[i] = speed
+        attractor_energy[i] = radius
+        energy_drift[i] = drift
 
-
-def calculate_rolling_benford_deviation(price_series, window=30):
-    """
-    Calculates Rolling Mean Absolute Error (MAE) from Theoretical Benford's Law Distribution.
-    Theoretical P(d) = log10(1 + 1/d) for d in [1..9].
-    Lower MAE = Higher Natural Alignment | Higher MAE = Anomaly / Noise / Distortion.
-    """
-    benford_probs = np.log10(1 + 1 / np.arange(1, 10))
-    prices = np.asarray(price_series, dtype=float).flatten()
-
-    # Extract Leading Non-Zero Digit
-    leading_digits = np.zeros(len(prices), dtype=int)
-    for idx, val in enumerate(prices):
-        val_str = f"{abs(val):.8f}".replace(".", "").lstrip("0")
-        if val_str:
-            leading_digits[idx] = int(val_str[0])
-
-    mae_scores = np.zeros(len(prices))
-
-    if len(prices) < window:
-        return leading_digits, mae_scores
-
-    for i in range(window - 1, len(prices)):
-        sub_digits = leading_digits[i - window + 1 : i + 1]
-        counts = np.bincount(sub_digits, minlength=10)[1:10]
-        empirical_probs = counts / window
-        mae_scores[i] = np.mean(np.abs(empirical_probs - benford_probs))
-
-    return leading_digits, mae_scores
+    return traj_speed, attractor_energy, energy_drift
 
 
 # =====================================================================
@@ -202,17 +187,12 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL KINEMATICS, PHASE ATTRACTOR & BENFORD PIPELINE
+# ⚡ FULL KINEMATICS & METHOD 4 PHASE ATTRACTOR PIPELINE
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- BENFORD'S LAW ANOMALY ENGINE ---
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Leading_Digit"], df["Benford_Dev_MAE"] = (
-    calculate_rolling_benford_deviation(normal_close_full, window=30)
-)
-
 # --- NORMAL HAM ---
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
@@ -226,7 +206,6 @@ momentum_normal = apply_kalman_filter_custom(
     q_val=0.0001,
     r_val=0.1,
 )
-
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # --- HEIKIN ASHI HAM ---
@@ -243,17 +222,19 @@ df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# --- 🚀 PHASE ATTRACTOR PIPELINE ---
-df["Phase_Attractor_Value"] = calculate_phase_space_attractor_value(
-    df["HAM_Normal"].to_numpy(), tau=1
+# --- 🌀 METHOD 4: PHASE ATTRACTOR RECONSTRUCTION PIPELINE ---
+df["Attractor_Speed"], df["Attractor_Energy"], df["Phase_Attractor_Drift"] = (
+    calculate_phase_space_attractor_metrics(df["HAM_Normal"].to_numpy(), tau=1)
 )
 
+# Kalman Smoothing on Phase Drift Energy (Q=0.0001)
 df["Kalman_Phase_Attractor"] = apply_kalman_filter_custom(
-    df["Phase_Attractor_Value"].to_numpy(), initial_p=1.0, q_val=0.0001, r_val=0.05
+    df["Phase_Attractor_Drift"].to_numpy(), initial_p=1.0, q_val=0.0001, r_val=0.05
 )
 
+# Attractor Phase Spread (Drift - Smoothed Drift)
 df["Phase_Attractor_Spread"] = (
-    df["Phase_Attractor_Value"] - df["Kalman_Phase_Attractor"]
+    df["Phase_Attractor_Drift"] - df["Kalman_Phase_Attractor"]
 )
 
 
@@ -279,12 +260,12 @@ st.success(
 # =====================================================================
 display_df = pd.DataFrame(index=df_predict.index)
 display_df["Close"] = df_predict["Close"].round(2)
-display_df["First_Digit"] = df_predict["Leading_Digit"]
-display_df["Benford_Dev_MAE"] = df_predict["Benford_Dev_MAE"].round(4)
 display_df["HAM_Normal"] = df_predict["HAM_Normal"].round(2)
 
-# Phase Attractor Pipeline Columns
-display_df["Phase_Attractor_Value"] = df_predict["Phase_Attractor_Value"].round(4)
+# Method 4 Phase Attractor Metrics
+display_df["Attractor_Speed"] = df_predict["Attractor_Speed"].round(4)
+display_df["Attractor_Energy"] = df_predict["Attractor_Energy"].round(4)
+display_df["Phase_Attractor_Drift"] = df_predict["Phase_Attractor_Drift"].round(4)
 display_df["Kalman_Phase_Attractor"] = df_predict["Kalman_Phase_Attractor"].round(4)
 display_df["Phase_Attractor_Spread"] = df_predict["Phase_Attractor_Spread"].round(4)
 
@@ -299,27 +280,27 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("First Digit", f"{int(latest_candle['First_Digit'])}")
-col3.metric("📐 Benford Dev (MAE)", f"{latest_candle['Benford_Dev_MAE']:.4f}")
-col4.metric("Phase Attractor", f"{latest_candle['Phase_Attractor_Value']:.4f}")
+col2.metric("🌀 Attractor Speed", f"{latest_candle['Attractor_Speed']:.4f}")
+col3.metric("⚡ Attractor Energy", f"{latest_candle['Attractor_Energy']:.4f}")
+col4.metric("📈 Attractor Drift", f"{latest_candle['Phase_Attractor_Drift']:.4f}")
 col5.metric("💥 Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Matrix with Benford's Law & Q=0.0001 Pipeline ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Matrix — Method 4: Phase-Space Attractor (Q=0.0001) ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "First_Digit": st.column_config.NumberColumn("1st Digit", format="%d"),
-        "Benford_Dev_MAE": st.column_config.NumberColumn("📐 Benford MAE (Anomaly)", format="%.4f"),
         "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
-        "Phase_Attractor_Value": st.column_config.NumberColumn("🌀 Phase Attractor Base", format="%.4f"),
+        "Attractor_Speed": st.column_config.NumberColumn("🚀 Phase Speed", format="%.4f"),
+        "Attractor_Energy": st.column_config.NumberColumn("⚡ Energy Radius", format="%.4f"),
+        "Phase_Attractor_Drift": st.column_config.NumberColumn("🌀 Energy Drift", format="%.4f"),
         "Kalman_Phase_Attractor": st.column_config.NumberColumn("🛡️ Kalman (Q=0.0001)", format="%.4f"),
-        "Phase_Attractor_Spread": st.column_config.NumberColumn("⚡ Attractor Spread", format="%.4f"),
+        "Phase_Attractor_Spread": st.column_config.NumberColumn("💥 Attractor Spread", format="%.4f"),
     },
     use_container_width=True,
     height=600,
