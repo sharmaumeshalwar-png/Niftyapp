@@ -9,12 +9,14 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
+    page_title="BTC 2-Year Kinematics Engine (Zero Leakage Multi-Path)",
+    layout="wide",
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
-    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
+    "🎯 **1-Hour Timeframe Engine:** 4-Path Structural Kinematics (Normal | HA"
+    " | Super-HA | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero"
+    " Leakage]"
 )
 
 # Sidebar Controls
@@ -254,7 +256,7 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
+# ⚡ 4-PATH CONTINUOUS KINEMATICS ENGINE
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -264,32 +266,62 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
 
-kalman_base_normal_full = apply_kalman_filter_custom(
+kalman_base_normal = apply_kalman_filter_custom(
     normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_normal_full = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal_full,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
+momentum_normal = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-
-# Base HAM Normal Signal
-df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
+df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
-kalman_base_ha_full = apply_kalman_filter_custom(
+kalman_base_ha = apply_kalman_filter_custom(
     ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_ha_full = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+momentum_ha = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
+df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+# --- PATH C: SUPER HEIKIN-ASHI (DUAL-PASS SMOOTHED, TIME LOCKED) ---
+sha_close = (
+    df["HA_Open"].to_numpy()
+    + df["HA_High"].to_numpy()
+    + df["HA_Low"].to_numpy()
+    + df["HA_Close"].to_numpy()
+) / 4.0
+df["SHA_Close"] = sha_close
+df["Hurst_SHA"] = calculate_rolling_hurst_vectorized(sha_close, window=30)
+
+kalman_base_sha = apply_kalman_filter_custom(
+    sha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_sha = apply_kalman_filter_custom(
+    sha_close - kalman_base_sha, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_SuperHA"] = momentum_sha * (df["Hurst_SHA"].to_numpy() * 2.0)
+
+# --- PATH D: VOLUME-WEIGHTED CLOSE (LIQUIDITY LOCKED) ---
+vol = df["Volume"].to_numpy()
+vol_mean = pd.Series(vol).rolling(30, min_periods=1).mean().to_numpy() + 1e-10
+vw_factor = np.clip(vol / vol_mean, 0.5, 2.0)
+
+vw_close = normal_close_full * vw_factor
+df["VW_Close"] = vw_close
+df["Hurst_VW"] = calculate_rolling_hurst_vectorized(vw_close, window=30)
+
+kalman_base_vw = apply_kalman_filter_custom(
+    vw_close, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_vw = apply_kalman_filter_custom(
+    vw_close - kalman_base_vw, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_VW"] = momentum_vw * (df["Hurst_VW"].to_numpy() * 2.0)
+
+# --- DIFFERENCE MATRIX ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
 
@@ -303,7 +335,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA"],
+    subset=["Hurst_Normal", "Hurst_HA", "Hurst_SHA", "Hurst_VW"],
     inplace=True,
 )
 
@@ -322,8 +354,12 @@ clean_cols = [
     "HA_Close",
     "Hurst_Normal",
     "Hurst_HA",
+    "Hurst_SHA",
+    "Hurst_VW",
     "HAM_Normal",
     "HAM_HeikinAshi",
+    "HAM_SuperHA",
+    "HAM_VW",
     "HAM_Diff",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
@@ -342,16 +378,17 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("Hurst Normal", f"{latest_candle['Hurst_Normal']:.2f}")
-col4.metric("Hurst HA", f"{latest_candle['Hurst_HA']:.2f}")
+col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric("HAM Super-HA", f"{latest_candle['HAM_SuperHA']:.2f}")
+col5.metric("HAM Vol-Weighted", f"{latest_candle['HAM_VW']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 4-Path Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -364,17 +401,25 @@ st.dataframe(
             "HA Close ($)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Normal)", format="%.2f"
+            "Hurst (Norm)", format="%.2f"
         ),
         "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
+        "Hurst_SHA": st.column_config.NumberColumn(
+            "Hurst (SuperHA)", format="%.2f"
+        ),
+        "Hurst_VW": st.column_config.NumberColumn("Hurst (VW)", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal", format="%.2f"
+            "HAM Normal", format="%.2f"
         ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA Signal", format="%.2f"
+            "HAM HA", format="%.2f"
         ),
+        "HAM_SuperHA": st.column_config.NumberColumn(
+            "HAM SuperHA", format="%.2f"
+        ),
+        "HAM_VW": st.column_config.NumberColumn("HAM Vol-Weight", format="%.2f"),
         "HAM_Diff": st.column_config.NumberColumn(
-            "📊 HAM Diff (Normal - HA)", format="%.2f"
+            "📊 HAM Diff", format="%.2f"
         ),
     },
     use_container_width=True,
