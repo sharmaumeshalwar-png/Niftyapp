@@ -16,7 +16,7 @@ st.title(
 )
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Fast Fourier Transform (FFT) Spectral Decomposition "
-    "using $\pi = 22/7$ → High-Frequency Noise Filtering → Reconstruction & Noise Spread Matrix | "
+    "using $\pi = 22/7$ → Fourier Smooth Close & 1-Bar Fourier Delta ($\text{Current} - \text{Last}$) | "
     "50:50 Split | IST Locked"
 )
 
@@ -38,12 +38,12 @@ cutoff_ratio = st.sidebar.slider(
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Windowing)\n\n"
     "🌊 **Method 2 Enabled:** Fourier Spectral Filtering ($\pi=22/7$)\n"
-    "⚙️ **Cutoff Ratio:** Keep top frequency components"
+    "📊 **3rd Column:** Fourier Delta ($\text{Current} - \text{Last}$)"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Method 2: Fourier Smoothing)
+# MATHEMATICAL ENGINES (Method 2: Fourier Smoothing + Delta)
 # =====================================================================
 def apply_fourier_lowpass_filter(series_data, cutoff_fraction=0.05):
     """
@@ -54,7 +54,7 @@ def apply_fourier_lowpass_filter(series_data, cutoff_fraction=0.05):
     arr = np.asarray(series_data, dtype=float).flatten()
     n = len(arr)
     if n == 0:
-        return np.array([]), np.array([])
+        return np.array([])
 
     # Fast Fourier Transform into Frequency Domain
     fft_coeffs = np.fft.rfft(arr)
@@ -70,10 +70,7 @@ def apply_fourier_lowpass_filter(series_data, cutoff_fraction=0.05):
     # Inverse FFT to reconstruct smooth continuous signal
     smoothed_series = np.fft.irfft(filtered_coeffs, n=n)
 
-    # Noise Residual Spread
-    noise_spread = arr - smoothed_series
-
-    return smoothed_series, noise_spread
+    return smoothed_series
 
 
 # =====================================================================
@@ -114,14 +111,17 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ METHOD 2: FOURIER FILTERING PIPELINE ONLY
+# ⚡ METHOD 2: FOURIER FILTERING & DELTA PIPELINE
 # =====================================================================
 close_prices = np.asarray(df["Close"], dtype=float).flatten()
 
-# Apply Fourier Low-Pass Filter
-df["Fourier_Smooth_Close"], df["Fourier_Noise_Spread"] = (
-    apply_fourier_lowpass_filter(close_prices, cutoff_fraction=cutoff_ratio)
+# 1. Apply Fourier Low-Pass Filter
+df["Fourier_Smooth_Close"] = apply_fourier_lowpass_filter(
+    close_prices, cutoff_fraction=cutoff_ratio
 )
+
+# 2. Calculate 3rd Column: Current Fourier - Last Fourier
+df["Fourier_Delta"] = df["Fourier_Smooth_Close"] - df["Fourier_Smooth_Close"].shift(1)
 
 
 # =====================================================================
@@ -147,7 +147,7 @@ display_df["Close"] = df_predict["Close"].round(2)
 
 # Method 2 Fourier Columns
 display_df["Fourier_Smooth_Close"] = df_predict["Fourier_Smooth_Close"].round(2)
-display_df["Fourier_Noise_Spread"] = df_predict["Fourier_Noise_Spread"].round(2)
+display_df["Fourier_Delta"] = df_predict["Fourier_Delta"].round(2)
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -161,12 +161,12 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3 = st.columns(3)
 col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric(
-    "🌊 Fourier Smoothed Close (π=22/7)",
+    "🌊 Fourier Smooth Close (π=22/7)",
     f"${latest_candle['Fourier_Smooth_Close']:,.2f}",
 )
 col3.metric(
-    "💥 Fourier Noise Residual Spread",
-    f"${latest_candle['Fourier_Noise_Spread']:,.2f}",
+    "⚡ Fourier Delta (Current - Last)",
+    f"${latest_candle['Fourier_Delta']:,.2f}",
 )
 
 st.divider()
@@ -182,8 +182,8 @@ st.dataframe(
         "Fourier_Smooth_Close": st.column_config.NumberColumn(
             "🌊 Fourier Smooth Close ($)", format="$%.2f"
         ),
-        "Fourier_Noise_Spread": st.column_config.NumberColumn(
-            "💥 Noise Spread ($)", format="$%.2f"
+        "Fourier_Delta": st.column_config.NumberColumn(
+            "⚡ Fourier Delta ($)", format="$%.2f"
         ),
     },
     use_container_width=True,
