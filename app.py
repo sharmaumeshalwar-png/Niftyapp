@@ -11,10 +11,10 @@ import yfinance as yf
 st.set_page_config(
     page_title="Nifty 50 Phase-Attractor Kinematics Engine", layout="wide"
 )
-st.title("⚡ NIFTY 50 Engine (Phase-Attractor Base + Kalman Pipeline)")
+st.title("⚡ NIFTY 50 Engine (Phase-Attractor Base + Q=0.0001 Kalman)")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Phase Attractor Value as Primary Base → "
-    "Secondary Kalman Filter → Spread Difference | 50:50 Learn:Predict Split | IST Locked"
+    "Secondary Kalman (Q=0.0001) → Spread Difference | 50:50 Learn:Predict Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -24,8 +24,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Pipeline:** "
-    "Phase Attractor → Secondary Kalman → Spread (Diff)"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Kalman Setting:** "
+    "Q = 0.0001 across all tiers"
 )
 
 
@@ -33,7 +33,7 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+    data_array, initial_p=50.0, q_val=0.0001, r_val=0.1
 ):
     """Sequential single-pass Kalman Filter (Zero Leakage)."""
     arr = np.asarray(data_array, dtype=float).flatten()
@@ -174,7 +174,7 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ FULL KINEMATICS & PHASE ATTRACTOR PIPELINE
+# ⚡ FULL KINEMATICS & PHASE ATTRACTOR PIPELINE (Q = 0.0001)
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -185,12 +185,12 @@ df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
 )
 
 kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+    normal_close_full, initial_p=50.0, q_val=0.0001, r_val=0.2
 )
 momentum_normal = apply_kalman_filter_custom(
     normal_close_full - kalman_base_normal,
     initial_p=0.50,
-    q_val=0.001,
+    q_val=0.0001,
     r_val=0.1,
 )
 
@@ -201,23 +201,23 @@ ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
 kalman_base_ha = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+    ha_close_full, initial_p=50.0, q_val=0.0001, r_val=0.2
 )
 momentum_ha = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
+    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# --- 🚀 STEP 1: PHASE ATTRACTOR VALUE (Treat as Base Price Series) ---
+# --- 🚀 STEP 1: PHASE ATTRACTOR VALUE (Base Series) ---
 df["Phase_Attractor_Value"] = calculate_phase_space_attractor_value(
     df["HAM_Normal"].to_numpy(), tau=1
 )
 
-# --- 🚀 STEP 2: KALMAN FILTER ON PHASE ATTRACTOR VALUE ---
+# --- 🚀 STEP 2: KALMAN FILTER ON PHASE ATTRACTOR VALUE (Q = 0.0001) ---
 df["Kalman_Phase_Attractor"] = apply_kalman_filter_custom(
-    df["Phase_Attractor_Value"].to_numpy(), initial_p=1.0, q_val=0.001, r_val=0.05
+    df["Phase_Attractor_Value"].to_numpy(), initial_p=1.0, q_val=0.0001, r_val=0.05
 )
 
 # --- 🚀 STEP 3: PHASE ATTRACTOR MINUS KALMAN PHASE ATTRACTOR ---
@@ -271,13 +271,13 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Nifty Close Price", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("Phase Attractor Value", f"{latest_candle['Phase_Attractor_Value']:.4f}")
-col3.metric("Kalman (Phase Attractor)", f"{latest_candle['Kalman_Phase_Attractor']:.4f}")
+col3.metric("Kalman (Q=0.0001)", f"{latest_candle['Kalman_Phase_Attractor']:.4f}")
 col4.metric("💥 Phase Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Matrix with Phase Attractor Kalman Pipeline ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Matrix with Q=0.0001 Kalman Pipeline ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -290,7 +290,7 @@ st.dataframe(
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
         "HAM_Diff": st.column_config.NumberColumn("HAM Diff", format="%.2f"),
         "Phase_Attractor_Value": st.column_config.NumberColumn("🌀 Phase Attractor Base", format="%.4f"),
-        "Kalman_Phase_Attractor": st.column_config.NumberColumn("🛡️ Kalman (Phase Base)", format="%.4f"),
+        "Kalman_Phase_Attractor": st.column_config.NumberColumn("🛡️ Kalman (Q=0.0001)", format="%.4f"),
         "Phase_Attractor_Spread": st.column_config.NumberColumn("⚡ Spread (Base - Kalman)", format="%.4f"),
     },
     use_container_width=True,
