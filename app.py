@@ -9,15 +9,14 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC-USD Fourier Spectral Smoothing Engine", layout="wide"
+    page_title="BTC-USD Zero-Leakage Fourier Engine", layout="wide"
 )
 st.title(
-    "🌊 BITCOIN (BTC-USD) Engine — Method 2: Fourier Low-Pass Filter (π = 22/7)"
+    "🛡️ BITCOIN (BTC-USD) Engine — Strictly Causal Causal Fourier (π = 22/7)"
 )
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Fast Fourier Transform (FFT) Spectral Decomposition "
-    "using $\pi = 22/7$ → Fourier Smooth Close & 1-Bar Fourier Delta ($\text{Current} - \text{Last}$) | "
-    "50:50 Split | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** Rolling Trajectory FFT (No Look-Ahead Bias) "
+    "using $\pi = 22/7$ → Fourier Smooth Close & 1-Bar Fourier Delta | 50:50 Split | IST Locked"
 )
 
 # Sidebar Controls
@@ -26,49 +25,62 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
     st.rerun()
 
+window_size = st.sidebar.slider(
+    "📦 Rolling FFT Window Size (Historical Candles Only)",
+    min_value=32,
+    max_value=256,
+    value=128,
+    step=16,
+    help="Strictly past candles used for FFT. Zero future leakage.",
+)
+
 cutoff_ratio = st.sidebar.slider(
-    "🎛️ Low-Pass Filter Sensitivity (Cutoff Ratio)",
+    "🎛️ Low-Pass Filter Cutoff Ratio",
     min_value=0.01,
     max_value=0.30,
-    value=0.05,
+    value=0.08,
     step=0.01,
-    help="Jitna kam value hogi, curve utna zyaada smooth hoga (zyaada noise filter hoga).",
 )
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal Windowing)\n\n"
-    "🌊 **Method 2 Enabled:** Fourier Spectral Filtering ($\pi=22/7$)\n"
-    "📊 **3rd Column:** Fourier Delta ($\text{Current} - \text{Last}$)"
+    "🛡️ **Leak Protection:** FULLY SECURED\n\n"
+    "🔒 **FFT Execution:** Strictly Causal Trailing Window\n"
+    "📊 **3rd Column:** Zero-Leakage Fourier Delta"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Method 2: Fourier Smoothing + Delta)
+# MATHEMATICAL ENGINE (Strictly Causal Rolling FFT - Zero Leakage)
 # =====================================================================
-def apply_fourier_lowpass_filter(series_data, cutoff_fraction=0.05):
+def apply_rolling_causal_fourier(series_data, window=128, cutoff_fraction=0.08):
     """
-    METHOD 2: Fourier Low-Pass Filter using Pi (22/7).
-    Decomposes signal into spectral frequencies using 2*pi*f*t domain,
-    filters out high-frequency noise, and reconstructs the smooth curve.
+    STRICTLY CAUSAL Fourier Filter:
+    Processes FFT ONLY on past 'window' candles for every index t.
+    Prevents any future data leakage into the current calculation.
     """
     arr = np.asarray(series_data, dtype=float).flatten()
     n = len(arr)
-    if n == 0:
-        return np.array([])
+    smoothed_series = np.full(n, np.nan)
 
-    # Fast Fourier Transform into Frequency Domain
-    fft_coeffs = np.fft.rfft(arr)
+    if n < window:
+        return smoothed_series
 
-    # Calculate cutoff threshold index
-    cutoff_idx = int(len(fft_coeffs) * cutoff_fraction)
-    cutoff_idx = max(1, cutoff_idx)
+    for i in range(window - 1, n):
+        # Extract ONLY historical window (t-window+1 to t)
+        sub_window = arr[i - window + 1 : i + 1]
 
-    # Filter high-frequency noise coefficients
-    filtered_coeffs = fft_coeffs.copy()
-    filtered_coeffs[cutoff_idx:] = 0.0
+        # FFT on historical slice
+        fft_coeffs = np.fft.rfft(sub_window)
 
-    # Inverse FFT to reconstruct smooth continuous signal
-    smoothed_series = np.fft.irfft(filtered_coeffs, n=n)
+        # Apply cutoff
+        cutoff_idx = max(1, int(len(fft_coeffs) * cutoff_fraction))
+        fft_coeffs[cutoff_idx:] = 0.0
+
+        # Reconstruct historical window
+        reconstructed = np.fft.irfft(fft_coeffs, n=window)
+
+        # Take ONLY the current endpoint (index i) - Pure Causal Value
+        smoothed_series[i] = reconstructed[-1]
 
     return smoothed_series
 
@@ -111,17 +123,19 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ METHOD 2: FOURIER FILTERING & DELTA PIPELINE
+# ⚡ STRICTLY CAUSAL FOURIER PIPELINE
 # =====================================================================
 close_prices = np.asarray(df["Close"], dtype=float).flatten()
 
-# 1. Apply Fourier Low-Pass Filter
-df["Fourier_Smooth_Close"] = apply_fourier_lowpass_filter(
-    close_prices, cutoff_fraction=cutoff_ratio
+# 1. Rolling Causal Fourier Filtering
+df["Fourier_Smooth_Close"] = apply_rolling_causal_fourier(
+    close_prices, window=window_size, cutoff_fraction=cutoff_ratio
 )
 
-# 2. Calculate 3rd Column: Current Fourier - Last Fourier
-df["Fourier_Delta"] = df["Fourier_Smooth_Close"] - df["Fourier_Smooth_Close"].shift(1)
+# 2. Causal Fourier Delta (Current - Last)
+df["Fourier_Delta"] = df["Fourier_Smooth_Close"] - df[
+    "Fourier_Smooth_Close"
+].shift(1)
 
 
 # =====================================================================
@@ -132,6 +146,8 @@ split_idx = int(total_candles * 0.50)
 
 df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
+
+df_predict.dropna(subset=["Fourier_Smooth_Close"], inplace=True)
 
 st.success(
     f"🟢 **Synced via Yahoo Finance (BTC-USD): {total_candles:,} Hourly Candles** | "
@@ -145,7 +161,7 @@ st.success(
 display_df = pd.DataFrame(index=df_predict.index)
 display_df["Close"] = df_predict["Close"].round(2)
 
-# Method 2 Fourier Columns
+# Method 2 Zero-Leakage Fourier Columns
 display_df["Fourier_Smooth_Close"] = df_predict["Fourier_Smooth_Close"].round(2)
 display_df["Fourier_Delta"] = df_predict["Fourier_Delta"].round(2)
 
@@ -161,18 +177,18 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3 = st.columns(3)
 col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric(
-    "🌊 Fourier Smooth Close (π=22/7)",
+    "🛡️ Zero-Leak Fourier Smooth",
     f"${latest_candle['Fourier_Smooth_Close']:,.2f}",
 )
 col3.metric(
-    "⚡ Fourier Delta (Current - Last)",
+    "⚡ Zero-Leak Fourier Delta",
     f"${latest_candle['Fourier_Delta']:,.2f}",
 )
 
 st.divider()
 
 st.subheader(
-    f"📋 50:50 Matrix — Method 2: Fourier Low-Pass Spectral Filter ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Matrix — Strictly Causal Fourier Engine ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -180,10 +196,10 @@ st.dataframe(
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
         "Fourier_Smooth_Close": st.column_config.NumberColumn(
-            "🌊 Fourier Smooth Close ($)", format="$%.2f"
+            "🛡️ Zero-Leak Smooth ($)", format="$%.2f"
         ),
         "Fourier_Delta": st.column_config.NumberColumn(
-            "⚡ Fourier Delta ($)", format="$%.2f"
+            "⚡ Zero-Leak Delta ($)", format="$%.2f"
         ),
     },
     use_container_width=True,
