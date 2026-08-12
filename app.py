@@ -15,7 +15,7 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** 4-Path Structural Kinematics (Normal | HA"
-    " | Kagi-Filtered | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero"
+    " | Time-Locked Renko | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero"
     " Leakage]"
 )
 
@@ -108,43 +108,28 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_kagi_filter_causal(price_series, reversal_pct=0.005):
-    """Time-locked Causal Kagi Filter (0.5% Threshold Noise Filter)."""
+def apply_time_locked_renko_causal(price_series, brick_size=150.0):
+    """Time-Locked Causal Renko Engine (0 Repainting / Locked to Hourly Time Index)."""
     arr = np.asarray(price_series, dtype=float).flatten()
-    kagi_closes = np.empty_like(arr)
+    renko_closes = np.empty_like(arr)
     if len(arr) == 0:
-        return kagi_closes
+        return renko_closes
 
-    current_kagi = arr[0]
-    direction = 0  # 1: Up, -1: Down, 0: Init
+    current_brick = arr[0]
 
     for i, p in enumerate(arr):
         if i == 0:
-            kagi_closes[i] = current_kagi
+            renko_closes[i] = current_brick
             continue
 
-        diff_pct = (p - current_kagi) / current_kagi
+        diff = p - current_brick
+        if abs(diff) >= brick_size:
+            num_bricks = int(diff / brick_size)
+            current_brick = current_brick + (num_bricks * brick_size)
 
-        if direction == 0:
-            if abs(diff_pct) >= reversal_pct:
-                direction = 1 if diff_pct > 0 else -1
-                current_kagi = p
-        elif direction == 1:
-            if p > current_kagi:
-                current_kagi = p
-            elif diff_pct <= -reversal_pct:
-                direction = -1
-                current_kagi = p
-        elif direction == -1:
-            if p < current_kagi:
-                current_kagi = p
-            elif diff_pct >= reversal_pct:
-                direction = 1
-                current_kagi = p
+        renko_closes[i] = current_brick
 
-        kagi_closes[i] = current_kagi
-
-    return kagi_closes
+    return renko_closes
 
 
 # =====================================================================
@@ -325,18 +310,18 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH C: KAGI PRICE-FILTERED KINEMATICS (TIME LOCKED) ---
-kagi_close_full = apply_kagi_filter_causal(normal_close_full, reversal_pct=0.005)
-df["Kagi_Close"] = kagi_close_full
-df["Hurst_Kagi"] = calculate_rolling_hurst_vectorized(kagi_close_full, window=30)
+# --- PATH C: TIME-LOCKED RENKO KINEMATICS ($150 BRICK THRESHOLD) ---
+renko_close_full = apply_time_locked_renko_causal(normal_close_full, brick_size=150.0)
+df["Renko_Close"] = renko_close_full
+df["Hurst_Renko"] = calculate_rolling_hurst_vectorized(renko_close_full, window=30)
 
-kalman_base_kagi = apply_kalman_filter_custom(
-    kagi_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+kalman_base_renko = apply_kalman_filter_custom(
+    renko_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_kagi = apply_kalman_filter_custom(
-    kagi_close_full - kalman_base_kagi, initial_p=0.50, q_val=0.001, r_val=0.1
+momentum_renko = apply_kalman_filter_custom(
+    renko_close_full - kalman_base_renko, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df["HAM_Kagi"] = momentum_kagi * (df["Hurst_Kagi"].to_numpy() * 2.0)
+df["HAM_Renko"] = momentum_renko * (df["Hurst_Renko"].to_numpy() * 2.0)
 
 # --- PATH D: VOLUME-WEIGHTED CLOSE (LIQUIDITY LOCKED) ---
 vol = df["Volume"].to_numpy()
@@ -369,7 +354,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA", "Hurst_Kagi", "Hurst_VW"],
+    subset=["Hurst_Normal", "Hurst_HA", "Hurst_Renko", "Hurst_VW"],
     inplace=True,
 )
 
@@ -386,14 +371,14 @@ st.success(
 clean_cols = [
     "Close",
     "HA_Close",
-    "Kagi_Close",
+    "Renko_Close",
     "Hurst_Normal",
     "Hurst_HA",
-    "Hurst_Kagi",
+    "Hurst_Renko",
     "Hurst_VW",
     "HAM_Normal",
     "HAM_HeikinAshi",
-    "HAM_Kagi",
+    "HAM_Renko",
     "HAM_VW",
     "HAM_Diff",
 ]
@@ -417,7 +402,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("HAM Kagi Signal", f"{latest_candle['HAM_Kagi']:.2f}")
+col4.metric("HAM Renko ($150)", f"{latest_candle['HAM_Renko']:.2f}")
 col5.metric("HAM Vol-Weighted", f"{latest_candle['HAM_VW']:.2f}")
 
 st.divider()
@@ -435,15 +420,15 @@ st.dataframe(
         "HA_Close": st.column_config.NumberColumn(
             "HA Close ($)", format="$%.2f"
         ),
-        "Kagi_Close": st.column_config.NumberColumn(
-            "Kagi Close ($)", format="$%.2f"
+        "Renko_Close": st.column_config.NumberColumn(
+            "Renko Close ($)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
             "Hurst (Norm)", format="%.2f"
         ),
         "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "Hurst_Kagi": st.column_config.NumberColumn(
-            "Hurst (Kagi)", format="%.2f"
+        "Hurst_Renko": st.column_config.NumberColumn(
+            "Hurst (Renko)", format="%.2f"
         ),
         "Hurst_VW": st.column_config.NumberColumn("Hurst (VW)", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn(
@@ -452,8 +437,8 @@ st.dataframe(
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA", format="%.2f"
         ),
-        "HAM_Kagi": st.column_config.NumberColumn(
-            "HAM Kagi", format="%.2f"
+        "HAM_Renko": st.column_config.NumberColumn(
+            "HAM Renko", format="%.2f"
         ),
         "HAM_VW": st.column_config.NumberColumn("HAM Vol-Weight", format="%.2f"),
         "HAM_Diff": st.column_config.NumberColumn(
