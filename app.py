@@ -9,9 +9,9 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="Nifty 50 Phase-Attractor Kinematics Engine", layout="wide"
+    page_title="BTC-USD Phase-Attractor Kinematics Engine", layout="wide"
 )
-st.title("⚡ NIFTY 50 Engine (Phase-Attractor Base + Q=0.0001 Kalman)")
+st.title("⚡ BITCOIN (BTC-USD) Engine (Phase-Attractor Base + Q=0.0001 Kalman)")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Phase Attractor Value as Primary Base → "
     "Secondary Kalman (Q=0.0001) → Spread Difference | 50:50 Learn:Predict Split | IST Locked"
@@ -137,17 +137,17 @@ def calculate_phase_space_attractor_value(ham_series, tau=1):
 
 
 # =====================================================================
-# NIFTY 50 DATA FETCH ENGINE
+# BTC-USD DATA FETCH ENGINE
 # =====================================================================
 @st.cache_data(ttl=1800)
-def fetch_nifty_data():
-    ticker = "^NSEI"
+def fetch_btc_data():
+    ticker = "BTC-USD"
     df_raw = yf.download(
         tickers=ticker, period="2y", interval="1h", progress=False
     )
 
     if df_raw.empty:
-        raise ValueError("YFinance API se Nifty ka data nahi mila.")
+        raise ValueError("YFinance API se Bitcoin (BTC-USD) ka data nahi mila.")
 
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
@@ -163,8 +163,8 @@ def fetch_nifty_data():
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Hourly NIFTY 50 Data (`^NSEI`)..."):
-        df = fetch_nifty_data()
+    with st.spinner("🔄 Fetching Hourly Bitcoin Data (`BTC-USD`)..."):
+        df = fetch_btc_data()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
         df = df.iloc[:-1]  # Drop active unclosed candle
@@ -238,7 +238,7 @@ df_predict = df.iloc[split_idx:].copy()
 df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 st.success(
-    f"🟢 **Synced via Yahoo Finance (^NSEI): {total_candles:,} Hourly Candles** | "
+    f"🟢 **Synced via Yahoo Finance (BTC-USD): {total_candles:,} Hourly Candles** | "
     f"🧠 **Learn Set:** {len(df_learn):,} | 🔮 **Predict Matrix:** {len(df_predict):,}"
 )
 
@@ -269,7 +269,7 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Nifty Close Price", f"₹{latest_candle['Close']:,.2f}")
+col1.metric("BTC Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Phase Attractor Value", f"{latest_candle['Phase_Attractor_Value']:.4f}")
 col3.metric("Kalman (Q=0.0001)", f"{latest_candle['Kalman_Phase_Attractor']:.4f}")
 col4.metric("💥 Phase Attractor Spread", f"{latest_candle['Phase_Attractor_Spread']:.4f}")
@@ -283,8 +283,8 @@ st.subheader(
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn("Close Price (₹)", format="₹%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close (₹)", format="₹%.2f"),
+        "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
+        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
         "Hurst_Normal": st.column_config.NumberColumn("Hurst (Normal)", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
