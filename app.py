@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (TEMA Path)",
+    page_title="BTC 2-Year Kinematics Engine (30x EMA Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) TEMA Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) 30x Exponential Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (TEMA Period=14), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (30-Times EMA | Period=14), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -31,19 +31,19 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_tema(data_array, period=14):
+def apply_n_times_ema(data_array, period=14, n_times=30):
     """
-    Triple Exponential Moving Average (TEMA).
-    Formula: TEMA = (3 * EMA1) - (3 * EMA2) + EMA3
-    Provides ultra-low lag compared to standard moving averages.
+    Applies Exponential Moving Average recursively N times (30-times EMA).
+    Calculates B = 30x Exponential smooth path of A.
     """
-    s = pd.Series(data_array)
-    ema1 = s.ewm(span=period, adjust=False).mean()
-    ema2 = ema1.ewm(span=period, adjust=False).mean()
-    ema3 = ema2.ewm(span=period, adjust=False).mean()
+    s = pd.Series(data_array, dtype=float)
+    current_series = s.copy()
     
-    tema = (3 * ema1) - (3 * ema2) + ema3
-    return tema.to_numpy()
+    # Recursive 30-Pass EMA Execution
+    for _ in range(n_times):
+        current_series = current_series.ewm(span=period, adjust=False).mean()
+        
+    return current_series.to_numpy()
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
@@ -225,16 +225,18 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (TEMA)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (30x EMA)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Triple Exponential Moving Average (TEMA) of A (Period = 14)
-df["B_TEMA"] = apply_tema(df["A_Close_Normal"].to_numpy(), period=14)
+# B = 30-Times Exponential Moving Average (30x EMA) of A (Period = 14)
+df["B_30x_EMA"] = apply_n_times_ema(
+    df["A_Close_Normal"].to_numpy(), period=14, n_times=30
+)
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_TEMA"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_30x_EMA"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -271,7 +273,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_TEMA",
+    "B_30x_EMA",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -294,14 +296,14 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (TEMA)", f"${latest_candle['B_TEMA']:,.2f}")
+col2.metric("B (30x EMA)", f"${latest_candle['B_30x_EMA']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
-st.subheader(f"📋 TEMA Kinematic Matrix ({len(display_df):,} Predict Candles)")
+st.subheader(f"📋 30x EMA Kinematic Matrix ({len(display_df):,} Predict Candles)")
 
 st.dataframe(
     display_df,
@@ -309,8 +311,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_TEMA": st.column_config.NumberColumn(
-            "B: TEMA ($)", format="$%.2f"
+        "B_30x_EMA": st.column_config.NumberColumn(
+            "B: 30x EMA ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
