@@ -3,18 +3,19 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import requests
+from scipy.signal import savgol_filter
 import streamlit as st
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (HA HAM - Renko HAM)",
+    page_title="BTC 2-Year Advanced Kinematics Engine (DSP Candles)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Advanced DSP Candle Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** HA HAM vs. Renko HAM Difference Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** HA HAM vs. Advanced DSP Candle Paths | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -29,7 +30,7 @@ st.sidebar.success(
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
+# MATHEMATICAL ENGINES & NEW CANDLE BUILDERS
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
     """Sequential single-pass Kalman Filter (Zero Leakage / No Repainting)."""
@@ -92,39 +93,59 @@ def apply_heikin_ashi(df_in):
     for i in range(1, len(df_in)):
         ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
 
-    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
-    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
-
     df_out = df_in.copy()
-    df_out["HA_Open"] = ha_open
-    df_out["HA_High"] = ha_high
-    df_out["HA_Low"] = ha_low
     df_out["HA_Close"] = ha_close
     return df_out
 
 
-def apply_fixed_100pt_renko_causal(price_series, brick_size=100.0):
-    """Fixed $100 Renko Engine (Strict Zero Repainting / Time-Locked Index)."""
-    arr = np.asarray(price_series, dtype=float).flatten()
-    renko_closes = np.empty_like(arr)
-    if len(arr) == 0:
-        return renko_closes
+def build_savgol_candles(df_in, window_length=11, polyorder=2):
+    """
+    1. NEW CANDLE BUILDER: Savitzky-Golay Polynomial DSP Candles.
+    Applies trailing polynomial smoothing to reconstruct low-noise close levels.
+    """
+    cl = df_in["Close"].to_numpy()
+    if len(cl) < window_length:
+        return cl
 
-    current_brick = np.floor(arr[0] / brick_size) * brick_size
+    # Trailing causal window filter
+    savgol_close = np.empty_like(cl)
+    for i in range(len(cl)):
+        if i < window_length:
+            savgol_close[i] = cl[i]
+        else:
+            sub_series = cl[i - window_length + 1 : i + 1]
+            savgol_close[i] = savgol_filter(
+                sub_series, window_length, polyorder
+            )[-1]
 
-    for i, p in enumerate(arr):
-        if i == 0:
-            renko_closes[i] = current_brick
-            continue
+    return savgol_close
 
-        diff = p - current_brick
-        if abs(diff) >= brick_size:
-            num_bricks = int(diff / brick_size)
-            current_brick = current_brick + (num_bricks * brick_size)
 
-        renko_closes[i] = current_brick
+def build_ehlers_supersmoother_candles(df_in, cutoff_period=10):
+    """
+    2. NEW CANDLE BUILDER: Ehlers SuperSmoother 2-Pole Filtered Candles.
+    Cuts off high frequency noise without lag.
+    """
+    cl = df_in["Close"].to_numpy()
+    ss_close = np.zeros_like(cl)
 
-    return renko_closes
+    a1 = np.exp(-np.sqrt(2) * np.pi / cutoff_period)
+    b1 = 2 * a1 * np.cos(np.sqrt(2) * np.pi / cutoff_period)
+    c2 = b1
+    c3 = -a1 * a1
+    c1 = 1 - c2 - c3
+
+    for i in range(len(cl)):
+        if i < 2:
+            ss_close[i] = cl[i]
+        else:
+            ss_close[i] = (
+                c1 * (cl[i] + cl[i - 1]) / 2.0
+                + c2 * ss_close[i - 1]
+                + c3 * ss_close[i - 2]
+            )
+
+    return ss_close
 
 
 # =====================================================================
@@ -272,14 +293,13 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ KINEMATICS ENGINE (HEIKIN-ASHI vs RENKO)
+# ⚡ KINEMATICS MATRIX (HA vs SAVGOL vs SUPERSMOOTHER)
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- PATH A: HEIKIN-ASHI CANDLE KINEMATICS ---
+# 1. HEIKIN-ASHI HAM
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-
 kalman_base_ha = apply_kalman_filter_custom(
     ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
@@ -288,22 +308,41 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH B: FIXED $100 POINT STRICT RENKO KINEMATICS ---
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-renko_close_full = apply_fixed_100pt_renko_causal(normal_close_full, brick_size=100.0)
-df["Renko_Close"] = renko_close_full
-df["Hurst_Renko"] = calculate_rolling_hurst_vectorized(renko_close_full, window=30)
-
-kalman_base_renko = apply_kalman_filter_custom(
-    renko_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+# 2. SAVITZKY-GOLAY DSP CANDLES & HAM
+df["SavGol_Close"] = build_savgol_candles(df, window_length=11, polyorder=2)
+savgol_close_full = np.asarray(df["SavGol_Close"], dtype=float).flatten()
+df["Hurst_SavGol"] = calculate_rolling_hurst_vectorized(
+    savgol_close_full, window=30
 )
-momentum_renko = apply_kalman_filter_custom(
-    renko_close_full - kalman_base_renko, initial_p=0.50, q_val=0.001, r_val=0.1
+kalman_base_sg = apply_kalman_filter_custom(
+    savgol_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df["HAM_Renko"] = momentum_renko * (df["Hurst_Renko"].to_numpy() * 2.0)
+momentum_sg = apply_kalman_filter_custom(
+    savgol_close_full - kalman_base_sg, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_SavGol"] = momentum_sg * (df["Hurst_SavGol"].to_numpy() * 2.0)
 
-# --- STRICT DIFFERENCE: (HA HAM - RENKO HAM) ---
-df["HA_HAM_minus_Renko_HAM"] = df["HAM_HeikinAshi"] - df["HAM_Renko"]
+# 3. SUPERSMOOTHER DSP CANDLES & HAM
+df["SuperSmoother_Close"] = build_ehlers_supersmoother_candles(
+    df, cutoff_period=10
+)
+ss_close_full = np.asarray(df["SuperSmoother_Close"], dtype=float).flatten()
+df["Hurst_SuperSmoother"] = calculate_rolling_hurst_vectorized(
+    ss_close_full, window=30
+)
+kalman_base_ss = apply_kalman_filter_custom(
+    ss_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ss = apply_kalman_filter_custom(
+    ss_close_full - kalman_base_ss, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_SuperSmoother"] = momentum_ss * (
+    df["Hurst_SuperSmoother"].to_numpy() * 2.0
+)
+
+# --- CALCULATE SPECIFIC DIFFERENCE MATRICES ---
+df["HA_minus_SavGol"] = df["HAM_HeikinAshi"] - df["HAM_SavGol"]
+df["HA_minus_SuperSmoother"] = df["HAM_HeikinAshi"] - df["HAM_SuperSmoother"]
 
 
 # =====================================================================
@@ -316,7 +355,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_HA", "Hurst_Renko"],
+    subset=["Hurst_HA", "Hurst_SavGol", "Hurst_SuperSmoother"],
     inplace=True,
 )
 
@@ -333,10 +372,13 @@ st.success(
 clean_cols = [
     "Close",
     "HA_Close",
-    "Renko_Close",
+    "SavGol_Close",
+    "SuperSmoother_Close",
     "HAM_HeikinAshi",
-    "HAM_Renko",
-    "HA_HAM_minus_Renko_HAM",
+    "HAM_SavGol",
+    "HAM_SuperSmoother",
+    "HA_minus_SavGol",
+    "HA_minus_SuperSmoother",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -354,27 +396,55 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col3.metric("HAM Renko ($100)", f"{latest_candle['HAM_Renko']:.2f}")
-col4.metric("📊 HA HAM - Renko HAM", f"{latest_candle['HA_HAM_minus_Renko_HAM']:.2f}")
+col3.metric("HAM SavGol DSP", f"{latest_candle['HAM_SavGol']:.2f}")
+col4.metric(
+    "📊 HA HAM - SavGol HAM", f"{latest_candle['HA_minus_SavGol']:.2f}"
+)
+col5.metric(
+    "📊 HA HAM - SuperSmoother",
+    f"{latest_candle['HA_minus_SuperSmoother']:.2f}",
+)
 
 st.divider()
 
 st.subheader(
-    f"📋 Focused Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Advanced DSP Candle Kinematic Matrix ({len(display_df):,} Predict"
+    " Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
-        "Renko_Close": st.column_config.NumberColumn("Renko $100 ($)", format="$%.2f"),
-        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
-        "HAM_Renko": st.column_config.NumberColumn("HAM Renko", format="%.2f"),
-        "HA_HAM_minus_Renko_HAM": st.column_config.NumberColumn("🔥 (HA HAM - Renko HAM)", format="%.2f"),
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
+        ),
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
+        ),
+        "SavGol_Close": st.column_config.NumberColumn(
+            "SavGol DSP Close ($)", format="$%.2f"
+        ),
+        "SuperSmoother_Close": st.column_config.NumberColumn(
+            "SuperSmoother Close ($)", format="$%.2f"
+        ),
+        "HAM_HeikinAshi": st.column_config.NumberColumn(
+            "HAM HA", format="%.2f"
+        ),
+        "HAM_SavGol": st.column_config.NumberColumn(
+            "HAM SavGol", format="%.2f"
+        ),
+        "HAM_SuperSmoother": st.column_config.NumberColumn(
+            "HAM SuperSmoother", format="%.2f"
+        ),
+        "HA_minus_SavGol": st.column_config.NumberColumn(
+            "🔥 (HA HAM - SavGol HAM)", format="%.2f"
+        ),
+        "HA_minus_SuperSmoother": st.column_config.NumberColumn(
+            "🔥 (HA HAM - SuperSmoother HAM)", format="%.2f"
+        ),
     },
     use_container_width=True,
     height=600,
