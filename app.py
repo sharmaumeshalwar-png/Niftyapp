@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics (TMA + Kalman 0.50)",
+    page_title="BTC Kinematics (Ultra-Smooth VIDYA)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Triangular MA + Kalman Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Ultra-Smooth VIDYA + Heavy Kalman Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A (Close), B (TMA Period=14 + Kalman Filter Gain=0.50), C (A - B), D, E Matrix | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** A (Close), B (Ultra-Smooth VIDYA Period=30 + Heavy Kalman Gain=0.15), C (A - B), D, E Matrix | IST Locked"
 )
 
 # Sidebar Controls
@@ -31,20 +31,38 @@ st.sidebar.success(
 # =====================================================================
 # 8-STEP VERIFICATION MATHEMATICAL ENGINES
 # =====================================================================
-# STEP 1: Calculate Triangular Moving Average (TMA)
-def compute_tma(data_array, period=14):
+# STEP 2 & 3: Wide Window VIDYA (Period=30, HistPeriod=60)
+def compute_ultra_vidya(data_array, period=30, hist_period=60):
     """
-    Computes Triangular Moving Average (TMA).
-    TMA is calculated as the Simple Moving Average (SMA) of an SMA.
+    Computes ultra-smoothed VIDYA using wide volatility bounds.
+    Increasing the period flattens micro-spikes while preserving macro trends.
     """
     s = pd.Series(data_array, dtype=float)
-    sma1 = s.rolling(window=period, min_periods=1).mean()
-    tma = sma1.rolling(window=period, min_periods=1).mean()
-    return tma.to_numpy()
+
+    std_short = s.rolling(window=period, min_periods=1).std().fillna(0.0)
+    std_long = s.rolling(window=hist_period, min_periods=1).std().fillna(1e-5)
+
+    vi = (std_short / (std_long + 1e-10)).clip(upper=1.0).to_numpy()
+
+    alpha_base = 2.0 / (period + 1.0)
+    vidya = np.zeros(len(data_array), dtype=float)
+    vidya[0] = data_array[0]
+
+    for i in range(1, len(data_array)):
+        current_alpha = alpha_base * vi[i]
+        vidya[i] = (current_alpha * data_array[i]) + (
+            (1.0 - current_alpha) * vidya[i - 1]
+        )
+
+    return vidya
 
 
-# STEP 2: Apply 1D Kalman Filter (Gain / Process Noise ratio = 0.50)
-def apply_kalman_filter(input_array, kalman_gain=0.50):
+# STEP 4: Heavy Kalman Filter (Gain = 0.15 for Max Smoothness)
+def apply_heavy_kalman_filter(input_array, kalman_gain=0.15):
+    """
+    Applies a heavy-smoothing Causal Kalman filter.
+    Gain = 0.15 suppresses remaining high-frequency oscillations.
+    """
     n = len(input_array)
     filtered = np.zeros(n, dtype=float)
 
@@ -71,14 +89,14 @@ def apply_kalman_filter(input_array, kalman_gain=0.50):
     return filtered
 
 
-# STEP 3: Compute Baseline B = Kalman(TMA)
-def compute_baseline_b(price_array, period=14, gain=0.50):
-    tma_vals = compute_tma(price_array, period=period)
-    kalman_tma = apply_kalman_filter(tma_vals, kalman_gain=gain)
-    return kalman_tma
+# STEP 5: Compute Baseline B = Heavy_Kalman(Ultra_VIDYA)
+def compute_baseline_b(price_array):
+    vidya_vals = compute_ultra_vidya(price_array, period=30, hist_period=60)
+    ultra_smooth_b = apply_heavy_kalman_filter(vidya_vals, kalman_gain=0.15)
+    return ultra_smooth_b
 
 
-# STEP 4: Calculate Hurst Exponent (Vectorized Trailing R/S Window 30)
+# STEP 7: Vectorized Rolling Hurst Exponent (Window=30)
 def calculate_rolling_hurst_vectorized(price_series, window=30):
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
@@ -119,7 +137,9 @@ def fetch_binance_data(start_ts, end_ts):
     current_start = start_ts
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
     }
 
     while current_start < end_ts:
@@ -234,7 +254,9 @@ def get_robust_2year_hourly():
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Computing TMA + Kalman(0.50)..."):
+    with st.spinner(
+        "🔄 Fetching Data & Computing Ultra-Smooth VIDYA + Heavy Kalman..."
+    ):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
@@ -252,18 +274,18 @@ except Exception as e:
 
 
 # =====================================================================
-# STEP 5, 6, 7: MATRIX COMPUTATIONS
+# STEP 6 & 7: MATRIX COMPUTATIONS
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = TMA (14) + Kalman Filter (0.50)
-df["B_Kalman_TMA"] = compute_baseline_b(
-    df["A_Close_Normal"].to_numpy(), period=14, gain=0.50
+# B = Ultra-Smooth VIDYA (30) + Kalman Filter (0.15)
+df["B_Ultra_VIDYA_Kalman"] = compute_baseline_b(
+    df["A_Close_Normal"].to_numpy()
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_TMA"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Ultra_VIDYA_Kalman"]
 
 # D = Hurst of A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -296,7 +318,7 @@ st.success(
 
 clean_cols = [
     "A_Close_Normal",
-    "B_Kalman_TMA",
+    "B_Ultra_VIDYA_Kalman",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -319,7 +341,9 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (TMA + Kalman 0.5)", f"${latest_candle['B_Kalman_TMA']:,.2f}")
+col2.metric(
+    "B (Ultra VIDYA + Kalman)", f"${latest_candle['B_Ultra_VIDYA_Kalman']:,.2f}"
+)
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
@@ -327,7 +351,7 @@ col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 st.divider()
 
 st.subheader(
-    f"📋 TMA + Kalman (0.50) Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Ultra-Smooth VIDYA (30) + Heavy Kalman (0.15) Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -336,8 +360,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Kalman_TMA": st.column_config.NumberColumn(
-            "B: TMA + Kalman 0.50 ($)", format="$%.2f"
+        "B_Ultra_VIDYA_Kalman": st.column_config.NumberColumn(
+            "B: Ultra VIDYA + Kalman ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
