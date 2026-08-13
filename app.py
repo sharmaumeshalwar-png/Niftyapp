@@ -3,19 +3,18 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import requests
-from scipy.ndimage import gaussian_filter1d
 import streamlit as st
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Gaussian 2.0 Path)",
+    page_title="BTC 2-Year Kinematics Engine (Kalman 0.50 Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Gaussian 2.0 Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kalman 0.50 Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (σ=2.0), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (Kalman P0=0.50), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -32,28 +31,23 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_causal_gaussian_filter(price_series, sigma=2.0, window=15):
+def apply_kalman_filter_custom(data_array, initial_p=0.50, q_val=0.001, r_val=0.1):
     """
-    Calculates Gaussian Filter (B = Gaussian of 2.0 of A) causally.
-    Uses trailing window to prevent forward-looking data leakage.
+    Sequential single-pass Kalman Filter (Zero Leakage / No Repainting).
+    Calculates B = Kalman Filter of A with P0 = 0.50.
     """
-    arr = np.asarray(price_series, dtype=float).flatten()
-    b_values = np.empty_like(arr)
-
-    for i in range(len(arr)):
-        if i == 0:
-            b_values[i] = arr[i]
-        else:
-            # Trailing causal slice up to index i
-            start_idx = max(0, i - window + 1)
-            sub_arr = arr[start_idx : i + 1]
-            if len(sub_arr) < 2:
-                b_values[i] = arr[i]
-            else:
-                filtered_sub = gaussian_filter1d(sub_arr, sigma=sigma)
-                b_values[i] = filtered_sub[-1]  # Pick last value
-
-    return b_values
+    arr = np.asarray(data_array, dtype=float).flatten()
+    if len(arr) == 0:
+        return np.array([])
+    x, p = arr[0], initial_p
+    filtered_values = np.empty(len(arr))
+    for i, z in enumerate(arr):
+        p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values[i] = x
+    return filtered_values
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
@@ -235,18 +229,18 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (σ = 2.0)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (KALMAN P0 = 0.50)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Gaussian of 2.0 of A
-df["B_Gaussian_2.0"] = apply_causal_gaussian_filter(
-    df["A_Close_Normal"].to_numpy(), sigma=2.0
+# B = Kalman of 0.50 of A
+df["B_Kalman_0.50"] = apply_kalman_filter_custom(
+    df["A_Close_Normal"].to_numpy(), initial_p=0.50
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Gaussian_2.0"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_0.50"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -283,7 +277,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_Gaussian_2.0",
+    "B_Kalman_0.50",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -306,7 +300,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (Gaussian σ=2.0)", f"${latest_candle['B_Gaussian_2.0']:,.2f}")
+col2.metric("B (Kalman P0=0.50)", f"${latest_candle['B_Kalman_0.50']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
@@ -314,7 +308,7 @@ col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 st.divider()
 
 st.subheader(
-    f"📋 Gaussian 2.0 Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Kalman 0.50 Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -323,8 +317,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Gaussian_2.0": st.column_config.NumberColumn(
-            "B: Gaussian 2.0 ($)", format="$%.2f"
+        "B_Kalman_0.50": st.column_config.NumberColumn(
+            "B: Kalman 0.50 ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
