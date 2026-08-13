@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Dynamic Renko Lock)",
+    page_title="BTC 2-Year Kinematics Engine ($100 Locked Renko)",
     layout="wide",
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 4-Path Kinematics (Normal | HA | Dynamic ATR-Renko Step | Volume-Weighted) | 50:50 Split | IST Locked [Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** 4-Path Kinematics (Normal | HA | $100 Locked Renko | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -32,7 +32,7 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
 def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    """Sequential single-pass Kalman Filter (Zero Leakage)."""
+    """Sequential single-pass Kalman Filter (Zero Leakage / No Repainting)."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -103,37 +103,31 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_atr_renko_step_engine(df_in, atr_period=14):
+def apply_fixed_100pt_renko_causal(price_series, brick_size=100.0):
     """
-    True Step-Discrete Dynamic ATR Renko Engine.
-    Filters micro-fluctuations into discrete ATR brick steps while keeping hourly index intact.
+    Fixed $100 Renko Engine (Strict Zero Repainting / Time-Locked Index).
+    Only updates when price moves by $100 steps.
     """
-    high = df_in["High"].to_numpy()
-    low = df_in["Low"].to_numpy()
-    close = df_in["Close"].to_numpy()
-    
-    # Calculate True Range & Trailing ATR (Zero Lookahead)
-    tr = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])))
-    tr = np.insert(tr, 0, high[0] - low[0])
-    atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().to_numpy()
-    
-    renko_closes = np.empty_like(close)
-    current_brick = close[0]
-    
-    for i in range(len(close)):
+    arr = np.asarray(price_series, dtype=float).flatten()
+    renko_closes = np.empty_like(arr)
+    if len(arr) == 0:
+        return renko_closes
+
+    # Lock initial brick to nearest $100 grid boundary
+    current_brick = np.floor(arr[0] / brick_size) * brick_size
+
+    for i, p in enumerate(arr):
         if i == 0:
             renko_closes[i] = current_brick
             continue
-        
-        brick_size = max(atr[i], 50.0) # Adaptive minimum boundary
-        diff = close[i] - current_brick
-        
+
+        diff = p - current_brick
         if abs(diff) >= brick_size:
             num_bricks = int(diff / brick_size)
             current_brick = current_brick + (num_bricks * brick_size)
-            
+
         renko_closes[i] = current_brick
-        
+
     return renko_closes
 
 
@@ -312,8 +306,8 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH C: DYNAMIC ATR-RENKO STEP KINEMATICS ---
-renko_close_full = apply_atr_renko_step_engine(df, atr_period=14)
+# --- PATH C: FIXED $100 POINT STRICT RENKO KINEMATICS ---
+renko_close_full = apply_fixed_100pt_renko_causal(normal_close_full, brick_size=100.0)
 df["Renko_Close"] = renko_close_full
 df["Hurst_Renko"] = calculate_rolling_hurst_vectorized(renko_close_full, window=30)
 
@@ -404,7 +398,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("HAM Renko (ATR Step)", f"{latest_candle['HAM_Renko']:.2f}")
+col4.metric("HAM Renko ($100)", f"{latest_candle['HAM_Renko']:.2f}")
 col5.metric("HAM Vol-Weighted", f"{latest_candle['HAM_VW']:.2f}")
 
 st.divider()
@@ -418,7 +412,7 @@ st.dataframe(
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
         "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
-        "Renko_Close": st.column_config.NumberColumn("Renko Step ($)", format="$%.2f"),
+        "Renko_Close": st.column_config.NumberColumn("Renko $100 ($)", format="$%.2f"),
         "Hurst_Normal": st.column_config.NumberColumn("Hurst (Norm)", format="%.2f"),
         "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
         "Hurst_Renko": st.column_config.NumberColumn("Hurst (Renko)", format="%.2f"),
