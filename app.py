@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (4x Ultra-Smooth Kalman Path)",
+    page_title="BTC 2-Year Kinematics Engine (Kalman 0.10 Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) 4x Ultra-Smooth Kalman Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kalman 0.10 Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (4x Smooth Kalman P0=0.50), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (Kalman P0=0.10), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -31,12 +31,10 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_kalman_filter_4x_smooth(
-    data_array, initial_p=0.50, q_val=0.0000001, r_val=4.0
-):
-    """Sequential single-pass 4x Extra Smooth Kalman Filter (Zero Leakage / No Repainting).
-
-    q_val = 1e-7 & r_val = 4.0 creates a heavy low-pass 4x smooth baseline.
+def apply_kalman_filter_p010(data_array, initial_p=0.10, q_val=0.001, r_val=0.1):
+    """
+    Sequential single-pass Kalman Filter (Zero Leakage / No Repainting).
+    Calculates B = Kalman Filter of A with P0 = 0.10 (Responsive setup).
     """
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
@@ -53,8 +51,8 @@ def apply_kalman_filter_4x_smooth(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Calculates Hurst Exponent (D = Hurst of A).
-
+    """
+    Calculates Hurst Exponent (D = Hurst of A).
     Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal).
     """
     arr = np.asarray(price_series, dtype=float).flatten()
@@ -231,18 +229,18 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (4X SMOOTH KALMAN)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (KALMAN P0 = 0.10)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = 4x Ultra-Smooth Kalman of A (P0 = 0.50, Q = 0.0000001, R = 4.0)
-df["B_Kalman_4x_Smooth"] = apply_kalman_filter_4x_smooth(
-    df["A_Close_Normal"].to_numpy(), initial_p=0.50, q_val=0.0000001, r_val=4.0
+# B = Kalman of 0.10 of A
+df["B_Kalman_0.10"] = apply_kalman_filter_p010(
+    df["A_Close_Normal"].to_numpy(), initial_p=0.10
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_4x_Smooth"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_0.10"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -279,7 +277,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_Kalman_4x_Smooth",
+    "B_Kalman_0.10",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -302,9 +300,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric(
-    "B (4x Smooth Kalman)", f"${latest_candle['B_Kalman_4x_Smooth']:,.2f}"
-)
+col2.metric("B (Kalman P0=0.10)", f"${latest_candle['B_Kalman_0.10']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
@@ -312,8 +308,7 @@ col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 st.divider()
 
 st.subheader(
-    f"📋 4x Ultra-Smooth Kalman Kinematic Matrix ({len(display_df):,} Predict"
-    " Candles)"
+    f"📋 Kalman 0.10 Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -322,8 +317,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Kalman_4x_Smooth": st.column_config.NumberColumn(
-            "B: 4x Smooth Kalman ($)", format="$%.2f"
+        "B_Kalman_0.10": st.column_config.NumberColumn(
+            "B: Kalman 0.10 ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
