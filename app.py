@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Ehlers SuperSmoother)",
+    page_title="BTC 2-Year Kinematics Engine (TEMA Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Ehlers SuperSmoother Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) TEMA Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (Ehlers SuperSmoother Cutoff=10), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (TEMA Period=14), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -31,33 +31,19 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_ehlers_supersmoother(price_array, cutoff_period=10):
+def apply_tema(data_array, period=14):
     """
-    Ehlers SuperSmoother Filter (John F. Ehlers).
-    Provides superior noise suppression with near-zero lag compared to Kalman / Moving Averages.
-    Strictly Causal (2-bar recursive lag, Zero Look-Ahead Bias).
+    Triple Exponential Moving Average (TEMA).
+    Formula: TEMA = (3 * EMA1) - (3 * EMA2) + EMA3
+    Provides ultra-low lag compared to standard moving averages.
     """
-    prices = np.asarray(price_array, dtype=float).flatten()
-    n = len(prices)
-    if n < 3:
-        return prices.copy()
-
-    f = np.zeros(n)
-    # Math Coefficients for 2-pole Butterworth digital filter
-    arg = np.sqrt(2) * np.pi / cutoff_period
-    a1 = np.exp(-arg)
-    b1 = 2 * a1 * np.cos(arg)
-    c2 = b1
-    c3 = -a1 * a1
-    c1 = 1 - c2 - c3
-
-    f[0] = prices[0]
-    f[1] = prices[1]
-
-    for i in range(2, n):
-        f[i] = c1 * (prices[i] + prices[i - 1]) / 2.0 + c2 * f[i - 1] + c3 * f[i - 2]
-
-    return f
+    s = pd.Series(data_array)
+    ema1 = s.ewm(span=period, adjust=False).mean()
+    ema2 = ema1.ewm(span=period, adjust=False).mean()
+    ema3 = ema2.ewm(span=period, adjust=False).mean()
+    
+    tema = (3 * ema1) - (3 * ema2) + ema3
+    return tema.to_numpy()
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
@@ -239,18 +225,16 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (EHLERS SUPERSMOOTHER)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (TEMA)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Ehlers SuperSmoother of A (Cutoff Period = 10)
-df["B_SuperSmoother"] = apply_ehlers_supersmoother(
-    df["A_Close_Normal"].to_numpy(), cutoff_period=10
-)
+# B = Triple Exponential Moving Average (TEMA) of A (Period = 14)
+df["B_TEMA"] = apply_tema(df["A_Close_Normal"].to_numpy(), period=14)
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_SuperSmoother"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_TEMA"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -287,7 +271,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_SuperSmoother",
+    "B_TEMA",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -310,16 +294,14 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (SuperSmoother)", f"${latest_candle['B_SuperSmoother']:,.2f}")
+col2.metric("B (TEMA)", f"${latest_candle['B_TEMA']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
-st.subheader(
-    f"📋 Ehlers SuperSmoother Kinematic Matrix ({len(display_df):,} Predict Candles)"
-)
+st.subheader(f"📋 TEMA Kinematic Matrix ({len(display_df):,} Predict Candles)")
 
 st.dataframe(
     display_df,
@@ -327,8 +309,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_SuperSmoother": st.column_config.NumberColumn(
-            "B: SuperSmoother ($)", format="$%.2f"
+        "B_TEMA": st.column_config.NumberColumn(
+            "B: TEMA ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
