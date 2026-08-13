@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (30,000x EMA)",
+    page_title="BTC Kinematics (EMA 30 + Kalman 0.50)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Ultra-Smooth 30,000x EMA Engine")
+st.title("⚡ Bitcoin (BTC-USD) EMA 30 + Kalman Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (30,000-Times EMA | Period=14), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A (Close), B (EMA 30 + Kalman Filter Gain=0.50), C (A - B), D, E Matrix | IST Locked"
 )
 
 # Sidebar Controls
@@ -29,34 +29,63 @@ st.sidebar.success(
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (Optimized 30,000-Pass EMA Execution)
+# 8-STEP VERIFICATION MATHEMATICAL ENGINES
 # =====================================================================
-def apply_ultra_n_ema(data_array, period=14, n_times=30000):
+# STEP 1: Compute Standard EMA (Period = 30)
+def compute_ema_30(data_array, period=30):
+    s = pd.Series(data_array, dtype=float)
+    return s.ewm(span=period, adjust=False).mean().to_numpy()
+
+
+# STEP 2: Apply 1D Kalman Filter (Gain / Process Noise ratio tuned to 0.50)
+def apply_kalman_filter(ema_array, kalman_gain=0.50):
     """
-    Executes 30,000 recursive Exponential Moving Average passes using low-overhead 
-    vectorized NumPy C-arrays to prevent Streamlit buffer memory crashes.
+    Applies a 1D Causal Kalman Filter over the EMA(30) series.
+    Gain parameter K (0.50) balances lag reduction vs smoothing strength.
     """
-    alpha = 2.0 / (period + 1.0)
-    one_minus_alpha = 1.0 - alpha
+    n = len(ema_array)
+    filtered = np.zeros(n, dtype=float)
 
-    # Low-level memory allocation
-    arr = np.array(data_array, dtype=np.float64, copy=True)
-    n_points = len(arr)
+    if n == 0:
+        return filtered
 
-    # Perform 30,000 recursive smoothing cycles directly in continuous memory
-    for _ in range(n_times):
-        # Fast C-style loop over continuous array
-        for i in range(1, n_points):
-            arr[i] = alpha * arr[i] + one_minus_alpha * arr[i - 1]
+    # Initial state
+    x_hat = ema_array[0]
+    p = 1.0  # Initial estimation error covariance
+    q = kalman_gain  # Process noise covariance
+    r = 1.0 - kalman_gain  # Measurement noise covariance
 
-    return arr
+    filtered[0] = x_hat
+
+    for t in range(1, n):
+        # Time Update (Predict)
+        x_hat_minus = x_hat
+        p_minus = p + q
+
+        # Measurement Update (Correct)
+        k_gain = p_minus / (p_minus + r)
+        x_hat = x_hat_minus + k_gain * (ema_array[t] - x_hat_minus)
+        p = (1.0 - k_gain) * p_minus
+
+        filtered[t] = x_hat
+
+    return filtered
 
 
+# STEP 3: Compute Baseline B = Kalman(EMA(30))
+def compute_baseline_b(price_array, period=30, gain=0.50):
+    ema_vals = compute_ema_30(price_array, period=period)
+    kalman_vals = apply_kalman_filter(ema_vals, kalman_gain=gain)
+    return kalman_vals
+
+
+# STEP 4: Compute Difference Residual C = A - B
+def compute_diff_c(a_close, b_baseline):
+    return a_close - b_baseline
+
+
+# STEP 5: Calculate Hurst Exponent (Vectorized Trailing R/S Window 30)
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """
-    Calculates Hurst Exponent (D = Hurst of A).
-    Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal).
-    """
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -86,6 +115,11 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
+# STEP 6: Compute Final Kinematic Signal E = C * D
+def compute_signal_e(c_diff, d_hurst):
+    return c_diff * d_hurst
+
+
 # =====================================================================
 # DUAL-SOURCE DATA FETCH ENGINE (BINANCE + COINBASE FALLBACK)
 # =====================================================================
@@ -96,9 +130,7 @@ def fetch_binance_data(start_ts, end_ts):
     current_start = start_ts
 
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 
     while current_start < end_ts:
@@ -213,7 +245,7 @@ def get_robust_2year_hourly():
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Calculating 30,000x Smooth Baseline..."):
+    with st.spinner("🔄 Fetching Data & Computing EMA(30) + Kalman(0.50)..."):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
@@ -231,30 +263,34 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (30,000x EMA)
+# STEP 7: MATRIX CALCULATIONS
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = 30,000-Times Exponential Moving Average (Period = 14)
-df["B_30000x_EMA"] = apply_ultra_n_ema(
-    df["A_Close_Normal"].to_numpy(), period=14, n_times=30000
+# B = Kalman Filter (Gain 0.50) applied on EMA(30)
+df["B_Kalman_EMA30"] = compute_baseline_b(
+    df["A_Close_Normal"].to_numpy(), period=30, gain=0.50
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_30000x_EMA"]
+df["C_Diff_Residual"] = compute_diff_c(
+    df["A_Close_Normal"], df["B_Kalman_EMA30"]
+)
 
-# D = Hurst of value A
+# D = Hurst of A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
     df["A_Close_Normal"].to_numpy(), window=30
 )
 
 # E = C * D
-df["E_Kinematic_Signal"] = df["C_Diff_Residual"] * df["D_Hurst_A"]
+df["E_Kinematic_Signal"] = compute_signal_e(
+    df["C_Diff_Residual"], df["D_Hurst_A"]
+)
 
 
 # =====================================================================
-# ⚡ 50:50 LEARN:PREDICT SPLIT
+# STEP 8: 50:50 SPLIT & IST MATRIX DISPLAY
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)
@@ -273,13 +309,9 @@ st.success(
     f" {len(df_predict):,} (IST Locked)"
 )
 
-
-# =====================================================================
-# 📋 MATRIX FORMATTING AND IST DISPLAY
-# =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_30000x_EMA",
+    "B_Kalman_EMA30",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -302,14 +334,16 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (30,000x EMA)", f"${latest_candle['B_30000x_EMA']:,.2f}")
+col2.metric("B (EMA30 + Kalman 0.5)", f"${latest_candle['B_Kalman_EMA30']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
-st.subheader(f"📋 30,000x EMA Kinematic Matrix ({len(display_df):,} Predict Candles)")
+st.subheader(
+    f"📋 EMA 30 + Kalman (0.50) Kinematic Matrix ({len(display_df):,} Predict Candles)"
+)
 
 st.dataframe(
     display_df,
@@ -317,8 +351,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_30000x_EMA": st.column_config.NumberColumn(
-            "B: 30,000x EMA ($)", format="$%.2f"
+        "B_Kalman_EMA30": st.column_config.NumberColumn(
+            "B: EMA30 + Kalman 0.50 ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
