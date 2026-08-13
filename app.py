@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics (Original VIDYA + Kalman 0.50)",
+    page_title="BTC Kinematics (Kalman on C)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Original VIDYA + Kalman Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kinematic Engine (Kalman Filter on C)")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A (Close), B (VIDYA Period=14 + Kalman Filter Gain=0.50), C (A - B), D, E Matrix | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** A (Close), B (VIDYA + Kalman), C (Filtered C = Kalman(A - B) @ Gain=0.50), D, E Matrix | IST Locked"
 )
 
 # Sidebar Controls
@@ -33,9 +33,6 @@ st.sidebar.success(
 # =====================================================================
 # STEP 2 & 3: Original VIDYA (Period=14, HistPeriod=30)
 def compute_vidya(data_array, period=14, hist_period=30):
-    """
-    Computes original VIDYA using standard volatility bounds.
-    """
     s = pd.Series(data_array, dtype=float)
 
     std_short = s.rolling(window=9, min_periods=1).std().fillna(0.0)
@@ -56,8 +53,12 @@ def compute_vidya(data_array, period=14, hist_period=30):
     return vidya
 
 
-# STEP 4: Standard Causal Kalman Filter (Gain = 0.50)
+# STEP 4 & 6: Causal Kalman Filter Engine (Gain = 0.50)
 def apply_kalman_filter(input_array, kalman_gain=0.50):
+    """
+    Applies 1D Causal Kalman Filter.
+    Can be applied to Price Series or Residual/Oscillator Series (C).
+    """
     n = len(input_array)
     filtered = np.zeros(n, dtype=float)
 
@@ -82,13 +83,6 @@ def apply_kalman_filter(input_array, kalman_gain=0.50):
         filtered[t] = x_hat
 
     return filtered
-
-
-# STEP 5: Compute Baseline B = Kalman(VIDYA_14)
-def compute_baseline_b(price_array):
-    vidya_vals = compute_vidya(price_array, period=14, hist_period=30)
-    kalman_vidya = apply_kalman_filter(vidya_vals, kalman_gain=0.50)
-    return kalman_vidya
 
 
 # STEP 7: Vectorized Rolling Hurst Exponent (Window=30)
@@ -249,7 +243,7 @@ def get_robust_2year_hourly():
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Computing VIDYA(14) + Kalman(0.50)..."):
+    with st.spinner("🔄 Fetching Data & Applying Kalman Filter to C..."):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
@@ -267,24 +261,28 @@ except Exception as e:
 
 
 # =====================================================================
-# STEP 6 & 7: MATRIX COMPUTATIONS
+# MATRIX CALCULATIONS (STEP 1 TO STEP 7)
 # =====================================================================
-# A = Close Normal
+# Step 1: A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = VIDYA (14) + Kalman Filter (0.50)
-df["B_Kalman_VIDYA"] = compute_baseline_b(df["A_Close_Normal"].to_numpy())
+# Step 2, 3, 4: B = Kalman(VIDYA 14)
+vidya_raw = compute_vidya(df["A_Close_Normal"].to_numpy(), period=14, hist_period=30)
+df["B_Kalman_VIDYA"] = apply_kalman_filter(vidya_raw, kalman_gain=0.50)
 
-# C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_VIDYA"]
+# Step 5: C_Raw = A - B
+c_raw = df["A_Close_Normal"] - df["B_Kalman_VIDYA"]
 
-# D = Hurst of A
+# Step 6: C = Kalman_Filter(C_Raw, Gain=0.50)
+df["C_Kalman_Filtered"] = apply_kalman_filter(c_raw.to_numpy(), kalman_gain=0.50)
+
+# Step 7: D = Hurst of A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
     df["A_Close_Normal"].to_numpy(), window=30
 )
 
-# E = C * D
-df["E_Kinematic_Signal"] = df["C_Diff_Residual"] * df["D_Hurst_A"]
+# Step 7: E = C (Kalman Filtered) * D
+df["E_Kinematic_Signal"] = df["C_Kalman_Filtered"] * df["D_Hurst_A"]
 
 
 # =====================================================================
@@ -310,7 +308,7 @@ st.success(
 clean_cols = [
     "A_Close_Normal",
     "B_Kalman_VIDYA",
-    "C_Diff_Residual",
+    "C_Kalman_Filtered",
     "D_Hurst_A",
     "E_Kinematic_Signal",
 ]
@@ -332,17 +330,15 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric(
-    "B (VIDYA + Kalman 0.5)", f"${latest_candle['B_Kalman_VIDYA']:,.2f}"
-)
-col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
+col2.metric("B (VIDYA + Kalman)", f"${latest_candle['B_Kalman_VIDYA']:,.2f}")
+col3.metric("✨ C (Kalman Filtered)", f"{latest_candle['C_Kalman_Filtered']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
-col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
+col5.metric("🔥 E (Filtered C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 VIDYA (14) + Kalman (0.50) Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Kalman-Filtered Residual Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -352,16 +348,16 @@ st.dataframe(
             "A: Close Normal ($)", format="$%.2f"
         ),
         "B_Kalman_VIDYA": st.column_config.NumberColumn(
-            "B: VIDYA + Kalman 0.50 ($)", format="$%.2f"
+            "B: VIDYA + Kalman ($)", format="$%.2f"
         ),
-        "C_Diff_Residual": st.column_config.NumberColumn(
-            "C: (A - B)", format="%.2f"
+        "C_Kalman_Filtered": st.column_config.NumberColumn(
+            "✨ C: Kalman Filtered (0.50)", format="%.2f"
         ),
         "D_Hurst_A": st.column_config.NumberColumn(
             "D: Hurst(A)", format="%.2f"
         ),
         "E_Kinematic_Signal": st.column_config.NumberColumn(
-            "🔥 E: (C * D)", format="%.2f"
+            "🔥 E: (Filtered C * D)", format="%.2f"
         ),
     },
     use_container_width=True,
