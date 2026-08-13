@@ -3,19 +3,19 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import requests
-from scipy.signal import savgol_filter
+from scipy.ndimage import gaussian_filter1d
 import streamlit as st
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Advanced Kinematics Engine (DSP Candles)",
+    page_title="BTC 2-Year Kinematics Engine (Gaussian Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Advanced DSP Candle Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Gaussian Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** HA HAM vs. Advanced DSP Candle Paths | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B, C, D, E Kinematic Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -30,26 +30,37 @@ st.sidebar.success(
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & NEW CANDLE BUILDERS
+# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
-    """Sequential single-pass Kalman Filter (Zero Leakage / No Repainting)."""
-    arr = np.asarray(data_array, dtype=float).flatten()
-    if len(arr) == 0:
-        return np.array([])
-    x, p = arr[0], initial_p
-    filtered_values = np.empty(len(arr))
-    for i, z in enumerate(arr):
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values[i] = x
-    return filtered_values
+def apply_causal_gaussian_filter(price_series, sigma=0.50, window=15):
+    """
+    Calculates Gaussian Filter (B = Gaussian of 0.50 of A) causally.
+    Uses trailing window to prevent forward-looking data leakage.
+    """
+    arr = np.asarray(price_series, dtype=float).flatten()
+    b_values = np.empty_like(arr)
+
+    for i in range(len(arr)):
+        if i == 0:
+            b_values[i] = arr[i]
+        else:
+            # Trailing causal slice up to index i
+            start_idx = max(0, i - window + 1)
+            sub_arr = arr[start_idx : i + 1]
+            if len(sub_arr) < 2:
+                b_values[i] = arr[i]
+            else:
+                filtered_sub = gaussian_filter1d(sub_arr, sigma=sigma)
+                b_values[i] = filtered_sub[-1]  # Pick last value
+
+    return b_values
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal)."""
+    """
+    Calculates Hurst Exponent (D = Hurst of A).
+    Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal).
+    """
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -77,75 +88,6 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
         h_calculated, 0.0, 1.0
     )
     return hurst_values
-
-
-def apply_heikin_ashi(df_in):
-    """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
-    op = np.asarray(df_in["Open"], dtype=float).flatten()
-    hi = np.asarray(df_in["High"], dtype=float).flatten()
-    lo = np.asarray(df_in["Low"], dtype=float).flatten()
-    cl = np.asarray(df_in["Close"], dtype=float).flatten()
-
-    ha_close = (op + hi + lo + cl) / 4.0
-    ha_open = np.zeros(len(df_in))
-    ha_open[0] = (op[0] + cl[0]) / 2.0
-
-    for i in range(1, len(df_in)):
-        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
-
-    df_out = df_in.copy()
-    df_out["HA_Close"] = ha_close
-    return df_out
-
-
-def build_savgol_candles(df_in, window_length=11, polyorder=2):
-    """
-    1. NEW CANDLE BUILDER: Savitzky-Golay Polynomial DSP Candles.
-    Applies trailing polynomial smoothing to reconstruct low-noise close levels.
-    """
-    cl = df_in["Close"].to_numpy()
-    if len(cl) < window_length:
-        return cl
-
-    # Trailing causal window filter
-    savgol_close = np.empty_like(cl)
-    for i in range(len(cl)):
-        if i < window_length:
-            savgol_close[i] = cl[i]
-        else:
-            sub_series = cl[i - window_length + 1 : i + 1]
-            savgol_close[i] = savgol_filter(
-                sub_series, window_length, polyorder
-            )[-1]
-
-    return savgol_close
-
-
-def build_ehlers_supersmoother_candles(df_in, cutoff_period=10):
-    """
-    2. NEW CANDLE BUILDER: Ehlers SuperSmoother 2-Pole Filtered Candles.
-    Cuts off high frequency noise without lag.
-    """
-    cl = df_in["Close"].to_numpy()
-    ss_close = np.zeros_like(cl)
-
-    a1 = np.exp(-np.sqrt(2) * np.pi / cutoff_period)
-    b1 = 2 * a1 * np.cos(np.sqrt(2) * np.pi / cutoff_period)
-    c2 = b1
-    c3 = -a1 * a1
-    c1 = 1 - c2 - c3
-
-    for i in range(len(cl)):
-        if i < 2:
-            ss_close[i] = cl[i]
-        else:
-            ss_close[i] = (
-                c1 * (cl[i] + cl[i - 1]) / 2.0
-                + c2 * ss_close[i - 1]
-                + c3 * ss_close[i - 2]
-            )
-
-    return ss_close
 
 
 # =====================================================================
@@ -293,56 +235,26 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ KINEMATICS MATRIX (HA vs SAVGOL vs SUPERSMOOTHER)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION
 # =====================================================================
-df = apply_heikin_ashi(df)
+# A = Close Normal
+df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# 1. HEIKIN-ASHI HAM
-ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
-df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-kalman_base_ha = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_ha = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
-
-# 2. SAVITZKY-GOLAY DSP CANDLES & HAM
-df["SavGol_Close"] = build_savgol_candles(df, window_length=11, polyorder=2)
-savgol_close_full = np.asarray(df["SavGol_Close"], dtype=float).flatten()
-df["Hurst_SavGol"] = calculate_rolling_hurst_vectorized(
-    savgol_close_full, window=30
-)
-kalman_base_sg = apply_kalman_filter_custom(
-    savgol_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_sg = apply_kalman_filter_custom(
-    savgol_close_full - kalman_base_sg, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_SavGol"] = momentum_sg * (df["Hurst_SavGol"].to_numpy() * 2.0)
-
-# 3. SUPERSMOOTHER DSP CANDLES & HAM
-df["SuperSmoother_Close"] = build_ehlers_supersmoother_candles(
-    df, cutoff_period=10
-)
-ss_close_full = np.asarray(df["SuperSmoother_Close"], dtype=float).flatten()
-df["Hurst_SuperSmoother"] = calculate_rolling_hurst_vectorized(
-    ss_close_full, window=30
-)
-kalman_base_ss = apply_kalman_filter_custom(
-    ss_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_ss = apply_kalman_filter_custom(
-    ss_close_full - kalman_base_ss, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_SuperSmoother"] = momentum_ss * (
-    df["Hurst_SuperSmoother"].to_numpy() * 2.0
+# B = Gaussian of 0.50 of A
+df["B_Gaussian_0.50"] = apply_causal_gaussian_filter(
+    df["A_Close_Normal"].to_numpy(), sigma=0.50
 )
 
-# --- CALCULATE SPECIFIC DIFFERENCE MATRICES ---
-df["HA_minus_SavGol"] = df["HAM_HeikinAshi"] - df["HAM_SavGol"]
-df["HA_minus_SuperSmoother"] = df["HAM_HeikinAshi"] - df["HAM_SuperSmoother"]
+# C = A - B
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Gaussian_0.50"]
+
+# D = Hurst of value A
+df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
+    df["A_Close_Normal"].to_numpy(), window=30
+)
+
+# E = C * D
+df["E_Kinematic_Signal"] = df["C_Diff_Residual"] * df["D_Hurst_A"]
 
 
 # =====================================================================
@@ -355,7 +267,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_HA", "Hurst_SavGol", "Hurst_SuperSmoother"],
+    subset=["D_Hurst_A"],
     inplace=True,
 )
 
@@ -370,15 +282,11 @@ st.success(
 # 📋 MATRIX FORMATTING AND IST DISPLAY
 # =====================================================================
 clean_cols = [
-    "Close",
-    "HA_Close",
-    "SavGol_Close",
-    "SuperSmoother_Close",
-    "HAM_HeikinAshi",
-    "HAM_SavGol",
-    "HAM_SuperSmoother",
-    "HA_minus_SavGol",
-    "HA_minus_SuperSmoother",
+    "A_Close_Normal",
+    "B_Gaussian_0.50",
+    "C_Diff_Residual",
+    "D_Hurst_A",
+    "E_Kinematic_Signal",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -397,53 +305,35 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
-col2.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col3.metric("HAM SavGol DSP", f"{latest_candle['HAM_SavGol']:.2f}")
-col4.metric(
-    "📊 HA HAM - SavGol HAM", f"{latest_candle['HA_minus_SavGol']:.2f}"
-)
-col5.metric(
-    "📊 HA HAM - SuperSmoother",
-    f"{latest_candle['HA_minus_SuperSmoother']:.2f}",
-)
+col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
+col2.metric("B (Gaussian 0.50)", f"${latest_candle['B_Gaussian_0.50']:,.2f}")
+col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
+col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
+col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 Advanced DSP Candle Kinematic Matrix ({len(display_df):,} Predict"
-    " Candles)"
+    f"📋 Formula Exact Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn(
-            "Close Price ($)", format="$%.2f"
+        "A_Close_Normal": st.column_config.NumberColumn(
+            "A: Close Normal ($)", format="$%.2f"
         ),
-        "HA_Close": st.column_config.NumberColumn(
-            "HA Close ($)", format="$%.2f"
+        "B_Gaussian_0.50": st.column_config.NumberColumn(
+            "B: Gaussian 0.50 ($)", format="$%.2f"
         ),
-        "SavGol_Close": st.column_config.NumberColumn(
-            "SavGol DSP Close ($)", format="$%.2f"
+        "C_Diff_Residual": st.column_config.NumberColumn(
+            "C: (A - B)", format="%.2f"
         ),
-        "SuperSmoother_Close": st.column_config.NumberColumn(
-            "SuperSmoother Close ($)", format="$%.2f"
+        "D_Hurst_A": st.column_config.NumberColumn(
+            "D: Hurst(A)", format="%.2f"
         ),
-        "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA", format="%.2f"
-        ),
-        "HAM_SavGol": st.column_config.NumberColumn(
-            "HAM SavGol", format="%.2f"
-        ),
-        "HAM_SuperSmoother": st.column_config.NumberColumn(
-            "HAM SuperSmoother", format="%.2f"
-        ),
-        "HA_minus_SavGol": st.column_config.NumberColumn(
-            "🔥 (HA HAM - SavGol HAM)", format="%.2f"
-        ),
-        "HA_minus_SuperSmoother": st.column_config.NumberColumn(
-            "🔥 (HA HAM - SuperSmoother HAM)", format="%.2f"
+        "E_Kinematic_Signal": st.column_config.NumberColumn(
+            "🔥 E: (C * D)", format="%.2f"
         ),
     },
     use_container_width=True,
