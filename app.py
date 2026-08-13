@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Kalman 0.10 Path)",
+    page_title="BTC 2-Year Kinematics Engine (Ehlers SuperSmoother)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Kalman 0.10 Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Ehlers SuperSmoother Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (Kalman P0=0.10), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (Ehlers SuperSmoother Cutoff=10), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -31,23 +31,33 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_kalman_filter_p010(data_array, initial_p=0.10, q_val=0.001, r_val=0.1):
+def apply_ehlers_supersmoother(price_array, cutoff_period=10):
     """
-    Sequential single-pass Kalman Filter (Zero Leakage / No Repainting).
-    Calculates B = Kalman Filter of A with P0 = 0.10 (Responsive setup).
+    Ehlers SuperSmoother Filter (John F. Ehlers).
+    Provides superior noise suppression with near-zero lag compared to Kalman / Moving Averages.
+    Strictly Causal (2-bar recursive lag, Zero Look-Ahead Bias).
     """
-    arr = np.asarray(data_array, dtype=float).flatten()
-    if len(arr) == 0:
-        return np.array([])
-    x, p = arr[0], initial_p
-    filtered_values = np.empty(len(arr))
-    for i, z in enumerate(arr):
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values[i] = x
-    return filtered_values
+    prices = np.asarray(price_array, dtype=float).flatten()
+    n = len(prices)
+    if n < 3:
+        return prices.copy()
+
+    f = np.zeros(n)
+    # Math Coefficients for 2-pole Butterworth digital filter
+    arg = np.sqrt(2) * np.pi / cutoff_period
+    a1 = np.exp(-arg)
+    b1 = 2 * a1 * np.cos(arg)
+    c2 = b1
+    c3 = -a1 * a1
+    c1 = 1 - c2 - c3
+
+    f[0] = prices[0]
+    f[1] = prices[1]
+
+    for i in range(2, n):
+        f[i] = c1 * (prices[i] + prices[i - 1]) / 2.0 + c2 * f[i - 1] + c3 * f[i - 2]
+
+    return f
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
@@ -229,18 +239,18 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (KALMAN P0 = 0.10)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (EHLERS SUPERSMOOTHER)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Kalman of 0.10 of A
-df["B_Kalman_0.10"] = apply_kalman_filter_p010(
-    df["A_Close_Normal"].to_numpy(), initial_p=0.10
+# B = Ehlers SuperSmoother of A (Cutoff Period = 10)
+df["B_SuperSmoother"] = apply_ehlers_supersmoother(
+    df["A_Close_Normal"].to_numpy(), cutoff_period=10
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_0.10"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_SuperSmoother"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -277,7 +287,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_Kalman_0.10",
+    "B_SuperSmoother",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -300,7 +310,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (Kalman P0=0.10)", f"${latest_candle['B_Kalman_0.10']:,.2f}")
+col2.metric("B (SuperSmoother)", f"${latest_candle['B_SuperSmoother']:,.2f}")
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
 col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
@@ -308,7 +318,7 @@ col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 st.divider()
 
 st.subheader(
-    f"📋 Kalman 0.10 Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Ehlers SuperSmoother Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -317,8 +327,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Kalman_0.10": st.column_config.NumberColumn(
-            "B: Kalman 0.10 ($)", format="$%.2f"
+        "B_SuperSmoother": st.column_config.NumberColumn(
+            "B: SuperSmoother ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
