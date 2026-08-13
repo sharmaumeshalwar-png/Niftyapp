@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics (Ultra-Smooth VIDYA)",
+    page_title="BTC Kinematics (Original VIDYA + Kalman 0.50)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Ultra-Smooth VIDYA + Heavy Kalman Engine")
+st.title("⚡ Bitcoin (BTC-USD) Original VIDYA + Kalman Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A (Close), B (Ultra-Smooth VIDYA Period=30 + Heavy Kalman Gain=0.15), C (A - B), D, E Matrix | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** A (Close), B (VIDYA Period=14 + Kalman Filter Gain=0.50), C (A - B), D, E Matrix | IST Locked"
 )
 
 # Sidebar Controls
@@ -31,15 +31,14 @@ st.sidebar.success(
 # =====================================================================
 # 8-STEP VERIFICATION MATHEMATICAL ENGINES
 # =====================================================================
-# STEP 2 & 3: Wide Window VIDYA (Period=30, HistPeriod=60)
-def compute_ultra_vidya(data_array, period=30, hist_period=60):
+# STEP 2 & 3: Original VIDYA (Period=14, HistPeriod=30)
+def compute_vidya(data_array, period=14, hist_period=30):
     """
-    Computes ultra-smoothed VIDYA using wide volatility bounds.
-    Increasing the period flattens micro-spikes while preserving macro trends.
+    Computes original VIDYA using standard volatility bounds.
     """
     s = pd.Series(data_array, dtype=float)
 
-    std_short = s.rolling(window=period, min_periods=1).std().fillna(0.0)
+    std_short = s.rolling(window=9, min_periods=1).std().fillna(0.0)
     std_long = s.rolling(window=hist_period, min_periods=1).std().fillna(1e-5)
 
     vi = (std_short / (std_long + 1e-10)).clip(upper=1.0).to_numpy()
@@ -57,12 +56,8 @@ def compute_ultra_vidya(data_array, period=30, hist_period=60):
     return vidya
 
 
-# STEP 4: Heavy Kalman Filter (Gain = 0.15 for Max Smoothness)
-def apply_heavy_kalman_filter(input_array, kalman_gain=0.15):
-    """
-    Applies a heavy-smoothing Causal Kalman filter.
-    Gain = 0.15 suppresses remaining high-frequency oscillations.
-    """
+# STEP 4: Standard Causal Kalman Filter (Gain = 0.50)
+def apply_kalman_filter(input_array, kalman_gain=0.50):
     n = len(input_array)
     filtered = np.zeros(n, dtype=float)
 
@@ -89,11 +84,11 @@ def apply_heavy_kalman_filter(input_array, kalman_gain=0.15):
     return filtered
 
 
-# STEP 5: Compute Baseline B = Heavy_Kalman(Ultra_VIDYA)
+# STEP 5: Compute Baseline B = Kalman(VIDYA_14)
 def compute_baseline_b(price_array):
-    vidya_vals = compute_ultra_vidya(price_array, period=30, hist_period=60)
-    ultra_smooth_b = apply_heavy_kalman_filter(vidya_vals, kalman_gain=0.15)
-    return ultra_smooth_b
+    vidya_vals = compute_vidya(price_array, period=14, hist_period=30)
+    kalman_vidya = apply_kalman_filter(vidya_vals, kalman_gain=0.50)
+    return kalman_vidya
 
 
 # STEP 7: Vectorized Rolling Hurst Exponent (Window=30)
@@ -254,9 +249,7 @@ def get_robust_2year_hourly():
 
 # Fetch Data
 try:
-    with st.spinner(
-        "🔄 Fetching Data & Computing Ultra-Smooth VIDYA + Heavy Kalman..."
-    ):
+    with st.spinner("🔄 Fetching Data & Computing VIDYA(14) + Kalman(0.50)..."):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
@@ -279,13 +272,11 @@ except Exception as e:
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Ultra-Smooth VIDYA (30) + Kalman Filter (0.15)
-df["B_Ultra_VIDYA_Kalman"] = compute_baseline_b(
-    df["A_Close_Normal"].to_numpy()
-)
+# B = VIDYA (14) + Kalman Filter (0.50)
+df["B_Kalman_VIDYA"] = compute_baseline_b(df["A_Close_Normal"].to_numpy())
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Ultra_VIDYA_Kalman"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Kalman_VIDYA"]
 
 # D = Hurst of A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -318,7 +309,7 @@ st.success(
 
 clean_cols = [
     "A_Close_Normal",
-    "B_Ultra_VIDYA_Kalman",
+    "B_Kalman_VIDYA",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -342,7 +333,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
 col2.metric(
-    "B (Ultra VIDYA + Kalman)", f"${latest_candle['B_Ultra_VIDYA_Kalman']:,.2f}"
+    "B (VIDYA + Kalman 0.5)", f"${latest_candle['B_Kalman_VIDYA']:,.2f}"
 )
 col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
@@ -351,7 +342,7 @@ col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 st.divider()
 
 st.subheader(
-    f"📋 Ultra-Smooth VIDYA (30) + Heavy Kalman (0.15) Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 VIDYA (14) + Kalman (0.50) Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -360,8 +351,8 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Ultra_VIDYA_Kalman": st.column_config.NumberColumn(
-            "B: Ultra VIDYA + Kalman ($)", format="$%.2f"
+        "B_Kalman_VIDYA": st.column_config.NumberColumn(
+            "B: VIDYA + Kalman 0.50 ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
             "C: (A - B)", format="%.2f"
