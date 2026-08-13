@@ -113,7 +113,6 @@ def apply_fixed_100pt_renko_causal(price_series, brick_size=100.0):
     if len(arr) == 0:
         return renko_closes
 
-    # Lock initial brick to nearest $100 grid boundary
     current_brick = np.floor(arr[0] / brick_size) * brick_size
 
     for i, p in enumerate(arr):
@@ -336,8 +335,9 @@ momentum_vw = apply_kalman_filter_custom(
 )
 df["HAM_VW"] = momentum_vw * (df["Hurst_VW"].to_numpy() * 2.0)
 
-# --- DIFFERENCE MATRIX ---
+# --- DIFFERENCE MATRICES ---
 df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+df["HAM_Diff_Renko"] = df["HAM_Normal"] - df["HAM_Renko"]
 
 
 # =====================================================================
@@ -377,6 +377,7 @@ clean_cols = [
     "HAM_Renko",
     "HAM_VW",
     "HAM_Diff",
+    "HAM_Diff_Renko",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -399,7 +400,7 @@ col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("HAM Renko ($100)", f"{latest_candle['HAM_Renko']:.2f}")
-col5.metric("HAM Vol-Weighted", f"{latest_candle['HAM_VW']:.2f}")
+col5.metric("HAM - HAM Renko Diff", f"{latest_candle['HAM_Diff_Renko']:.2f}")
 
 st.divider()
 
@@ -421,7 +422,8 @@ st.dataframe(
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
         "HAM_Renko": st.column_config.NumberColumn("HAM Renko", format="%.2f"),
         "HAM_VW": st.column_config.NumberColumn("HAM Vol-Weight", format="%.2f"),
-        "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff", format="%.2f"),
+        "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff (HA)", format="%.2f"),
+        "HAM_Diff_Renko": st.column_config.NumberColumn("📊 HAM Diff (Renko)", format="%.2f"),
     },
     use_container_width=True,
     height=600,
