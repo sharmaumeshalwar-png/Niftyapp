@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine ($100 Locked Renko)",
+    page_title="BTC 2-Year Kinematics Engine (HA HAM - Renko HAM)",
     layout="wide",
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 4-Path Kinematics (Normal | HA | $100 Locked Renko | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** HA HAM vs. Renko HAM Difference Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -104,10 +104,7 @@ def apply_heikin_ashi(df_in):
 
 
 def apply_fixed_100pt_renko_causal(price_series, brick_size=100.0):
-    """
-    Fixed $100 Renko Engine (Strict Zero Repainting / Time-Locked Index).
-    Only updates when price moves by $100 steps.
-    """
+    """Fixed $100 Renko Engine (Strict Zero Repainting / Time-Locked Index)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     renko_closes = np.empty_like(arr)
     if len(arr) == 0:
@@ -275,25 +272,11 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ 4-PATH CONTINUOUS KINEMATICS ENGINE
+# ⚡ KINEMATICS ENGINE (HEIKIN-ASHI vs RENKO)
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# --- PATH A: NORMAL CANDLE KINEMATICS ---
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
-)
-
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_normal = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
-
-# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+# --- PATH A: HEIKIN-ASHI CANDLE KINEMATICS ---
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 
@@ -305,7 +288,8 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH C: FIXED $100 POINT STRICT RENKO KINEMATICS ---
+# --- PATH B: FIXED $100 POINT STRICT RENKO KINEMATICS ---
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 renko_close_full = apply_fixed_100pt_renko_causal(normal_close_full, brick_size=100.0)
 df["Renko_Close"] = renko_close_full
 df["Hurst_Renko"] = calculate_rolling_hurst_vectorized(renko_close_full, window=30)
@@ -318,26 +302,8 @@ momentum_renko = apply_kalman_filter_custom(
 )
 df["HAM_Renko"] = momentum_renko * (df["Hurst_Renko"].to_numpy() * 2.0)
 
-# --- PATH D: VOLUME-WEIGHTED CLOSE (LIQUIDITY LOCKED) ---
-vol = df["Volume"].to_numpy()
-vol_mean = pd.Series(vol).rolling(30, min_periods=1).mean().to_numpy() + 1e-10
-vw_factor = np.clip(vol / vol_mean, 0.5, 2.0)
-
-vw_close = normal_close_full * vw_factor
-df["VW_Close"] = vw_close
-df["Hurst_VW"] = calculate_rolling_hurst_vectorized(vw_close, window=30)
-
-kalman_base_vw = apply_kalman_filter_custom(
-    vw_close, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_vw = apply_kalman_filter_custom(
-    vw_close - kalman_base_vw, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_VW"] = momentum_vw * (df["Hurst_VW"].to_numpy() * 2.0)
-
-# --- DIFFERENCE MATRICES ---
-df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-df["HAM_Diff_Renko"] = df["HAM_Normal"] - df["HAM_Renko"]
+# --- STRICT DIFFERENCE: (HA HAM - RENKO HAM) ---
+df["HA_HAM_minus_Renko_HAM"] = df["HAM_HeikinAshi"] - df["HAM_Renko"]
 
 
 # =====================================================================
@@ -350,7 +316,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 df_predict.dropna(
-    subset=["Hurst_Normal", "Hurst_HA", "Hurst_Renko", "Hurst_VW"],
+    subset=["Hurst_HA", "Hurst_Renko"],
     inplace=True,
 )
 
@@ -368,16 +334,9 @@ clean_cols = [
     "Close",
     "HA_Close",
     "Renko_Close",
-    "Hurst_Normal",
-    "Hurst_HA",
-    "Hurst_Renko",
-    "Hurst_VW",
-    "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Renko",
-    "HAM_VW",
-    "HAM_Diff",
-    "HAM_Diff_Renko",
+    "HA_HAM_minus_Renko_HAM",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -395,17 +354,16 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("HAM Renko ($100)", f"{latest_candle['HAM_Renko']:.2f}")
-col5.metric("HAM - HAM Renko Diff", f"{latest_candle['HAM_Diff_Renko']:.2f}")
+col2.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col3.metric("HAM Renko ($100)", f"{latest_candle['HAM_Renko']:.2f}")
+col4.metric("📊 HA HAM - Renko HAM", f"{latest_candle['HA_HAM_minus_Renko_HAM']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 4-Path Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Focused Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -414,16 +372,9 @@ st.dataframe(
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
         "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
         "Renko_Close": st.column_config.NumberColumn("Renko $100 ($)", format="$%.2f"),
-        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Norm)", format="%.2f"),
-        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "Hurst_Renko": st.column_config.NumberColumn("Hurst (Renko)", format="%.2f"),
-        "Hurst_VW": st.column_config.NumberColumn("Hurst (VW)", format="%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn("HAM Normal", format="%.2f"),
         "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
         "HAM_Renko": st.column_config.NumberColumn("HAM Renko", format="%.2f"),
-        "HAM_VW": st.column_config.NumberColumn("HAM Vol-Weight", format="%.2f"),
-        "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff (HA)", format="%.2f"),
-        "HAM_Diff_Renko": st.column_config.NumberColumn("📊 HAM Diff (Renko)", format="%.2f"),
+        "HA_HAM_minus_Renko_HAM": st.column_config.NumberColumn("🔥 (HA HAM - Renko HAM)", format="%.2f"),
     },
     use_container_width=True,
     height=600,
