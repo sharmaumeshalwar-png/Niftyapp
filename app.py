@@ -10,12 +10,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Gaussian 0.000001 Path)",
+    page_title="BTC 2-Year Kinematics Engine (Gaussian 2.0 Path)",
     layout="wide",
 )
-st.title("⚡ Bitcoin (BTC-USD) Ultra-Sensitive Gaussian Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) Gaussian 2.0 Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A, B (σ=0.000001), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** A, B (σ=2.0), C, D, E Matrix | 50:50 Split | IST Locked [Strict Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -32,9 +32,9 @@ st.sidebar.success(
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_causal_gaussian_filter(price_series, sigma=0.000001, window=15):
+def apply_causal_gaussian_filter(price_series, sigma=2.0, window=15):
     """
-    Calculates Gaussian Filter (B = Gaussian of 0.000001 of A) causally.
+    Calculates Gaussian Filter (B = Gaussian of 2.0 of A) causally.
     Uses trailing window to prevent forward-looking data leakage.
     """
     arr = np.asarray(price_series, dtype=float).flatten()
@@ -235,18 +235,18 @@ except Exception as e:
 
 
 # =====================================================================
-# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (σ = 0.000001)
+# ⚡ EXACT FORMULA KINEMATIC COMPUTATION (σ = 2.0)
 # =====================================================================
 # A = Close Normal
 df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
 
-# B = Gaussian of 0.000001 of A
-df["B_Gaussian_0.000001"] = apply_causal_gaussian_filter(
-    df["A_Close_Normal"].to_numpy(), sigma=0.000001
+# B = Gaussian of 2.0 of A
+df["B_Gaussian_2.0"] = apply_causal_gaussian_filter(
+    df["A_Close_Normal"].to_numpy(), sigma=2.0
 )
 
 # C = A - B
-df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Gaussian_0.000001"]
+df["C_Diff_Residual"] = df["A_Close_Normal"] - df["B_Gaussian_2.0"]
 
 # D = Hurst of value A
 df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
@@ -283,7 +283,7 @@ st.success(
 # =====================================================================
 clean_cols = [
     "A_Close_Normal",
-    "B_Gaussian_0.000001",
+    "B_Gaussian_2.0",
     "C_Diff_Residual",
     "D_Hurst_A",
     "E_Kinematic_Signal",
@@ -292,7 +292,7 @@ display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
     display_df[col] = (
-        np.asarray(df_predict[col], dtype=float).flatten().round(4)
+        np.asarray(df_predict[col], dtype=float).flatten().round(2)
     )
 
 display_df = display_df.iloc[::-1]
@@ -306,15 +306,15 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (Gaussian σ=1e-6)", f"${latest_candle['B_Gaussian_0.000001']:,.2f}")
-col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.4f}")
+col2.metric("B (Gaussian σ=2.0)", f"${latest_candle['B_Gaussian_2.0']:,.2f}")
+col3.metric("C (A - B)", f"{latest_candle['C_Diff_Residual']:.2f}")
 col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
-col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.4f}")
+col5.metric("🔥 E (C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 Ultra-Sensitive Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 Gaussian 2.0 Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -323,17 +323,17 @@ st.dataframe(
         "A_Close_Normal": st.column_config.NumberColumn(
             "A: Close Normal ($)", format="$%.2f"
         ),
-        "B_Gaussian_0.000001": st.column_config.NumberColumn(
-            "B: Gaussian 0.000001 ($)", format="$%.2f"
+        "B_Gaussian_2.0": st.column_config.NumberColumn(
+            "B: Gaussian 2.0 ($)", format="$%.2f"
         ),
         "C_Diff_Residual": st.column_config.NumberColumn(
-            "C: (A - B)", format="%.4f"
+            "C: (A - B)", format="%.2f"
         ),
         "D_Hurst_A": st.column_config.NumberColumn(
             "D: Hurst(A)", format="%.2f"
         ),
         "E_Kinematic_Signal": st.column_config.NumberColumn(
-            "🔥 E: (C * D)", format="%.4f"
+            "🔥 E: (C * D)", format="%.2f"
         ),
     },
     use_container_width=True,
