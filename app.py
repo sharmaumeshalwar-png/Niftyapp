@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics (Kalman 0.001 on C)",
-    layout="wide",
+    page_title="BTC 2-Year Kinematics Engine (Zero Leakage)", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) Kinematic Engine (Heavy Kalman 0.001 on C)")
+st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** A (Close), B (VIDYA + Kalman), C (Filtered C = Kalman(A - B) @ Gain=0.001), D, E Matrix | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** 2-Year Full History | Pure HAM Kinematics "
+    "Matrix | 50:50 Learn:Predict Split | IST Locked [Strict Zero Leakage & Continuous Warmup]"
 )
 
 # Sidebar Controls
@@ -24,68 +24,34 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:** CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
+    " CONNECTED"
 )
 
 
 # =====================================================================
-# 8-STEP VERIFICATION MATHEMATICAL ENGINES
+# MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-# STEP 2 & 3: Original VIDYA (Period=14, HistPeriod=30)
-def compute_vidya(data_array, period=14, hist_period=30):
-    s = pd.Series(data_array, dtype=float)
-
-    std_short = s.rolling(window=9, min_periods=1).std().fillna(0.0)
-    std_long = s.rolling(window=hist_period, min_periods=1).std().fillna(1e-5)
-
-    vi = (std_short / (std_long + 1e-10)).clip(upper=1.0).to_numpy()
-
-    alpha_base = 2.0 / (period + 1.0)
-    vidya = np.zeros(len(data_array), dtype=float)
-    vidya[0] = data_array[0]
-
-    for i in range(1, len(data_array)):
-        current_alpha = alpha_base * vi[i]
-        vidya[i] = (current_alpha * data_array[i]) + (
-            (1.0 - current_alpha) * vidya[i - 1]
-        )
-
-    return vidya
+def apply_kalman_filter_custom(
+    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
+):
+    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+    arr = np.asarray(data_array, dtype=float).flatten()
+    if len(arr) == 0:
+        return np.array([])
+    x, p = arr[0], initial_p
+    filtered_values = np.empty(len(arr))
+    for i, z in enumerate(arr):
+        p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values[i] = x
+    return filtered_values
 
 
-# STEP 4 & 6: Causal Kalman Filter Engine
-def apply_kalman_filter(input_array, kalman_gain=0.50):
-    """
-    Applies 1D Causal Kalman Filter with customizable process noise / gain.
-    """
-    n = len(input_array)
-    filtered = np.zeros(n, dtype=float)
-
-    if n == 0:
-        return filtered
-
-    x_hat = input_array[0]
-    p = 1.0
-    q = kalman_gain
-    r = 1.0 - kalman_gain
-
-    filtered[0] = x_hat
-
-    for t in range(1, n):
-        x_hat_minus = x_hat
-        p_minus = p + q
-
-        k_gain = p_minus / (p_minus + r)
-        x_hat = x_hat_minus + k_gain * (input_array[t] - x_hat_minus)
-        p = (1.0 - k_gain) * p_minus
-
-        filtered[t] = x_hat
-
-    return filtered
-
-
-# STEP 7: Vectorized Rolling Hurst Exponent (Window=30)
 def calculate_rolling_hurst_vectorized(price_series, window=30):
+    """Vectorized Trailing R/S Hurst Exponent (30-Window Strict Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
 
@@ -113,6 +79,31 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
         h_calculated, 0.0, 1.0
     )
     return hurst_values
+
+
+def apply_heikin_ashi(df_in):
+    """Calculates Heikin-Ashi candles sequentially without look-ahead bias."""
+    op = np.asarray(df_in["Open"], dtype=float).flatten()
+    hi = np.asarray(df_in["High"], dtype=float).flatten()
+    lo = np.asarray(df_in["Low"], dtype=float).flatten()
+    cl = np.asarray(df_in["Close"], dtype=float).flatten()
+
+    ha_close = (op + hi + lo + cl) / 4.0
+    ha_open = np.zeros(len(df_in))
+    ha_open[0] = (op[0] + cl[0]) / 2.0
+
+    for i in range(1, len(df_in)):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+
+    ha_high = np.maximum(hi, np.maximum(ha_open, ha_close))
+    ha_low = np.minimum(lo, np.minimum(ha_open, ha_close))
+
+    df_out = df_in.copy()
+    df_out["HA_Open"] = ha_open
+    df_out["HA_High"] = ha_high
+    df_out["HA_Low"] = ha_low
+    df_out["HA_Close"] = ha_close
+    return df_out
 
 
 # =====================================================================
@@ -236,19 +227,22 @@ def get_robust_2year_hourly():
         return df, "Coinbase Pro API (Fallback)"
 
     raise ValueError(
-        "Both primary and fallback endpoints failed to return sufficient candles."
+        "Both primary and fallback endpoints failed to return sufficient"
+        " candles."
     )
 
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Applying Heavy Kalman (0.001) to C..."):
+    with st.spinner(
+        "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
+    ):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
 
-        # Drop unclosed running candle
+        # 🔒 STRICT LEAKAGE PREVENTION: Drop unclosed running candle
         df = df.iloc[:-1]
 
         # Convert to IST
@@ -260,32 +254,47 @@ except Exception as e:
 
 
 # =====================================================================
-# MATRIX CALCULATIONS (STEP 1 TO STEP 7)
+# ⚡ FULL-LENGTH CONTINUOUS KINEMATICS
 # =====================================================================
-# Step 1: A = Close Normal
-df["A_Close_Normal"] = np.asarray(df["Close"], dtype=float).flatten()
+df = apply_heikin_ashi(df)
 
-# Step 2, 3, 4: B = Kalman(VIDYA 14) with Gain = 0.50
-vidya_raw = compute_vidya(df["A_Close_Normal"].to_numpy(), period=14, hist_period=30)
-df["B_Kalman_VIDYA"] = apply_kalman_filter(vidya_raw, kalman_gain=0.50)
-
-# Step 5: C_Raw = A - B
-c_raw = df["A_Close_Normal"] - df["B_Kalman_VIDYA"]
-
-# Step 6: C = Kalman_Filter(C_Raw, Gain=0.001)  <-- HEAVY DAMPENING
-df["C_Kalman_Filtered"] = apply_kalman_filter(c_raw.to_numpy(), kalman_gain=0.001)
-
-# Step 7: D = Hurst of A
-df["D_Hurst_A"] = calculate_rolling_hurst_vectorized(
-    df["A_Close_Normal"].to_numpy(), window=30
+# --- PATH A: NORMAL CANDLE KINEMATICS ---
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close_full, window=30
 )
 
-# Step 7: E = C (Heavy Kalman Filtered) * D
-df["E_Kinematic_Signal"] = df["C_Kalman_Filtered"] * df["D_Hurst_A"]
+kalman_base_normal_full = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_normal_full = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal_full,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+)
+
+# Base HAM Normal Signal
+df["HAM_Normal"] = momentum_normal_full * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# --- PATH B: HEIKIN-ASHI CANDLE KINEMATICS ---
+ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
+
+kalman_base_ha_full = apply_kalman_filter_custom(
+    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ha_full = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha_full, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df["HAM_HeikinAshi"] = momentum_ha_full * (df["Hurst_HA"].to_numpy() * 2.0)
+
+# --- NEW COLUMN: HAM DIFFERENCE (HAM Normal - HAM HA) ---
+df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
 
 # =====================================================================
-# STEP 8: 50:50 SPLIT & IST MATRIX DISPLAY
+# ⚡ 50:50 LEARN:PREDICT SPLIT
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)
@@ -293,10 +302,7 @@ split_idx = int(total_candles * 0.50)
 df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
-df_predict.dropna(
-    subset=["D_Hurst_A"],
-    inplace=True,
-)
+df_predict.dropna(subset=["Hurst_Normal", "Hurst_HA"], inplace=True)
 
 st.success(
     f"🟢 **Synced via {source_used}: {total_candles:,} Total Candles** | 🧠"
@@ -304,12 +310,18 @@ st.success(
     f" {len(df_predict):,} (IST Locked)"
 )
 
+
+# =====================================================================
+# 📋 MATRIX FORMATTING AND IST DISPLAY
+# =====================================================================
 clean_cols = [
-    "A_Close_Normal",
-    "B_Kalman_VIDYA",
-    "C_Kalman_Filtered",
-    "D_Hurst_A",
-    "E_Kinematic_Signal",
+    "Close",
+    "HA_Close",
+    "Hurst_Normal",
+    "Hurst_HA",
+    "HAM_Normal",
+    "HAM_HeikinAshi",
+    "HAM_Diff",
 ]
 display_df = pd.DataFrame(index=df_predict.index)
 
@@ -327,36 +339,39 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("A (Close Normal)", f"${latest_candle['A_Close_Normal']:,.2f}")
-col2.metric("B (VIDYA + Kalman)", f"${latest_candle['B_Kalman_VIDYA']:,.2f}")
-col3.metric("✨ C (Kalman 0.001)", f"{latest_candle['C_Kalman_Filtered']:.2f}")
-col4.metric("D (Hurst of A)", f"{latest_candle['D_Hurst_A']:.2f}")
-col5.metric("🔥 E (Filtered C * D)", f"{latest_candle['E_Kinematic_Signal']:.2f}")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric("📊 HAM Diff (Normal - HA)", f"{latest_candle['HAM_Diff']:.2f}")
 
 st.divider()
 
 st.subheader(
-    f"📋 Heavy Kalman Residual (0.001) Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 50:50 Clean Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
     display_df,
     column_config={
-        "A_Close_Normal": st.column_config.NumberColumn(
-            "A: Close Normal ($)", format="$%.2f"
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
         ),
-        "B_Kalman_VIDYA": st.column_config.NumberColumn(
-            "B: VIDYA + Kalman ($)", format="$%.2f"
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
         ),
-        "C_Kalman_Filtered": st.column_config.NumberColumn(
-            "✨ C: Kalman Filtered (0.001)", format="%.2f"
+        "Hurst_Normal": st.column_config.NumberColumn(
+            "Hurst (Normal)", format="%.2f"
         ),
-        "D_Hurst_A": st.column_config.NumberColumn(
-            "D: Hurst(A)", format="%.2f"
+        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
+        "HAM_Normal": st.column_config.NumberColumn(
+            "Base HAM Normal", format="%.2f"
         ),
-        "E_Kinematic_Signal": st.column_config.NumberColumn(
-            "🔥 E: (Filtered C * D)", format="%.2f"
+        "HAM_HeikinAshi": st.column_config.NumberColumn(
+            "HAM HA Signal", format="%.2f"
+        ),
+        "HAM_Diff": st.column_config.NumberColumn(
+            "📊 HAM Diff (Normal - HA)", format="%.2f"
         ),
     },
     use_container_width=True,
