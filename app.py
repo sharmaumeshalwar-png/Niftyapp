@@ -9,14 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 2-Year Kinematics Engine (Zero Leakage Multi-Path)",
+    page_title="BTC 2-Year Kinematics Engine (Dynamic Renko Lock)",
     layout="wide",
 )
 st.title("⚡ Bitcoin (BTC-USD) 2-Year Pure Kinematic Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 4-Path Structural Kinematics (Normal | HA"
-    " | Time-Locked Renko | Volume-Weighted) | 50:50 Split | IST Locked [Strict Zero"
-    " Leakage]"
+    "🎯 **1-Hour Timeframe Engine:** 4-Path Kinematics (Normal | HA | Dynamic ATR-Renko Step | Volume-Weighted) | 50:50 Split | IST Locked [Zero Leakage]"
 )
 
 # Sidebar Controls
@@ -26,18 +24,15 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:**"
-    " CONNECTED"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **Dual REST Stream:** CONNECTED"
 )
 
 
 # =====================================================================
 # MATHEMATICAL ENGINES (Strictly Causal / Zero Look-Ahead Bias)
 # =====================================================================
-def apply_kalman_filter_custom(
-    data_array, initial_p=50.0, q_val=0.001, r_val=0.1
-):
-    """Sequential single-pass Kalman Filter (No future smoothing / Zero Leakage)."""
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.001, r_val=0.1):
+    """Sequential single-pass Kalman Filter (Zero Leakage)."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -108,27 +103,37 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_time_locked_renko_causal(price_series, brick_size=150.0):
-    """Time-Locked Causal Renko Engine (0 Repainting / Locked to Hourly Time Index)."""
-    arr = np.asarray(price_series, dtype=float).flatten()
-    renko_closes = np.empty_like(arr)
-    if len(arr) == 0:
-        return renko_closes
-
-    current_brick = arr[0]
-
-    for i, p in enumerate(arr):
+def apply_atr_renko_step_engine(df_in, atr_period=14):
+    """
+    True Step-Discrete Dynamic ATR Renko Engine.
+    Filters micro-fluctuations into discrete ATR brick steps while keeping hourly index intact.
+    """
+    high = df_in["High"].to_numpy()
+    low = df_in["Low"].to_numpy()
+    close = df_in["Close"].to_numpy()
+    
+    # Calculate True Range & Trailing ATR (Zero Lookahead)
+    tr = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])))
+    tr = np.insert(tr, 0, high[0] - low[0])
+    atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().to_numpy()
+    
+    renko_closes = np.empty_like(close)
+    current_brick = close[0]
+    
+    for i in range(len(close)):
         if i == 0:
             renko_closes[i] = current_brick
             continue
-
-        diff = p - current_brick
+        
+        brick_size = max(atr[i], 50.0) # Adaptive minimum boundary
+        diff = close[i] - current_brick
+        
         if abs(diff) >= brick_size:
             num_bricks = int(diff / brick_size)
             current_brick = current_brick + (num_bricks * brick_size)
-
+            
         renko_closes[i] = current_brick
-
+        
     return renko_closes
 
 
@@ -253,16 +258,13 @@ def get_robust_2year_hourly():
         return df, "Coinbase Pro API (Fallback)"
 
     raise ValueError(
-        "Both primary and fallback endpoints failed to return sufficient"
-        " candles."
+        "Both primary and fallback endpoints failed to return sufficient candles."
     )
 
 
 # Fetch Data
 try:
-    with st.spinner(
-        "🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."
-    ):
+    with st.spinner("🔄 Fetching 2 Years of Hourly BTC Data (~17,500 Candles)..."):
         df, source_used = get_robust_2year_hourly()
 
         df.sort_index(inplace=True)
@@ -310,8 +312,8 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# --- PATH C: TIME-LOCKED RENKO KINEMATICS ($150 BRICK THRESHOLD) ---
-renko_close_full = apply_time_locked_renko_causal(normal_close_full, brick_size=150.0)
+# --- PATH C: DYNAMIC ATR-RENKO STEP KINEMATICS ---
+renko_close_full = apply_atr_renko_step_engine(df, atr_period=14)
 df["Renko_Close"] = renko_close_full
 df["Hurst_Renko"] = calculate_rolling_hurst_vectorized(renko_close_full, window=30)
 
@@ -402,7 +404,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM Heikin-Ashi", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("HAM Renko ($150)", f"{latest_candle['HAM_Renko']:.2f}")
+col4.metric("HAM Renko (ATR Step)", f"{latest_candle['HAM_Renko']:.2f}")
 col5.metric("HAM Vol-Weighted", f"{latest_candle['HAM_VW']:.2f}")
 
 st.divider()
@@ -414,36 +416,18 @@ st.subheader(
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn(
-            "Close Price ($)", format="$%.2f"
-        ),
-        "HA_Close": st.column_config.NumberColumn(
-            "HA Close ($)", format="$%.2f"
-        ),
-        "Renko_Close": st.column_config.NumberColumn(
-            "Renko Close ($)", format="$%.2f"
-        ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Norm)", format="%.2f"
-        ),
+        "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
+        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
+        "Renko_Close": st.column_config.NumberColumn("Renko Step ($)", format="$%.2f"),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Norm)", format="%.2f"),
         "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "Hurst_Renko": st.column_config.NumberColumn(
-            "Hurst (Renko)", format="%.2f"
-        ),
+        "Hurst_Renko": st.column_config.NumberColumn("Hurst (Renko)", format="%.2f"),
         "Hurst_VW": st.column_config.NumberColumn("Hurst (VW)", format="%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn(
-            "HAM Normal", format="%.2f"
-        ),
-        "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA", format="%.2f"
-        ),
-        "HAM_Renko": st.column_config.NumberColumn(
-            "HAM Renko", format="%.2f"
-        ),
+        "HAM_Normal": st.column_config.NumberColumn("HAM Normal", format="%.2f"),
+        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA", format="%.2f"),
+        "HAM_Renko": st.column_config.NumberColumn("HAM Renko", format="%.2f"),
         "HAM_VW": st.column_config.NumberColumn("HAM Vol-Weight", format="%.2f"),
-        "HAM_Diff": st.column_config.NumberColumn(
-            "📊 HAM Diff", format="%.2f"
-        ),
+        "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff", format="%.2f"),
     },
     use_container_width=True,
     height=600,
