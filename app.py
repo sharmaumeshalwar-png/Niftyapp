@@ -13,7 +13,8 @@ st.set_page_config(
 )
 st.title("⚡ Bitcoin (BTC-USD) Dynamic Peak/Trough Hysteresis Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine Lock (Peak-to-Trough Trapping)** | Zero Flickering IST Matrix"
+    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
+    " Lock (Peak-to-Trough Trapping)** | Zero Flickering IST Matrix"
 )
 
 # Sidebar Controls
@@ -23,16 +24,18 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n"
-    "🔒 **State Lock Engine:** ACTIVE\n\n"
-    "🎯 **Diff Kalman Q:** 0.0001"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **State Lock Engine:**"
+    " ACTIVE\n\n🎯 **Diff Kalman Q:** 0.0001"
 )
 
 
 # =====================================================================
 # MATHEMATICAL ENGINES & STATE MACHINE
 # =====================================================================
-def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.0005, r_val=0.2):
+def apply_kalman_filter_custom(
+    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
+):
+    """Zero-Leak Causal Continuous Kalman Filter (q_val=0.0001 for ultra-smooth noise reduction)"""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -288,7 +291,7 @@ try:
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop running candle
+        df = df.iloc[:-1]  # Drop running candle to eliminate repainting
         df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
@@ -331,14 +334,9 @@ df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 # Raw HAM Diff
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# Custom Kalman Filter applied on HAM Diff with q=0.0001
+# ZERO-LEAK KALMAN FILTER APPLIED ON HAM DIFF (q_val = 0.0001)
 df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
-)
-
-# TARGET COLUMN: HAM Normal minus HAM Diff Kalman
-df["HAM_Normal_Minus_DiffKalman"] = (
-    df["HAM_Normal"] - df["HAM_Diff_Kalman"]
 )
 
 # Apply Peak/Trough Hysteresis Lock using Smoothed HAM_Diff_Kalman
@@ -360,7 +358,6 @@ clean_cols = [
     "HAM_Normal",
     "HAM_HeikinAshi",
     "HAM_Diff_Kalman",
-    "HAM_Normal_Minus_DiffKalman",
     "HAM_Velocity",
     "HAM_Acceleration",
     "Flip_Status",
@@ -383,16 +380,12 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
-col5.metric(
-    "📉 HAM Normal - Diff Kalman",
-    f"{latest_candle['HAM_Normal_Minus_DiffKalman']:.2f}",
-)
-col6.metric("🎯 State Status", f"{latest_candle['Flip_Status']}")
+col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
 st.divider()
 
@@ -424,9 +417,6 @@ st.dataframe(
         ),
         "HAM_Diff_Kalman": st.column_config.NumberColumn(
             "📊 HAM Diff (Kalman)", format="%.2f"
-        ),
-        "HAM_Normal_Minus_DiffKalman": st.column_config.NumberColumn(
-            "📉 HAM Normal - Diff Kalman", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
             "⚡ Velocity (Δ1)", format="%.2f"
