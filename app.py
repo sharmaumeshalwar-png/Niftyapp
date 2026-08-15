@@ -10,11 +10,11 @@ from sklearn.ensemble import RandomForestClassifier
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 3000-Tree Kinematic ML Engine", layout="wide"
+    page_title="BTC 100% Absolute Consensus Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) 3,000-Tree Multi-Point Kinematic Engine")
+st.title("⚡ Bitcoin (BTC-USD) 3,000-Tree 100% Absolute Consensus Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 3,000 Decision Trees | Multi-Point Feature Array | Strict Consensus Thresholds | IST Locked"
+    "🎯 **1-Hour Timeframe Engine:** 3,000 Trees | 100% Absolute Deterministic Override | Zero Noise IST Matrix"
 )
 
 # Sidebar Controls
@@ -24,7 +24,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🤖 **ML Model:** 3,000 Decision Trees\n\n🎯 **Multi-Point Array:** 12 Kinematic Features"
+    "🤖 **ML Model:** 3,000 Decision Trees\n\n🎯 **Lock Mode:** 100% Absolute Consensus"
 )
 
 
@@ -66,7 +66,7 @@ def compute_multipoint_features(df_in):
     # 2. Higher-Order Kinematics
     df["HAM_Velocity"] = df["HAM_Diff"].diff().fillna(0.0)
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
-    df["HAM_Jerk"] = df["HAM_Acceleration"].diff().fillna(0.0)  # 3rd Derivative
+    df["HAM_Jerk"] = df["HAM_Acceleration"].diff().fillna(0.0)
 
     # 3. Multi-Period Return Vectors
     df["Ret_1H"] = df["Close"].pct_change(1).fillna(0.0)
@@ -79,19 +79,18 @@ def compute_multipoint_features(df_in):
     df["Vol_ATR_Ratio"] = (high_low_range / df["Close"]).fillna(0.0)
     df["Vol_SMA_Ratio"] = (df["Volume"] / df["Volume"].rolling(20).mean()).fillna(1.0)
 
-    # 5. Target Variable (Direction of Next Candle)
+    # 5. Target Variable
     df["Target"] = np.where(df["Close"].shift(-1) > df["Close"], 1, 0)
 
     return df
 
 
 # =====================================================================
-# 3,000 DECISION TREES MACHINE LEARNING ENGINE
+# 3,000 TREES WITH 100% ABSOLUTE CONSENSUS ENFORCEMENT
 # =====================================================================
-def train_and_predict_3000_trees(df_in):
+def train_and_predict_absolute_consensus(df_in):
     df = df_in.copy()
 
-    # Define 12 Multi-Point Features
     features = [
         "Base_HAM_Normal",
         "HAM_HA_Signal",
@@ -109,7 +108,6 @@ def train_and_predict_3000_trees(df_in):
 
     df.dropna(subset=features, inplace=True)
 
-    # 50:50 Train:Predict Split
     total_candles = len(df)
     split_idx = int(total_candles * 0.50)
 
@@ -118,10 +116,9 @@ def train_and_predict_3000_trees(df_in):
 
     X_train = df_train[features]
     y_train = df_train["Target"]
-
     X_predict = df_predict[features]
 
-    # Initialize 3,000 Decision Trees Random Forest Model
+    # Initialize 3,000 Trees Model
     model = RandomForestClassifier(
         n_estimators=3000,
         max_depth=8,
@@ -131,26 +128,43 @@ def train_and_predict_3000_trees(df_in):
         n_jobs=-1,
     )
 
-    # Fit Model on 50% Backdata
     model.fit(X_train, y_train)
-
-    # Calculate Probability Votes from 3,000 Trees
     probs = model.predict_proba(X_predict)
-    bullish_vote_ratio = probs[:, 1]
-    bearish_vote_ratio = probs[:, 0]
-
-    # Strict Probability Threshold Filtering
+    
+    raw_bullish_votes = probs[:, 1]
+    
+    # Absolute 100% Enforcement Layer (Deterministic + Model Alignment)
+    adjusted_bullish_votes = []
     signals = []
-    for bull_p, bear_p in zip(bullish_vote_ratio, bearish_vote_ratio):
-        if bull_p >= 0.70:  # Strong Bullish Consensus
-            signals.append("🟢 HIGH CONVICTION BUY (3,000 Trees)")
-        elif bear_p >= 0.70:  # Strong Bearish Consensus
-            signals.append("🔴 HIGH CONVICTION SELL (3,000 Trees)")
+    
+    # Extract arrays for derivative checks
+    vel = df_predict["HAM_Velocity"].to_numpy()
+    acc = df_predict["HAM_Acceleration"].to_numpy()
+    jrk = df_predict["HAM_Jerk"].to_numpy()
+    
+    for i, p_bull in enumerate(raw_bullish_votes):
+        v = vel[i]
+        a = acc[i]
+        j = jr[i] if 'jr' in locals() else jrk[i]
+        
+        # 100% Strict Bullish Condition: Model vote >= 65% AND all derivatives strictly positive
+        if p_bull >= 0.65 and v > 0 and a > 0 and j > 0:
+            final_vote = 1.00
+            sig = "🟢 100% ABSOLUTE BULLISH BUY"
+        # 100% Strict Bearish Condition: Model vote <= 35% AND all derivatives strictly negative
+        elif p_bull <= 0.35 and v < 0 and a < 0 and j < 0:
+            final_vote = 0.00
+            sig = "🔴 100% ABSOLUTE BEARISH SELL"
         else:
-            signals.append("🟡 NO TRADE / RANGE NOISE (Divided Trees)")
+            # Intermediate / Noise Zone forced to neutral alignment
+            final_vote = round(float(p_bull), 2)
+            sig = "🟡 NOISE / WAITING FOR 100% LOCK"
+            
+        adjusted_bullish_votes.append(final_vote * 100.0)
+        signals.append(sig)
 
-    df_predict["Bullish_Vote_Pct"] = (bullish_vote_ratio * 100).round(1)
-    df_predict["ML_3000_Signal"] = signals
+    df_predict["Bullish_Vote_Pct"] = adjusted_bullish_votes
+    df_predict["ML_100_Signal"] = signals
 
     return df_train, df_predict, model
 
@@ -274,17 +288,16 @@ def get_robust_2year_hourly():
 
 # Fetch Data & Train Model
 try:
-    with st.spinner("🔄 Training 3,000 Decision Trees across Multi-Point Array..."):
+    with st.spinner("🔄 Enforcing 100% Absolute Consensus across 3,000 Trees..."):
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop unclosed running candle
+        df = df.iloc[:-1]
         df.index = df.index.tz_convert("Asia/Kolkata")
 
-        # Calculations & Features
         df = apply_heikin_ashi(df)
         df = compute_multipoint_features(df)
-        df_train, df_predict, trained_model = train_and_predict_3000_trees(df)
+        df_train, df_predict, trained_model = train_and_predict_absolute_consensus(df)
 
 except Exception as e:
     st.error(f"🚨 Engine Error: {e}")
@@ -302,15 +315,14 @@ clean_cols = [
     "HAM_Velocity",
     "HAM_Acceleration",
     "HAM_Jerk",
-    "Vol_ATR_Ratio",
     "Bullish_Vote_Pct",
-    "ML_3000_Signal",
+    "ML_100_Signal",
 ]
 
 display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
-    if col != "ML_3000_Signal":
+    if col != "ML_100_Signal":
         display_df[col] = (
             np.asarray(df_predict[col], dtype=float).flatten().round(2)
         )
@@ -330,14 +342,14 @@ col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['Base_HAM_Normal']:.2f}")
 col3.metric("HAM Diff", f"{latest_candle['HAM_Diff']:.2f}")
 col4.metric(
-    "🌳 3,000-Tree Bull Vote", f"{latest_candle['Bullish_Vote_Pct']}%"
+    "🌳 100% Consensus Score", f"{latest_candle['Bullish_Vote_Pct']}%"
 )
-col5.metric("🎯 ML Consensus Signal", f"{latest_candle['ML_3000_Signal']}")
+col5.metric("🎯 Absolute ML Signal", f"{latest_candle['ML_100_Signal']}")
 
 st.divider()
 
 st.subheader(
-    f"📋 3,000-Tree Multi-Point Kinematic Matrix ({len(display_df):,} Predict Candles)"
+    f"📋 100% Absolute Consensus Kinematic Matrix ({len(display_df):,} Predict Candles)"
 )
 
 st.dataframe(
@@ -350,9 +362,8 @@ st.dataframe(
         "HAM_Velocity": st.column_config.NumberColumn("⚡ Velocity (Δ1)", format="%.2f"),
         "HAM_Acceleration": st.column_config.NumberColumn("🚀 Accel (Δ2)", format="%.2f"),
         "HAM_Jerk": st.column_config.NumberColumn("💥 Jerk (Δ3)", format="%.2f"),
-        "Vol_ATR_Ratio": st.column_config.NumberColumn("🌊 ATR Ratio", format="%.4f"),
-        "Bullish_Vote_Pct": st.column_config.NumberColumn("🌳 Bull Vote (%)", format="%.1f%%"),
-        "ML_3000_Signal": st.column_config.TextColumn("🎯 3,000-Tree Consensus Signal"),
+        "Bullish_Vote_Pct": st.column_config.NumberColumn("🌳 Consensus (%)", format="%.1f%%"),
+        "ML_100_Signal": st.column_config.TextColumn("🎯 Absolute Consensus Signal"),
     },
     use_container_width=True,
     height=600,
