@@ -23,7 +23,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **State Lock Engine:** ACTIVE"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **State Lock Engine:** ACTIVE\n\n🎯 **Diff Kalman Q:** 0.0001"
 )
 
 
@@ -54,7 +54,9 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     if len(log_returns) < window:
         return hurst_values
 
-    windows = np.lib.stride_tricks.sliding_window_view(log_returns, window_shape=window)
+    windows = np.lib.stride_tricks.sliding_window_view(
+        log_returns, window_shape=window
+    )
     means = np.mean(windows, axis=1, keepdims=True)
     cum_dev = np.cumsum(windows - means, axis=1)
 
@@ -99,36 +101,40 @@ def apply_heikin_ashi(df_in):
 # STEP 7: PEAK/TROUGH HYSTERESIS STATE MACHINE (NO-FLICKER ENGINE)
 def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
-    
-    # Calculate Velocity & Acceleration
-    df["HAM_Velocity"] = df["HAM_Diff"].diff().fillna(0.0)
+
+    # Calculate Velocity & Acceleration using Smoothed HAM_Diff_Kalman
+    df["HAM_Velocity"] = df["HAM_Diff_Kalman"].diff().fillna(0.0)
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
-    
-    diff_vals = df["HAM_Diff"].to_numpy()
+
+    diff_vals = df["HAM_Diff_Kalman"].to_numpy()
     states = []
-    
+
     # State tracking variables
     current_state = "🟡 INITIALIZING"
     peak_val = diff_vals[0]
     trough_val = diff_vals[0]
-    
+
     for i in range(len(diff_vals)):
         val = diff_vals[i]
-        
+
         if i == 0:
             states.append("🟡 INITIALIZING")
             continue
-            
+
         # 1. Update Dynamic Peak & Trough Memory
         if val > peak_val:
             peak_val = val
         if val < trough_val:
             trough_val = val
-            
+
         # Dynamic Threshold Range
-        peak_drop_trigger = peak_val - (abs(peak_val) * reversal_threshold_pct + 1.0)
-        trough_rise_trigger = trough_val + (abs(trough_val) * reversal_threshold_pct + 1.0)
-        
+        peak_drop_trigger = peak_val - (
+            abs(peak_val) * reversal_threshold_pct + 1.0
+        )
+        trough_rise_trigger = trough_val + (
+            abs(trough_val) * reversal_threshold_pct + 1.0
+        )
+
         # 2. State Transition Logic
         if current_state in ["🟡 INITIALIZING", "🟢 STRONG BULLISH TREND"]:
             # Drop from peak check -> Lock into Bearish
@@ -137,7 +143,7 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
                 trough_val = val  # Reset trough tracker for new down-cycle
             else:
                 current_state = "🟢 STRONG BULLISH TREND"
-                
+
         elif current_state == "🔴 STRONG BEARISH TREND (Rally Stopped)":
             # Surge from bottom check -> Lock into Bullish
             if val > trough_rise_trigger:
@@ -145,9 +151,9 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
                 peak_val = val  # Reset peak tracker for new up-cycle
             else:
                 current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
-                
+
         states.append(current_state)
-        
+
     df["Flip_Status"] = states
     return df
 
@@ -163,8 +169,15 @@ def fetch_binance_data(start_ts, end_ts):
     headers = {"User-Agent": "Mozilla/5.0"}
 
     while current_start < end_ts:
-        params = {"symbol": "BTCUSDT", "interval": "1h", "startTime": current_start, "limit": 1000}
-        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
+        params = {
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "startTime": current_start,
+            "limit": 1000,
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
 
         if not isinstance(res, list) or len(res) == 0:
             break
@@ -179,13 +192,29 @@ def fetch_binance_data(start_ts, end_ts):
     if len(all_candles) < 2000:
         return None
 
-    cols = ["OpenTime", "Open", "High", "Low", "Close", "Volume", "CloseTime", "QuoteVolume", "Trades", "TakerBase", "TakerQuote", "Ignore"]
+    cols = [
+        "OpenTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "CloseTime",
+        "QuoteVolume",
+        "Trades",
+        "TakerBase",
+        "TakerQuote",
+        "Ignore",
+    ]
     df_raw = pd.DataFrame(all_candles, columns=cols)
     num_cols = ["Open", "High", "Low", "Close", "Volume"]
     df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(df_raw["OpenTime"], unit="ms", utc=True)
+    df_raw["Timestamp"] = pd.to_datetime(
+        df_raw["OpenTime"], unit="ms", utc=True
+    )
     df_raw.set_index("Timestamp", inplace=True)
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
 
 @st.cache_data(ttl=3600)
 def fetch_coinbase_data(start_dt, now_dt):
@@ -196,8 +225,14 @@ def fetch_coinbase_data(start_dt, now_dt):
 
     while current_end > start_dt:
         current_start = max(start_dt, current_end - timedelta(hours=300))
-        params = {"granularity": 3600, "start": current_start.isoformat(), "end": current_end.isoformat()}
-        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
+        params = {
+            "granularity": 3600,
+            "start": current_start.isoformat(),
+            "end": current_end.isoformat(),
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
 
         if isinstance(res, list) and len(res) > 0:
             all_candles.extend(res)
@@ -219,12 +254,15 @@ def fetch_coinbase_data(start_dt, now_dt):
     df_raw.sort_index(ascending=True, inplace=True)
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
+
 def get_robust_2year_hourly():
     now = datetime.now(timezone.utc)
     start_dt = now - timedelta(days=730)
 
     try:
-        df = fetch_binance_data(int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000))
+        df = fetch_binance_data(
+            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
+        )
         if df is not None and len(df) >= 5000:
             return df, "Binance REST API"
     except Exception:
@@ -234,16 +272,21 @@ def get_robust_2year_hourly():
     if df is not None and len(df) >= 2000:
         return df, "Coinbase Pro API (Fallback)"
 
-    raise ValueError("Both primary and fallback endpoints failed to return sufficient candles.")
+    raise ValueError(
+        "Both primary and fallback endpoints failed to return sufficient"
+        " candles."
+    )
 
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Applying Dynamic State Lock Engine..."):
+    with st.spinner(
+        "🔄 Fetching Data & Applying Dynamic State Lock Engine..."
+    ):
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1] # Drop running candle
+        df = df.iloc[:-1]  # Drop running candle
         df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
@@ -258,22 +301,40 @@ df = apply_heikin_ashi(df)
 
 # Normal Path
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(normal_close_full, window=30)
-kalman_base_normal = apply_kalman_filter_custom(normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
-momentum_normal = apply_kalman_filter_custom(normal_close_full - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1)
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close_full, window=30
+)
+kalman_base_normal = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_normal = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+)
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-kalman_base_ha = apply_kalman_filter_custom(ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
-momentum_ha = apply_kalman_filter_custom(ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
+kalman_base_ha = apply_kalman_filter_custom(
+    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_ha = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
+)
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# HAM Diff
-df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+# Raw HAM Diff
+df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 
-# Apply Peak/Trough Hysteresis Lock (20% dynamic reversal threshold)
+# AAPKI REQUIREMENT: Custom Kalman Filter applied on HAM Diff with q=0.0001
+df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
+    df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
+)
+
+# Apply Peak/Trough Hysteresis Lock using Smoothed HAM_Diff_Kalman
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
 
@@ -291,7 +352,7 @@ clean_cols = [
     "Hurst_HA",
     "HAM_Normal",
     "HAM_HeikinAshi",
-    "HAM_Diff",
+    "HAM_Diff_Kalman",
     "HAM_Velocity",
     "HAM_Acceleration",
     "Flip_Status",
@@ -300,7 +361,9 @@ display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
     if col != "Flip_Status":
-        display_df[col] = np.asarray(df_predict[col], dtype=float).flatten().round(2)
+        display_df[col] = (
+            np.asarray(df_predict[col], dtype=float).flatten().round(2)
+        )
     else:
         display_df[col] = df_predict[col]
 
@@ -316,25 +379,46 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
-col4.metric("📊 HAM Diff", f"{latest_candle['HAM_Diff']:.2f}")
+col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
 st.divider()
 
-st.subheader(f"📋 Hysteresis Locked Kinematic Matrix ({len(display_df):,} Predict Candles)")
+st.subheader(
+    f"📋 Hysteresis Locked Kinematic Matrix ({len(display_df):,} Predict"
+    " Candles)"
+)
 
 st.dataframe(
     display_df,
     column_config={
-        "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
-        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Normal)", format="%.2f"),
-        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
-        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
-        "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff", format="%.2f"),
-        "HAM_Velocity": st.column_config.NumberColumn("⚡ Velocity (Δ1)", format="%.2f"),
-        "HAM_Acceleration": st.column_config.NumberColumn("🚀 Acceleration (Δ2)", format="%.2f"),
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
+        ),
+        "HA_Close": st.column_config.NumberColumn(
+            "HA Close ($)", format="$%.2f"
+        ),
+        "Hurst_Normal": st.column_config.NumberColumn(
+            "Hurst (Normal)", format="%.2f"
+        ),
+        "Hurst_HA": st.column_config.NumberColumn(
+            "Hurst (HA)", format="%.2f"
+        ),
+        "HAM_Normal": st.column_config.NumberColumn(
+            "Base HAM Normal", format="%.2f"
+        ),
+        "HAM_HeikinAshi": st.column_config.NumberColumn(
+            "HAM HA Signal", format="%.2f"
+        ),
+        "HAM_Diff_Kalman": st.column_config.NumberColumn(
+            "📊 HAM Diff (Kalman)", format="%.2f"
+        ),
+        "HAM_Velocity": st.column_config.NumberColumn(
+            "⚡ Velocity (Δ1)", format="%.2f"
+        ),
+        "HAM_Acceleration": st.column_config.NumberColumn(
+            "🚀 Acceleration (Δ2)", format="%.2f"
+        ),
         "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Trend Lock"),
     },
     use_container_width=True,
