@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics State-Machine Engine", layout="wide"
+    page_title="BTC Kinematics State-Machine & POC Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) Dynamic Peak/Trough Hysteresis Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kinematics & HAM POC Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock (Peak-to-Trough Trapping)** | Zero Flickering IST Matrix"
+    " Lock** | **Normal HAM Volume Profile & POC Analysis**"
 )
 
 # Sidebar Controls
@@ -24,13 +24,15 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **State Lock Engine:**"
-    " ACTIVE\n\n🎯 **Diff Kalman Q:** 0.0001"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n"
+    "🔒 **State Lock Engine:** ACTIVE\n\n"
+    "🎯 **Diff Kalman Q:** 0.0001\n\n"
+    "📊 **POC Bins:** 100 Bins (68% Value Area)"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & STATE MACHINE
+# MATHEMATICAL ENGINES, STATE MACHINE & POC
 # =====================================================================
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
@@ -103,18 +105,14 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-# STEP 7: PEAK/TROUGH HYSTERESIS STATE MACHINE (NO-FLICKER ENGINE)
 def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
-
-    # Calculate Velocity & Acceleration using Smoothed HAM_Diff_Kalman
     df["HAM_Velocity"] = df["HAM_Diff_Kalman"].diff().fillna(0.0)
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
     diff_vals = df["HAM_Diff_Kalman"].to_numpy()
     states = []
 
-    # State tracking variables
     current_state = "🟡 INITIALIZING"
     peak_val = diff_vals[0]
     trough_val = diff_vals[0]
@@ -126,13 +124,11 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
             states.append("🟡 INITIALIZING")
             continue
 
-        # 1. Update Dynamic Peak & Trough Memory
         if val > peak_val:
             peak_val = val
         if val < trough_val:
             trough_val = val
 
-        # Dynamic Threshold Range
         peak_drop_trigger = peak_val - (
             abs(peak_val) * reversal_threshold_pct + 1.0
         )
@@ -140,20 +136,17 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
             abs(trough_val) * reversal_threshold_pct + 1.0
         )
 
-        # 2. State Transition Logic
         if current_state in ["🟡 INITIALIZING", "🟢 STRONG BULLISH TREND"]:
-            # Drop from peak check -> Lock into Bearish
             if val < peak_drop_trigger:
                 current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
-                trough_val = val  # Reset trough tracker for new down-cycle
+                trough_val = val
             else:
                 current_state = "🟢 STRONG BULLISH TREND"
 
         elif current_state == "🔴 STRONG BEARISH TREND (Rally Stopped)":
-            # Surge from bottom check -> Lock into Bullish
             if val > trough_rise_trigger:
                 current_state = "🟢 STRONG BULLISH TREND"
-                peak_val = val  # Reset peak tracker for new up-cycle
+                peak_val = val
             else:
                 current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
 
@@ -161,6 +154,56 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
 
     df["Flip_Status"] = states
     return df
+
+
+def calculate_ham_poc(ham_series, num_bins=100, value_area_pct=0.68):
+    """Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL) for Normal HAM distribution."""
+    arr = np.asarray(ham_series.dropna(), dtype=float)
+
+    if len(arr) == 0:
+        return {"POC": 0.0, "VAH": 0.0, "VAL": 0.0, "Profile": None}
+
+    counts, bin_edges = np.histogram(arr, bins=num_bins)
+
+    max_bin_idx = np.argmax(counts)
+    poc_val = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2.0
+
+    total_count = np.sum(counts)
+    target_count = total_count * value_area_pct
+
+    current_count = counts[max_bin_idx]
+    left_idx = max_bin_idx
+    right_idx = max_bin_idx
+
+    while current_count < target_count and (
+        left_idx > 0 or right_idx < len(counts) - 1
+    ):
+        left_val = counts[left_idx - 1] if left_idx > 0 else -1
+        right_val = counts[right_idx + 1] if right_idx < len(counts) - 1 else -1
+
+        if left_val >= right_val and left_idx > 0:
+            left_idx -= 1
+            current_count += counts[left_idx]
+        elif right_idx < len(counts) - 1:
+            right_idx += 1
+            current_count += counts[right_idx]
+        else:
+            break
+
+    val_low = bin_edges[left_idx]
+    val_high = bin_edges[right_idx + 1]
+
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    profile_df = pd.DataFrame(
+        {"HAM_Level": bin_centers, "Volume_Count": counts}
+    )
+
+    return {
+        "POC": round(poc_val, 2),
+        "VAH": round(val_high, 2),
+        "VAL": round(val_low, 2),
+        "Profile": profile_df,
+    }
 
 
 # =====================================================================
@@ -285,13 +328,11 @@ def get_robust_2year_hourly():
 
 # Fetch Data
 try:
-    with st.spinner(
-        "🔄 Fetching Data & Applying Dynamic State Lock Engine..."
-    ):
+    with st.spinner("🔄 Fetching Data & Computing Kinematics Engine..."):
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop running candle to eliminate repainting
+        df = df.iloc[:-1]  # Drop unclosed running candle
         df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
@@ -300,7 +341,7 @@ except Exception as e:
 
 
 # =====================================================================
-# FULL CONTINUOUS KINEMATICS & STATE MACHINE
+# FULL KINEMATICS & POC CALCULATION
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -331,20 +372,22 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# Raw HAM Diff
+# Raw HAM Diff & Filtered Diff (q_val = 0.0001)
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-
-# ZERO-LEAK KALMAN FILTER APPLIED ON HAM DIFF (q_val = 0.0001)
 df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 
-# Apply Peak/Trough Hysteresis Lock using Smoothed HAM_Diff_Kalman
+# Apply State Machine
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
+# HAM Normal POC Analysis
+poc_results = calculate_ham_poc(
+    df["HAM_Normal"], num_bins=100, value_area_pct=0.68
+)
 
 # =====================================================================
-# DISPLAY MATRIX (IST)
+# DISPLAY MATRIX & METRICS
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)
@@ -380,6 +423,7 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
+# Metrics Display
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
@@ -387,13 +431,39 @@ col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
+# HAM POC Metrics
+st.divider()
+st.subheader("🎯 **Normal HAM Volume Profile & POC Metrics**")
+
+col_poc1, col_poc2, col_poc3 = st.columns(3)
+col_poc1.metric("📍 Normal HAM POC", f"{poc_results['POC']}")
+col_poc2.metric("⬆️ Value Area High (VAH)", f"{poc_results['VAH']}")
+col_poc3.metric("⬇️ Value Area Low (VAL)", f"{poc_results['VAL']}")
+
+latest_ham_val = latest_candle["HAM_Normal"]
+if latest_ham_val > poc_results["VAH"]:
+    st.info(
+        f"🔥 **Current HAM ({latest_ham_val:.2f}) Above VAH:** Strong Bullish"
+        " Expansion Zone."
+    )
+elif latest_ham_val < poc_results["VAL"]:
+    st.warning(
+        f"❄️ **Current HAM ({latest_ham_val:.2f}) Below VAL:** Strong Bearish"
+        " Expansion Zone."
+    )
+else:
+    st.success(
+        f"⚖️ **Current HAM ({latest_ham_val:.2f}) Inside Value Area:** Neutral"
+        " / Value Zone Balance."
+    )
+
 st.divider()
 
+# Interactive Data Frame
 st.subheader(
     f"📋 Hysteresis Locked Kinematic Matrix ({len(display_df):,} Predict"
     " Candles)"
 )
-
 st.dataframe(
     display_df,
     column_config={
