@@ -4,17 +4,16 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-from sklearn.ensemble import RandomForestClassifier
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC 100% Absolute Consensus Engine", layout="wide"
+    page_title="BTC Kinematics State-Machine Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) 3,000-Tree 100% Absolute Consensus Engine")
+st.title("⚡ Bitcoin (BTC-USD) Dynamic Peak/Trough Hysteresis Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** 3,000 Trees | 100% Absolute Deterministic Override | Zero Noise IST Matrix"
+    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine Lock (Peak-to-Trough Trapping)** | Zero Flickering IST Matrix"
 )
 
 # Sidebar Controls
@@ -24,13 +23,55 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🤖 **ML Model:** 3,000 Decision Trees\n\n🎯 **Lock Mode:** 100% Absolute Consensus"
+    "🛡️ **Leak Protection:** ACTIVE (Strict Causal)\n\n🔒 **State Lock Engine:** ACTIVE"
 )
 
 
 # =====================================================================
-# MATHEMATICAL & MULTI-POINT FEATURE ENGINES
+# MATHEMATICAL ENGINES & STATE MACHINE
 # =====================================================================
+def apply_kalman_filter_custom(data_array, initial_p=50.0, q_val=0.0005, r_val=0.2):
+    arr = np.asarray(data_array, dtype=float).flatten()
+    if len(arr) == 0:
+        return np.array([])
+    x, p = arr[0], initial_p
+    filtered_values = np.empty(len(arr))
+    for i, z in enumerate(arr):
+        p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values[i] = x
+    return filtered_values
+
+
+def calculate_rolling_hurst_vectorized(price_series, window=30):
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+    log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+    hurst_values = np.full(len(arr), 0.5)
+
+    if len(log_returns) < window:
+        return hurst_values
+
+    windows = np.lib.stride_tricks.sliding_window_view(log_returns, window_shape=window)
+    means = np.mean(windows, axis=1, keepdims=True)
+    cum_dev = np.cumsum(windows - means, axis=1)
+
+    r_val = np.ptp(cum_dev, axis=1)
+    s_val = np.std(windows, axis=1, ddof=1) + 1e-10
+    rs_ratio = r_val / s_val
+
+    valid_mask = rs_ratio > 0
+    h_calculated = np.full(len(rs_ratio), 0.5)
+    h_calculated[valid_mask] = np.log(rs_ratio[valid_mask]) / np.log(window)
+
+    hurst_values[window - 1 : window - 1 + len(h_calculated)] = np.clip(
+        h_calculated, 0.0, 1.0
+    )
+    return hurst_values
+
+
 def apply_heikin_ashi(df_in):
     op = np.asarray(df_in["Open"], dtype=float).flatten()
     hi = np.asarray(df_in["High"], dtype=float).flatten()
@@ -55,118 +96,60 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def compute_multipoint_features(df_in):
+# STEP 7: PEAK/TROUGH HYSTERESIS STATE MACHINE (NO-FLICKER ENGINE)
+def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
-
-    # 1. Base HAM & HA Calculations
-    df["Base_HAM_Normal"] = df["Close"].diff(14).ewm(span=9).mean().fillna(0.0)
-    df["HAM_HA_Signal"] = df["HA_Close"].diff(14).ewm(span=14).mean().fillna(0.0)
-    df["HAM_Diff"] = df["Base_HAM_Normal"] - df["HAM_HA_Signal"]
-
-    # 2. Higher-Order Kinematics
+    
+    # Calculate Velocity & Acceleration
     df["HAM_Velocity"] = df["HAM_Diff"].diff().fillna(0.0)
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
-    df["HAM_Jerk"] = df["HAM_Acceleration"].diff().fillna(0.0)
-
-    # 3. Multi-Period Return Vectors
-    df["Ret_1H"] = df["Close"].pct_change(1).fillna(0.0)
-    df["Ret_3H"] = df["Close"].pct_change(3).fillna(0.0)
-    df["Ret_6H"] = df["Close"].pct_change(6).fillna(0.0)
-    df["Ret_12H"] = df["Close"].pct_change(12).fillna(0.0)
-
-    # 4. Volatility & Candle Dynamics
-    high_low_range = df["High"] - df["Low"]
-    df["Vol_ATR_Ratio"] = (high_low_range / df["Close"]).fillna(0.0)
-    df["Vol_SMA_Ratio"] = (df["Volume"] / df["Volume"].rolling(20).mean()).fillna(1.0)
-
-    # 5. Target Variable
-    df["Target"] = np.where(df["Close"].shift(-1) > df["Close"], 1, 0)
-
-    return df
-
-
-# =====================================================================
-# 3,000 TREES WITH 100% ABSOLUTE CONSENSUS ENFORCEMENT
-# =====================================================================
-def train_and_predict_absolute_consensus(df_in):
-    df = df_in.copy()
-
-    features = [
-        "Base_HAM_Normal",
-        "HAM_HA_Signal",
-        "HAM_Diff",
-        "HAM_Velocity",
-        "HAM_Acceleration",
-        "HAM_Jerk",
-        "Ret_1H",
-        "Ret_3H",
-        "Ret_6H",
-        "Ret_12H",
-        "Vol_ATR_Ratio",
-        "Vol_SMA_Ratio",
-    ]
-
-    df.dropna(subset=features, inplace=True)
-
-    total_candles = len(df)
-    split_idx = int(total_candles * 0.50)
-
-    df_train = df.iloc[:split_idx].copy()
-    df_predict = df.iloc[split_idx:].copy()
-
-    X_train = df_train[features]
-    y_train = df_train["Target"]
-    X_predict = df_predict[features]
-
-    # Initialize 3,000 Trees Model
-    model = RandomForestClassifier(
-        n_estimators=3000,
-        max_depth=8,
-        min_samples_split=15,
-        min_samples_leaf=5,
-        random_state=42,
-        n_jobs=-1,
-    )
-
-    model.fit(X_train, y_train)
-    probs = model.predict_proba(X_predict)
     
-    raw_bullish_votes = probs[:, 1]
+    diff_vals = df["HAM_Diff"].to_numpy()
+    states = []
     
-    # Absolute 100% Enforcement Layer (Deterministic + Model Alignment)
-    adjusted_bullish_votes = []
-    signals = []
+    # State tracking variables
+    current_state = "🟡 INITIALIZING"
+    peak_val = diff_vals[0]
+    trough_val = diff_vals[0]
     
-    # Extract arrays for derivative checks
-    vel = df_predict["HAM_Velocity"].to_numpy()
-    acc = df_predict["HAM_Acceleration"].to_numpy()
-    jrk = df_predict["HAM_Jerk"].to_numpy()
-    
-    for i, p_bull in enumerate(raw_bullish_votes):
-        v = vel[i]
-        a = acc[i]
-        j = jr[i] if 'jr' in locals() else jrk[i]
+    for i in range(len(diff_vals)):
+        val = diff_vals[i]
         
-        # 100% Strict Bullish Condition: Model vote >= 65% AND all derivatives strictly positive
-        if p_bull >= 0.65 and v > 0 and a > 0 and j > 0:
-            final_vote = 1.00
-            sig = "🟢 100% ABSOLUTE BULLISH BUY"
-        # 100% Strict Bearish Condition: Model vote <= 35% AND all derivatives strictly negative
-        elif p_bull <= 0.35 and v < 0 and a < 0 and j < 0:
-            final_vote = 0.00
-            sig = "🔴 100% ABSOLUTE BEARISH SELL"
-        else:
-            # Intermediate / Noise Zone forced to neutral alignment
-            final_vote = round(float(p_bull), 2)
-            sig = "🟡 NOISE / WAITING FOR 100% LOCK"
+        if i == 0:
+            states.append("🟡 INITIALIZING")
+            continue
             
-        adjusted_bullish_votes.append(final_vote * 100.0)
-        signals.append(sig)
-
-    df_predict["Bullish_Vote_Pct"] = adjusted_bullish_votes
-    df_predict["ML_100_Signal"] = signals
-
-    return df_train, df_predict, model
+        # 1. Update Dynamic Peak & Trough Memory
+        if val > peak_val:
+            peak_val = val
+        if val < trough_val:
+            trough_val = val
+            
+        # Dynamic Threshold Range
+        peak_drop_trigger = peak_val - (abs(peak_val) * reversal_threshold_pct + 1.0)
+        trough_rise_trigger = trough_val + (abs(trough_val) * reversal_threshold_pct + 1.0)
+        
+        # 2. State Transition Logic
+        if current_state in ["🟡 INITIALIZING", "🟢 STRONG BULLISH TREND"]:
+            # Drop from peak check -> Lock into Bearish
+            if val < peak_drop_trigger:
+                current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
+                trough_val = val  # Reset trough tracker for new down-cycle
+            else:
+                current_state = "🟢 STRONG BULLISH TREND"
+                
+        elif current_state == "🔴 STRONG BEARISH TREND (Rally Stopped)":
+            # Surge from bottom check -> Lock into Bullish
+            if val > trough_rise_trigger:
+                current_state = "🟢 STRONG BULLISH TREND"
+                peak_val = val  # Reset peak tracker for new up-cycle
+            else:
+                current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
+                
+        states.append(current_state)
+        
+    df["Flip_Status"] = states
+    return df
 
 
 # =====================================================================
@@ -180,15 +163,8 @@ def fetch_binance_data(start_ts, end_ts):
     headers = {"User-Agent": "Mozilla/5.0"}
 
     while current_start < end_ts:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "limit": 1000,
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
+        params = {"symbol": "BTCUSDT", "interval": "1h", "startTime": current_start, "limit": 1000}
+        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
 
         if not isinstance(res, list) or len(res) == 0:
             break
@@ -203,29 +179,13 @@ def fetch_binance_data(start_ts, end_ts):
     if len(all_candles) < 2000:
         return None
 
-    cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
-    ]
+    cols = ["OpenTime", "Open", "High", "Low", "Close", "Volume", "CloseTime", "QuoteVolume", "Trades", "TakerBase", "TakerQuote", "Ignore"]
     df_raw = pd.DataFrame(all_candles, columns=cols)
     num_cols = ["Open", "High", "Low", "Close", "Volume"]
     df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(
-        df_raw["OpenTime"], unit="ms", utc=True
-    )
+    df_raw["Timestamp"] = pd.to_datetime(df_raw["OpenTime"], unit="ms", utc=True)
     df_raw.set_index("Timestamp", inplace=True)
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
-
 
 @st.cache_data(ttl=3600)
 def fetch_coinbase_data(start_dt, now_dt):
@@ -236,14 +196,8 @@ def fetch_coinbase_data(start_dt, now_dt):
 
     while current_end > start_dt:
         current_start = max(start_dt, current_end - timedelta(hours=300))
-        params = {
-            "granularity": 3600,
-            "start": current_start.isoformat(),
-            "end": current_end.isoformat(),
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
+        params = {"granularity": 3600, "start": current_start.isoformat(), "end": current_end.isoformat()}
+        res = requests.get(endpoint, params=params, headers=headers, timeout=10).json()
 
         if isinstance(res, list) and len(res) > 0:
             all_candles.extend(res)
@@ -265,15 +219,12 @@ def fetch_coinbase_data(start_dt, now_dt):
     df_raw.sort_index(ascending=True, inplace=True)
     return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
-
 def get_robust_2year_hourly():
     now = datetime.now(timezone.utc)
     start_dt = now - timedelta(days=730)
 
     try:
-        df = fetch_binance_data(
-            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
-        )
+        df = fetch_binance_data(int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000))
         if df is not None and len(df) >= 5000:
             return df, "Binance REST API"
     except Exception:
@@ -283,49 +234,73 @@ def get_robust_2year_hourly():
     if df is not None and len(df) >= 2000:
         return df, "Coinbase Pro API (Fallback)"
 
-    raise ValueError("Failed to fetch historical data from primary and fallback sources.")
+    raise ValueError("Both primary and fallback endpoints failed to return sufficient candles.")
 
 
-# Fetch Data & Train Model
+# Fetch Data
 try:
-    with st.spinner("🔄 Enforcing 100% Absolute Consensus across 3,000 Trees..."):
+    with st.spinner("🔄 Fetching Data & Applying Dynamic State Lock Engine..."):
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]
+        df = df.iloc[:-1] # Drop running candle
         df.index = df.index.tz_convert("Asia/Kolkata")
 
-        df = apply_heikin_ashi(df)
-        df = compute_multipoint_features(df)
-        df_train, df_predict, trained_model = train_and_predict_absolute_consensus(df)
-
 except Exception as e:
-    st.error(f"🚨 Engine Error: {e}")
+    st.error(f"🚨 Data Engine Error: {e}")
     st.stop()
+
+
+# =====================================================================
+# FULL CONTINUOUS KINEMATICS & STATE MACHINE
+# =====================================================================
+df = apply_heikin_ashi(df)
+
+# Normal Path
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(normal_close_full, window=30)
+kalman_base_normal = apply_kalman_filter_custom(normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_normal = apply_kalman_filter_custom(normal_close_full - kalman_base_normal, initial_p=0.50, q_val=0.001, r_val=0.1)
+df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# HA Path
+ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
+df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
+kalman_base_ha = apply_kalman_filter_custom(ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2)
+momentum_ha = apply_kalman_filter_custom(ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1)
+df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
+
+# HAM Diff
+df["HAM_Diff"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
+
+# Apply Peak/Trough Hysteresis Lock (20% dynamic reversal threshold)
+df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
 
 # =====================================================================
 # DISPLAY MATRIX (IST)
 # =====================================================================
+total_candles = len(df)
+split_idx = int(total_candles * 0.50)
+df_predict = df.iloc[split_idx:].copy()
+
 clean_cols = [
     "Close",
-    "Base_HAM_Normal",
-    "HAM_HA_Signal",
+    "HA_Close",
+    "Hurst_Normal",
+    "Hurst_HA",
+    "HAM_Normal",
+    "HAM_HeikinAshi",
     "HAM_Diff",
     "HAM_Velocity",
     "HAM_Acceleration",
-    "HAM_Jerk",
-    "Bullish_Vote_Pct",
-    "ML_100_Signal",
+    "Flip_Status",
 ]
-
 display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
-    if col != "ML_100_Signal":
-        display_df[col] = (
-            np.asarray(df_predict[col], dtype=float).flatten().round(2)
-        )
+    if col != "Flip_Status":
+        display_df[col] = np.asarray(df_predict[col], dtype=float).flatten().round(2)
     else:
         display_df[col] = df_predict[col]
 
@@ -339,31 +314,28 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal", f"{latest_candle['Base_HAM_Normal']:.2f}")
-col3.metric("HAM Diff", f"{latest_candle['HAM_Diff']:.2f}")
-col4.metric(
-    "🌳 100% Consensus Score", f"{latest_candle['Bullish_Vote_Pct']}%"
-)
-col5.metric("🎯 Absolute ML Signal", f"{latest_candle['ML_100_Signal']}")
+col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col4.metric("📊 HAM Diff", f"{latest_candle['HAM_Diff']:.2f}")
+col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
 st.divider()
 
-st.subheader(
-    f"📋 100% Absolute Consensus Kinematic Matrix ({len(display_df):,} Predict Candles)"
-)
+st.subheader(f"📋 Hysteresis Locked Kinematic Matrix ({len(display_df):,} Predict Candles)")
 
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn("Close Price ($)", format="$%.2f"),
-        "Base_HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
-        "HAM_HA_Signal": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
+        "HA_Close": st.column_config.NumberColumn("HA Close ($)", format="$%.2f"),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst (Normal)", format="%.2f"),
+        "Hurst_HA": st.column_config.NumberColumn("Hurst (HA)", format="%.2f"),
+        "HAM_Normal": st.column_config.NumberColumn("Base HAM Normal", format="%.2f"),
+        "HAM_HeikinAshi": st.column_config.NumberColumn("HAM HA Signal", format="%.2f"),
         "HAM_Diff": st.column_config.NumberColumn("📊 HAM Diff", format="%.2f"),
         "HAM_Velocity": st.column_config.NumberColumn("⚡ Velocity (Δ1)", format="%.2f"),
-        "HAM_Acceleration": st.column_config.NumberColumn("🚀 Accel (Δ2)", format="%.2f"),
-        "HAM_Jerk": st.column_config.NumberColumn("💥 Jerk (Δ3)", format="%.2f"),
-        "Bullish_Vote_Pct": st.column_config.NumberColumn("🌳 Consensus (%)", format="%.1f%%"),
-        "ML_100_Signal": st.column_config.TextColumn("🎯 Absolute Consensus Signal"),
+        "HAM_Acceleration": st.column_config.NumberColumn("🚀 Acceleration (Δ2)", format="%.2f"),
+        "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Trend Lock"),
     },
     use_container_width=True,
     height=600,
