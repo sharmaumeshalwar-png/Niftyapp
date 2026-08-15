@@ -37,7 +37,6 @@ st.sidebar.success(
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
 ):
-    """Zero-Leak Causal Continuous Kalman Filter (q_val=0.0001 for ultra-smooth noise reduction)"""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -161,7 +160,7 @@ def calculate_ham_poc(ham_series, num_bins=100, value_area_pct=0.68):
     arr = np.asarray(ham_series.dropna(), dtype=float)
 
     if len(arr) == 0:
-        return {"POC": 0.0, "VAH": 0.0, "VAL": 0.0, "Profile": None}
+        return {"POC": 0.0, "VAH": 0.0, "VAL": 0.0}
 
     counts, bin_edges = np.histogram(arr, bins=num_bins)
 
@@ -193,16 +192,10 @@ def calculate_ham_poc(ham_series, num_bins=100, value_area_pct=0.68):
     val_low = bin_edges[left_idx]
     val_high = bin_edges[right_idx + 1]
 
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
-    profile_df = pd.DataFrame(
-        {"HAM_Level": bin_centers, "Volume_Count": counts}
-    )
-
     return {
         "POC": round(poc_val, 2),
         "VAH": round(val_high, 2),
         "VAL": round(val_low, 2),
-        "Profile": profile_df,
     }
 
 
@@ -332,7 +325,7 @@ try:
         df, source_used = get_robust_2year_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop unclosed running candle
+        df = df.iloc[:-1]
         df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
@@ -372,7 +365,7 @@ momentum_ha = apply_kalman_filter_custom(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# Raw HAM Diff & Filtered Diff (q_val = 0.0001)
+# Raw HAM Diff & Filtered Diff
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
@@ -381,10 +374,15 @@ df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
 # Apply State Machine
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
-# HAM Normal POC Analysis
+# Overall POC Calculation
 poc_results = calculate_ham_poc(
     df["HAM_Normal"], num_bins=100, value_area_pct=0.68
 )
+
+# Populate Table Specific Columns
+df["HAM_POC"] = poc_results["POC"]
+df["HAM_VAH"] = poc_results["VAH"]
+df["HAM_VAL"] = poc_results["VAL"]
 
 # =====================================================================
 # DISPLAY MATRIX & METRICS
@@ -397,14 +395,17 @@ clean_cols = [
     "Close",
     "HA_Close",
     "Hurst_Normal",
-    "Hurst_HA",
     "HAM_Normal",
     "HAM_HeikinAshi",
+    "HAM_POC",
+    "HAM_VAH",
+    "HAM_VAL",
     "HAM_Diff_Kalman",
     "HAM_Velocity",
     "HAM_Acceleration",
     "Flip_Status",
 ]
+
 display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
@@ -423,7 +424,7 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
-# Metrics Display
+# Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
@@ -431,7 +432,6 @@ col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
-# HAM POC Metrics
 st.divider()
 st.subheader("🎯 **Normal HAM Volume Profile & POC Metrics**")
 
@@ -440,26 +440,9 @@ col_poc1.metric("📍 Normal HAM POC", f"{poc_results['POC']}")
 col_poc2.metric("⬆️ Value Area High (VAH)", f"{poc_results['VAH']}")
 col_poc3.metric("⬇️ Value Area Low (VAL)", f"{poc_results['VAL']}")
 
-latest_ham_val = latest_candle["HAM_Normal"]
-if latest_ham_val > poc_results["VAH"]:
-    st.info(
-        f"🔥 **Current HAM ({latest_ham_val:.2f}) Above VAH:** Strong Bullish"
-        " Expansion Zone."
-    )
-elif latest_ham_val < poc_results["VAL"]:
-    st.warning(
-        f"❄️ **Current HAM ({latest_ham_val:.2f}) Below VAL:** Strong Bearish"
-        " Expansion Zone."
-    )
-else:
-    st.success(
-        f"⚖️ **Current HAM ({latest_ham_val:.2f}) Inside Value Area:** Neutral"
-        " / Value Zone Balance."
-    )
-
 st.divider()
 
-# Interactive Data Frame
+# Interactive Data Frame with POC columns
 st.subheader(
     f"📋 Hysteresis Locked Kinematic Matrix ({len(display_df):,} Predict"
     " Candles)"
@@ -474,10 +457,7 @@ st.dataframe(
             "HA Close ($)", format="$%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst (Normal)", format="%.2f"
-        ),
-        "Hurst_HA": st.column_config.NumberColumn(
-            "Hurst (HA)", format="%.2f"
+            "Hurst", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
@@ -485,8 +465,17 @@ st.dataframe(
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA Signal", format="%.2f"
         ),
+        "HAM_POC": st.column_config.NumberColumn(
+            "📍 HAM POC", format="%.2f"
+        ),
+        "HAM_VAH": st.column_config.NumberColumn(
+            "⬆️ VAH", format="%.2f"
+        ),
+        "HAM_VAL": st.column_config.NumberColumn(
+            "⬇️ VAL", format="%.2f"
+        ),
         "HAM_Diff_Kalman": st.column_config.NumberColumn(
-            "📊 HAM Diff (Kalman)", format="%.2f"
+            "📊 HAM Diff", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
             "⚡ Velocity (Δ1)", format="%.2f"
@@ -494,7 +483,7 @@ st.dataframe(
         "HAM_Acceleration": st.column_config.NumberColumn(
             "🚀 Acceleration (Δ2)", format="%.2f"
         ),
-        "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Trend Lock"),
+        "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Lock"),
     },
     use_container_width=True,
     height=600,
