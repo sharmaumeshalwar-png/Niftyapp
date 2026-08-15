@@ -14,7 +14,7 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & HAM Dynamic POC Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **Zero-Leak Dynamic Rolling POC & Hints**"
+    " Lock** | **Filtered Velocity (Q=0.000001) & Dynamic POC**"
 )
 
 # Sidebar Controls
@@ -26,6 +26,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
+    "⚡ **Velocity Kalman Q:** 0.000001\n\n"
     "🎯 **Diff Kalman Q:** 0.0001\n\n"
     "📊 **Rolling Window:** 300 Hours (68% Value Area)"
 )
@@ -106,7 +107,16 @@ def apply_heikin_ashi(df_in):
 
 def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
-    df["HAM_Velocity"] = df["HAM_Diff_Kalman"].diff().fillna(0.0)
+    
+    # 1. Raw Velocity Computation
+    raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
+    
+    # 2. Velocity Kalman Filter (Q = 0.000001, R = 0.1)
+    df["HAM_Velocity"] = apply_kalman_filter_custom(
+        raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
+    )
+    
+    # 3. Acceleration computed from Kalman Filtered Velocity
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
     diff_vals = df["HAM_Diff_Kalman"].to_numpy()
@@ -393,10 +403,10 @@ df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 
-# Apply State Machine
+# Apply State Machine (with Filtered Velocity Q=0.000001)
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
-# Dynamic Dynamic Rolling POC Engine & Hints (Zero Leak)
+# Dynamic Rolling POC Engine & Hints (Zero Leak)
 df = calculate_rolling_ham_poc(
     df, window=300, num_bins=100, value_area_pct=0.68
 )
@@ -429,7 +439,7 @@ display_df = pd.DataFrame(index=df_predict.index)
 for col in clean_cols:
     if col not in ["Flip_Status", "HAM_Hint"]:
         display_df[col] = (
-            np.asarray(df_predict[col], dtype=float).flatten().round(2)
+            np.asarray(df_predict[col], dtype=float).flatten().round(4)
         )
     else:
         display_df[col] = df_predict[col]
@@ -446,7 +456,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("HAM HA Signal", f"{latest_candle['HAM_HA_Signal']}" if "HAM_HA_Signal" in latest_candle else f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
 col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
@@ -497,10 +507,10 @@ st.dataframe(
             "📊 HAM Diff", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
-            "⚡ Velocity (Δ1)", format="%.2f"
+            "⚡ Filtered Velocity (Q=1e-6)", format="%.4f"
         ),
         "HAM_Acceleration": st.column_config.NumberColumn(
-            "🚀 Acceleration (Δ2)", format="%.2f"
+            "🚀 Acceleration (Δ2)", format="%.4f"
         ),
         "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Lock"),
     },
