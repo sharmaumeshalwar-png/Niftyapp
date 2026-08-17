@@ -11,10 +11,10 @@ import streamlit as st
 st.set_page_config(
     page_title="BTC Kinematics State-Machine Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) Kinematics & Energy Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **Filtered Velocity (Q=0.000001) & E=mc² Energy Analysis**"
+    " Lock** | **Filtered Velocity (Q=0.000001) & Universe Expansion Analysis**"
 )
 
 # Sidebar Controls
@@ -27,7 +27,7 @@ st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Velocity Kalman Q:** 0.000001\n\n"
-    "⚛️ **mc & E=mc² Columns:** ACTIVE"
+    "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
 
@@ -317,7 +317,7 @@ except Exception as e:
 
 
 # =====================================================================
-# FULL KINEMATICS & ENERGY CALCULATION
+# FULL KINEMATICS & UNIVERSE EXPANSION FORMULAS
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -338,19 +338,28 @@ momentum_normal = apply_kalman_filter_custom(
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # ---------------------------------------------------------------------
-# ⚛️ STRICT MC & E = mc² CALCULATION ON HAM_NORMAL
-# Basis:
-# m = abs(HAM_Normal) [Mass equivalent from Normal HAM]
-# c = speed of light in m/s (299,792,458)
-# mc = m * c [Momentum scale factor]
-# E = mc * c = m * c^2 [Rest Mass Energy]
+# 🌌 UNIVERSE EXPANSION FORMULAS ON HAM_NORMAL BASELINE
+# Formula 1: Friedmann Scale Factor a(t) = |HAM_Normal| + 1.0
+# Formula 2: Hubble-Lemaître Velocity v = H0 * d  (H0 = 70 km/s/Mpc)
+# Formula 3: Cosmic Acceleration a_dotdot = (Lambda*c^2/3)*a - (4/3)*pi*G*a
 # ---------------------------------------------------------------------
-c_speed = 299792458.0
-mass_m = np.abs(df["HAM_Normal"])
+H0_const = 70.0  # Hubble Constant (km/s/Mpc)
+Lambda_const = 1.1056e-52  # Cosmological Constant (m^-2)
+c_speed = 299792458.0  # Speed of Light (m/s)
+G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 
-# Step-wise mc and mc^2 Calculation
-df["HAM_MC"] = mass_m * c_speed
-df["HAM_Energy_E"] = df["HAM_MC"] * c_speed
+# Column 1: Scale Factor a
+df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
+
+# Column 2: Hubble Recession Velocity v
+df["HAM_Hubble_Vel_v"] = H0_const * df["HAM_Expansion_a"]
+
+# Column 3: Friedmann Cosmic Acceleration (a_dotdot)
+dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
+matter_gravity_factor = (4.0 * np.pi * G_const) / 3.0
+df["HAM_Cosmic_Accel_a_dotdot"] = (
+    dark_energy_factor - matter_gravity_factor
+) * df["HAM_Expansion_a"]
 
 # HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
@@ -387,8 +396,9 @@ clean_cols = [
     "HA_Close",
     "Hurst_Normal",
     "HAM_Normal",
-    "HAM_MC",
-    "HAM_Energy_E",
+    "HAM_Expansion_a",
+    "HAM_Hubble_Vel_v",
+    "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
     "HAM_Diff_Kalman",
@@ -416,10 +426,14 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal (m)", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("🚀 HAM Momentum (mc)", f"{latest_candle['HAM_MC']:.4e}")
-col4.metric("⚛️ Energy E (mc²)", f"{latest_candle['HAM_Energy_E']:.4e}")
-col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
+col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
+col4.metric(
+    "🔭 Hubble Velocity (v)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
+)
+col5.metric(
+    "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
+)
 
 st.divider()
 
@@ -440,13 +454,16 @@ st.dataframe(
             "Hurst", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal (m)", format="%.2f"
+            "Base HAM Normal", format="%.2f"
         ),
-        "HAM_MC": st.column_config.NumberColumn(
-            "🚀 HAM Momentum (mc)", format="%.4e"
+        "HAM_Expansion_a": st.column_config.NumberColumn(
+            "🌌 Scale Factor a(t)", format="%.4f"
         ),
-        "HAM_Energy_E": st.column_config.NumberColumn(
-            "⚛️ HAM Energy (E=mc²)", format="%.4e"
+        "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
+            "🔭 Hubble Velocity v (km/s)", format="%.2f"
+        ),
+        "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
+            "🚀 Cosmic Accel (ä)", format="%.4e"
         ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA Signal", format="%.2f"
