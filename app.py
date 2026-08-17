@@ -14,7 +14,7 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **Filtered Velocity (Q=0.000001) & Universe Expansion Analysis**"
+    " Lock** | **Filtered Velocity & Hubble Kalman (Q=0.50) Expansion Engine**"
 )
 
 # Sidebar Controls
@@ -27,6 +27,7 @@ st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Velocity Kalman Q:** 0.000001\n\n"
+    "🔭 **Hubble Kalman Q:** 0.50 ACTIVE\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
@@ -339,9 +340,6 @@ df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # ---------------------------------------------------------------------
 # 🌌 UNIVERSE EXPANSION FORMULAS ON HAM_NORMAL BASELINE
-# Formula 1: Friedmann Scale Factor a(t) = |HAM_Normal| + 1.0
-# Formula 2: Hubble-Lemaître Velocity v = H0 * d  (H0 = 70 km/s/Mpc)
-# Formula 3: Cosmic Acceleration a_dotdot = (Lambda*c^2/3)*a - (4/3)*pi*G*a
 # ---------------------------------------------------------------------
 H0_const = 70.0  # Hubble Constant (km/s/Mpc)
 Lambda_const = 1.1056e-52  # Cosmological Constant (m^-2)
@@ -351,8 +349,11 @@ G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 # Column 1: Scale Factor a
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v
-df["HAM_Hubble_Vel_v"] = H0_const * df["HAM_Expansion_a"]
+# Column 2: Hubble Recession Velocity v (KALMAN FILTERED with Q = 0.50)
+raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
+df["HAM_Hubble_Vel_v"] = apply_kalman_filter_custom(
+    raw_hubble_vel, initial_p=0.50, q_val=0.50, r_val=0.1
+)
 
 # Column 3: Friedmann Cosmic Acceleration (a_dotdot)
 dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
@@ -429,7 +430,8 @@ col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    "🔭 Hubble Velocity (v)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
+    "🔭 Hubble Vel (Kalman Q=0.5)",
+    f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s",
 )
 col5.metric(
     "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
@@ -460,7 +462,7 @@ st.dataframe(
             "🌌 Scale Factor a(t)", format="%.4f"
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            "🔭 Hubble Velocity v (km/s)", format="%.2f"
+            "🔭 Hubble Vel Filtered (Q=0.50)", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
