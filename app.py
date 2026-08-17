@@ -14,8 +14,8 @@ st.set_page_config(
 )
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **Gaussian Filtered Hubble Expansion Engine**"
+    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
+    " **State-Machine Lock** | **Gaussian Filtered Hubble Expansion**"
 )
 
 # Sidebar Controls
@@ -23,12 +23,12 @@ st.sidebar.header("🔄 Live Engine Controls")
 
 # Dynamic Controls for Gaussian Smoothing
 gaussian_sigma = st.sidebar.slider(
-    "🔔 Gaussian Sigma (σ)",
+    "🔔 Hubble Gaussian Sigma (σ)",
     min_value=0.5,
     max_value=20.0,
     value=3.0,
     step=0.5,
-    help="Higher sigma gives smoother curves using Gaussian bell-curve distribution.",
+    help="Gaussian bell-curve smoothing applied to Hubble Velocity.",
 )
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
@@ -38,20 +38,38 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
-    f"🔔 **Gaussian Smoothing Engine:** Sigma = {gaussian_sigma}\n\n"
+    "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
+    f"🔔 **Hubble Expansion Filter:** GAUSSIAN (Sigma = {gaussian_sigma})\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & GAUSSIAN SMOOTHING
+# MATHEMATICAL ENGINES & FILTERS
 # =====================================================================
-def apply_gaussian_smoothing(data_array, sigma=3.0):
-    """Applies Gaussian 1D filter for smooth bell-curve weighting."""
+def apply_kalman_filter_custom(
+    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
+):
+    """Standard Kalman Filter Engine for Core HAM Signals."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
-    # mode='nearest' avoids boundary artifacts at current candle
+    x, p = arr[0], initial_p
+    filtered_values = np.empty(len(arr))
+    for i, z in enumerate(arr):
+        p = p + q_val
+        k = p / (p + r_val)
+        x = x + k * (z - x)
+        p = (1 - k) * p
+        filtered_values[i] = x
+    return filtered_values
+
+
+def apply_gaussian_smoothing(data_array, sigma=3.0):
+    """Applies Gaussian 1D filter for Hubble Expansion Smoothing."""
+    arr = np.asarray(data_array, dtype=float).flatten()
+    if len(arr) == 0:
+        return np.array([])
     return gaussian_filter1d(arr, sigma=sigma, mode="nearest")
 
 
@@ -108,21 +126,21 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_hysteresis_state_machine(
-    df_in, reversal_threshold_pct=0.20, sigma=3.0
-):
+def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
 
-    # 1. Raw Velocity Computation
-    raw_velocity = df["HAM_Diff_Gaussian"].diff().fillna(0.0).to_numpy()
+    # 1. Raw Velocity Computation from Kalman Filtered Diff
+    raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
 
-    # 2. Gaussian Filtered Velocity
-    df["HAM_Velocity"] = apply_gaussian_smoothing(raw_velocity, sigma=sigma)
+    # 2. Kalman Filtered Velocity
+    df["HAM_Velocity"] = apply_kalman_filter_custom(
+        raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
+    )
 
-    # 3. Acceleration computed from Gaussian Filtered Velocity
+    # 3. Acceleration computed from Filtered Velocity
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
-    diff_vals = df["HAM_Diff_Gaussian"].to_numpy()
+    diff_vals = df["HAM_Diff_Kalman"].to_numpy()
     states = []
 
     current_state = "🟡 INITIALIZING"
@@ -172,7 +190,7 @@ def calculate_dynamic_hints(df_in):
     """Generates dynamic market structure hints."""
     df = df_in.copy()
     hints = []
-    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Gaussian"]):
+    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Kalman"]):
         if h_diff > 1.0:
             hints.append("🔥 Strong Bullish Expansion")
         elif h_diff < -1.0:
@@ -325,16 +343,19 @@ except Exception as e:
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# Normal Path
+# 1. Base Normal Path (STRICT KALMAN CORE)
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
-gaussian_base_normal = apply_gaussian_smoothing(
-    normal_close_full, sigma=gaussian_sigma
+kalman_base_normal = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_normal = apply_gaussian_smoothing(
-    normal_close_full - gaussian_base_normal, sigma=gaussian_sigma
+momentum_normal = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
@@ -349,7 +370,7 @@ G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 # Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTERED)
+# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER APPLIED HERE)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
@@ -362,27 +383,25 @@ df["HAM_Cosmic_Accel_a_dotdot"] = (
     dark_energy_factor - matter_gravity_factor
 ) * df["HAM_Expansion_a"]
 
-# HA Path
+# 2. HA Path (STRICT KALMAN CORE)
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-gaussian_base_ha = apply_gaussian_smoothing(
-    ha_close_full, sigma=gaussian_sigma
+kalman_base_ha = apply_kalman_filter_custom(
+    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-momentum_ha = apply_gaussian_smoothing(
-    ha_close_full - gaussian_base_ha, sigma=gaussian_sigma
+momentum_ha = apply_kalman_filter_custom(
+    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# Raw HAM Diff & Gaussian Filtered Diff
+# Raw HAM Diff & Filtered Diff (Kalman)
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-df["HAM_Diff_Gaussian"] = apply_gaussian_smoothing(
-    df["HAM_Diff_Raw"].to_numpy(), sigma=gaussian_sigma
+df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
+    df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 
-# Apply State Machine (with Gaussian Filtered Velocity)
-df = apply_hysteresis_state_machine(
-    df, reversal_threshold_pct=0.20, sigma=gaussian_sigma
-)
+# Apply State Machine
+df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
 # Dynamic Hints
 df = calculate_dynamic_hints(df)
@@ -404,7 +423,7 @@ clean_cols = [
     "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
-    "HAM_Diff_Gaussian",
+    "HAM_Diff_Kalman",
     "HAM_Velocity",
     "HAM_Acceleration",
     "Flip_Status",
@@ -458,7 +477,7 @@ st.dataframe(
             "Hurst", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal", format="%.2f"
+            "Base HAM Normal (Kalman)", format="%.2f"
         ),
         "HAM_Expansion_a": st.column_config.NumberColumn(
             "🌌 Scale Factor a(t)", format="%.4f"
@@ -470,14 +489,14 @@ st.dataframe(
             "🚀 Cosmic Accel (ä)", format="%.4e"
         ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA Signal", format="%.2f"
+            "HAM HA Signal (Kalman)", format="%.2f"
         ),
         "HAM_Hint": st.column_config.TextColumn("💡 HAM Hint Dynamic"),
-        "HAM_Diff_Gaussian": st.column_config.NumberColumn(
-            "📊 HAM Diff (Gaussian)", format="%.2f"
+        "HAM_Diff_Kalman": st.column_config.NumberColumn(
+            "📊 HAM Diff (Kalman)", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
-            f"⚡ Velocity (Gaussian σ={gaussian_sigma})", format="%.4f"
+            "⚡ Velocity (Kalman Q=1e-6)", format="%.4f"
         ),
         "HAM_Acceleration": st.column_config.NumberColumn(
             "🚀 Acceleration (Δ2)", format="%.4f"
