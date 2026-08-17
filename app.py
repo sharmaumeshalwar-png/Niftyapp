@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import requests
+from scipy.ndimage import gaussian_filter1d
 import streamlit as st
 
 # =====================================================================
@@ -14,25 +15,20 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **5x Smooth Hubble Kalman (Q=0.0001) Expansion Engine**"
+    " Lock** | **Gaussian Filtered Hubble Expansion Engine**"
 )
 
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
-# Dynamic Slider for Hubble Kalman Q
-hubble_q_val = st.sidebar.slider(
-    "🔭 Hubble Kalman Q Value",
-    min_value=0.00001,
-    max_value=0.50,
-    value=0.0001,
-    step=0.0001,
-    format="%.5f",
-)
-
-# Slider for Pass Count
-smooth_passes = st.sidebar.slider(
-    "🌀 Smoothing Passes", min_value=1, max_value=10, value=5, step=1
+# Dynamic Controls for Gaussian Smoothing
+gaussian_sigma = st.sidebar.slider(
+    "🔔 Gaussian Sigma (σ)",
+    min_value=0.5,
+    max_value=20.0,
+    value=3.0,
+    step=0.5,
+    help="Higher sigma gives smoother curves using Gaussian bell-curve distribution.",
 )
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
@@ -42,42 +38,21 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
-    "⚡ **Velocity Kalman Q:** 0.000001\n\n"
-    f"🔭 **Hubble Kalman Q:** {hubble_q_val} ({smooth_passes}x Smoothed)\n\n"
+    f"🔔 **Gaussian Smoothing Engine:** Sigma = {gaussian_sigma}\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & STATE MACHINE
+# MATHEMATICAL ENGINES & GAUSSIAN SMOOTHING
 # =====================================================================
-def apply_kalman_filter_custom(
-    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
-):
+def apply_gaussian_smoothing(data_array, sigma=3.0):
+    """Applies Gaussian 1D filter for smooth bell-curve weighting."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
-    x, p = arr[0], initial_p
-    filtered_values = np.empty(len(arr))
-    for i, z in enumerate(arr):
-        p = p + q_val
-        k = p / (p + r_val)
-        x = x + k * (z - x)
-        p = (1 - k) * p
-        filtered_values[i] = x
-    return filtered_values
-
-
-def apply_multi_pass_kalman(
-    data_array, passes=5, initial_p=0.50, q_val=0.0001, r_val=0.1
-):
-    """Applies Kalman Filter sequentially 'passes' times for deep smoothing."""
-    temp_arr = np.copy(data_array)
-    for _ in range(passes):
-        temp_arr = apply_kalman_filter_custom(
-            temp_arr, initial_p=initial_p, q_val=q_val, r_val=r_val
-        )
-    return temp_arr
+    # mode='nearest' avoids boundary artifacts at current candle
+    return gaussian_filter1d(arr, sigma=sigma, mode="nearest")
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
@@ -133,21 +108,21 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
+def apply_hysteresis_state_machine(
+    df_in, reversal_threshold_pct=0.20, sigma=3.0
+):
     df = df_in.copy()
 
     # 1. Raw Velocity Computation
-    raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
+    raw_velocity = df["HAM_Diff_Gaussian"].diff().fillna(0.0).to_numpy()
 
-    # 2. Velocity Kalman Filter (Q = 0.000001, R = 0.1)
-    df["HAM_Velocity"] = apply_kalman_filter_custom(
-        raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
-    )
+    # 2. Gaussian Filtered Velocity
+    df["HAM_Velocity"] = apply_gaussian_smoothing(raw_velocity, sigma=sigma)
 
-    # 3. Acceleration computed from Kalman Filtered Velocity
+    # 3. Acceleration computed from Gaussian Filtered Velocity
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
-    diff_vals = df["HAM_Diff_Kalman"].to_numpy()
+    diff_vals = df["HAM_Diff_Gaussian"].to_numpy()
     states = []
 
     current_state = "🟡 INITIALIZING"
@@ -197,7 +172,7 @@ def calculate_dynamic_hints(df_in):
     """Generates dynamic market structure hints."""
     df = df_in.copy()
     hints = []
-    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Kalman"]):
+    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Gaussian"]):
         if h_diff > 1.0:
             hints.append("🔥 Strong Bullish Expansion")
         elif h_diff < -1.0:
@@ -355,14 +330,11 @@ normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
 )
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+gaussian_base_normal = apply_gaussian_smoothing(
+    normal_close_full, sigma=gaussian_sigma
 )
-momentum_normal = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
+momentum_normal = apply_gaussian_smoothing(
+    normal_close_full - gaussian_base_normal, sigma=gaussian_sigma
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
@@ -377,14 +349,10 @@ G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 # Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (5x MULTI-PASS KALMAN FILTERED)
+# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTERED)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
-df["HAM_Hubble_Vel_v"] = apply_multi_pass_kalman(
-    raw_hubble_vel,
-    passes=smooth_passes,
-    initial_p=0.50,
-    q_val=hubble_q_val,
-    r_val=0.1,
+df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
+    raw_hubble_vel, sigma=gaussian_sigma
 )
 
 # Column 3: Friedmann Cosmic Acceleration (a_dotdot)
@@ -397,22 +365,24 @@ df["HAM_Cosmic_Accel_a_dotdot"] = (
 # HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-kalman_base_ha = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+gaussian_base_ha = apply_gaussian_smoothing(
+    ha_close_full, sigma=gaussian_sigma
 )
-momentum_ha = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
+momentum_ha = apply_gaussian_smoothing(
+    ha_close_full - gaussian_base_ha, sigma=gaussian_sigma
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# Raw HAM Diff & Filtered Diff
+# Raw HAM Diff & Gaussian Filtered Diff
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
-    df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
+df["HAM_Diff_Gaussian"] = apply_gaussian_smoothing(
+    df["HAM_Diff_Raw"].to_numpy(), sigma=gaussian_sigma
 )
 
-# Apply State Machine (with Filtered Velocity Q=0.000001)
-df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
+# Apply State Machine (with Gaussian Filtered Velocity)
+df = apply_hysteresis_state_machine(
+    df, reversal_threshold_pct=0.20, sigma=gaussian_sigma
+)
 
 # Dynamic Hints
 df = calculate_dynamic_hints(df)
@@ -434,7 +404,7 @@ clean_cols = [
     "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
-    "HAM_Diff_Kalman",
+    "HAM_Diff_Gaussian",
     "HAM_Velocity",
     "HAM_Acceleration",
     "Flip_Status",
@@ -462,7 +432,7 @@ col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    f"🔭 Hubble Vel ({smooth_passes}x Smooth)",
+    f"🔭 Hubble Vel (σ={gaussian_sigma})",
     f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s",
 )
 col5.metric(
@@ -494,8 +464,7 @@ st.dataframe(
             "🌌 Scale Factor a(t)", format="%.4f"
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            f"🔭 Hubble Vel ({smooth_passes}x Filtered Q={hubble_q_val})",
-            format="%.2f",
+            f"🔭 Hubble Vel (Gaussian σ={gaussian_sigma})", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
@@ -504,11 +473,11 @@ st.dataframe(
             "HAM HA Signal", format="%.2f"
         ),
         "HAM_Hint": st.column_config.TextColumn("💡 HAM Hint Dynamic"),
-        "HAM_Diff_Kalman": st.column_config.NumberColumn(
-            "📊 HAM Diff", format="%.2f"
+        "HAM_Diff_Gaussian": st.column_config.NumberColumn(
+            "📊 HAM Diff (Gaussian)", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
-            "⚡ Filtered Velocity (Q=1e-6)", format="%.4f"
+            f"⚡ Velocity (Gaussian σ={gaussian_sigma})", format="%.4f"
         ),
         "HAM_Acceleration": st.column_config.NumberColumn(
             "🚀 Acceleration (Δ2)", format="%.4f"
