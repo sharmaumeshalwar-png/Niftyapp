@@ -27,7 +27,7 @@ st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Velocity Kalman Q:** 0.000001\n\n"
-    "⚛️ **E=mc² Column:** ACTIVE"
+    "⚛️ **mc & E=mc² Columns:** ACTIVE"
 )
 
 
@@ -338,12 +338,19 @@ momentum_normal = apply_kalman_filter_custom(
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # ---------------------------------------------------------------------
-# ⚛️ E = mc² CALCULATION ON HAM_NORMAL
-# m = abs(HAM_Normal)
+# ⚛️ STRICT MC & E = mc² CALCULATION ON HAM_NORMAL
+# Basis:
+# m = abs(HAM_Normal) [Mass equivalent from Normal HAM]
 # c = speed of light in m/s (299,792,458)
+# mc = m * c [Momentum scale factor]
+# E = mc * c = m * c^2 [Rest Mass Energy]
 # ---------------------------------------------------------------------
-c = 299792458.0
-df["HAM_Energy_E"] = np.abs(df["HAM_Normal"]) * (c**2)
+c_speed = 299792458.0
+mass_m = np.abs(df["HAM_Normal"])
+
+# Step-wise mc and mc^2 Calculation
+df["HAM_MC"] = mass_m * c_speed
+df["HAM_Energy_E"] = df["HAM_MC"] * c_speed
 
 # HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
@@ -380,6 +387,7 @@ clean_cols = [
     "HA_Close",
     "Hurst_Normal",
     "HAM_Normal",
+    "HAM_MC",
     "HAM_Energy_E",
     "HAM_HeikinAshi",
     "HAM_Hint",
@@ -408,9 +416,9 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("⚛️ Energy E (mc²)", f"{latest_candle['HAM_Energy_E']:.4e}")
-col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
+col2.metric("Base HAM Normal (m)", f"{latest_candle['HAM_Normal']:.2f}")
+col3.metric("🚀 HAM Momentum (mc)", f"{latest_candle['HAM_MC']:.4e}")
+col4.metric("⚛️ Energy E (mc²)", f"{latest_candle['HAM_Energy_E']:.4e}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
 st.divider()
@@ -432,7 +440,10 @@ st.dataframe(
             "Hurst", format="%.2f"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal", format="%.2f"
+            "Base HAM Normal (m)", format="%.2f"
+        ),
+        "HAM_MC": st.column_config.NumberColumn(
+            "🚀 HAM Momentum (mc)", format="%.4e"
         ),
         "HAM_Energy_E": st.column_config.NumberColumn(
             "⚛️ HAM Energy (E=mc²)", format="%.4e"
