@@ -346,7 +346,7 @@ Lambda_const = 1.1056e-52  # Cosmological Constant (m^-2)
 c_speed = 299792458.0  # Speed of Light (m/s)
 G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 
-# Column 1: Scale Factor a
+# Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
 # Column 2: Hubble Recession Velocity v (KALMAN FILTERED with Q = 0.50)
