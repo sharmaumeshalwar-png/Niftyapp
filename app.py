@@ -9,12 +9,12 @@ import streamlit as st
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics State-Machine & POC Engine", layout="wide"
+    page_title="BTC Kinematics State-Machine Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) Kinematics & HAM Dynamic POC Engine")
+st.title("⚡ Bitcoin (BTC-USD) Kinematics & Energy Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics | **State-Machine"
-    " Lock** | **Filtered Velocity (Q=0.000001) & Dynamic POC**"
+    " Lock** | **Filtered Velocity (Q=0.000001) & E=mc² Energy Analysis**"
 )
 
 # Sidebar Controls
@@ -27,13 +27,12 @@ st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Velocity Kalman Q:** 0.000001\n\n"
-    "🎯 **Diff Kalman Q:** 0.0001\n\n"
-    "📊 **Rolling Window:** 300 Hours (68% Value Area)"
+    "⚛️ **E=mc² Column:** ACTIVE"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES, STATE MACHINE & DYNAMIC POC
+# MATHEMATICAL ENGINES & STATE MACHINE
 # =====================================================================
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
@@ -107,15 +106,15 @@ def apply_heikin_ashi(df_in):
 
 def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     df = df_in.copy()
-    
+
     # 1. Raw Velocity Computation
     raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
-    
+
     # 2. Velocity Kalman Filter (Q = 0.000001, R = 0.1)
     df["HAM_Velocity"] = apply_kalman_filter_custom(
         raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
     )
-    
+
     # 3. Acceleration computed from Kalman Filtered Velocity
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
@@ -165,67 +164,19 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     return df
 
 
-def calculate_rolling_ham_poc(
-    df_in, window=300, num_bins=100, value_area_pct=0.68
-):
-    """Zero-Leak Dynamic Rolling POC Engine."""
+def calculate_dynamic_hints(df_in):
+    """Generates dynamic market structure hints."""
     df = df_in.copy()
-    ham_vals = df["HAM_Normal"].to_numpy()
-    n = len(ham_vals)
-
-    pocs = np.full(n, np.nan)
-    vahs = np.full(n, np.nan)
-    vals = np.full(n, np.nan)
-
-    for i in range(window, n):
-        sub_arr = ham_vals[i - window : i]
-        counts, bin_edges = np.histogram(sub_arr, bins=num_bins)
-
-        max_bin_idx = np.argmax(counts)
-        poc_val = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2.0
-
-        total_count = np.sum(counts)
-        target_count = total_count * value_area_pct
-        current_count = counts[max_bin_idx]
-        left_idx, right_idx = max_bin_idx, max_bin_idx
-
-        while current_count < target_count and (
-            left_idx > 0 or right_idx < len(counts) - 1
-        ):
-            left_val = counts[left_idx - 1] if left_idx > 0 else -1
-            right_val = (
-                counts[right_idx + 1] if right_idx < len(counts) - 1 else -1
-            )
-
-            if left_val >= right_val and left_idx > 0:
-                left_idx -= 1
-                current_count += counts[left_idx]
-            elif right_idx < len(counts) - 1:
-                right_idx += 1
-                current_count += counts[right_idx]
-            else:
-                break
-
-        pocs[i] = poc_val
-        vahs[i] = bin_edges[right_idx + 1]
-        vals[i] = bin_edges[left_idx]
-
-    df["HAM_POC"] = pd.Series(pocs, index=df.index).bfill()
-    df["HAM_VAH"] = pd.Series(vahs, index=df.index).bfill()
-    df["HAM_VAL"] = pd.Series(vals, index=df.index).bfill()
-
     hints = []
-    for h, poc, vah, val in zip(
-        df["HAM_Normal"], df["HAM_POC"], df["HAM_VAH"], df["HAM_VAL"]
-    ):
-        if h > vah:
-            hints.append("🔥 Above VAH (Expansion)")
-        elif h < val:
-            hints.append("❄️ Below VAL (Breakdown)")
-        elif abs(h - poc) <= 0.3:
-            hints.append("🎯 POC Magnet Zone")
+    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Kalman"]):
+        if h_diff > 1.0:
+            hints.append("🔥 Strong Bullish Expansion")
+        elif h_diff < -1.0:
+            hints.append("❄️ Bearish Expansion")
+        elif abs(h_diff) <= 0.2:
+            hints.append("🎯 Equilibrium Zone")
         else:
-            hints.append("⚖️ Neutral Value Area")
+            hints.append("⚖️ Neutral Momentum")
 
     df["HAM_Hint"] = hints
     return df
@@ -366,7 +317,7 @@ except Exception as e:
 
 
 # =====================================================================
-# FULL KINEMATICS & DYNAMIC POC CALCULATION
+# FULL KINEMATICS & ENERGY CALCULATION
 # =====================================================================
 df = apply_heikin_ashi(df)
 
@@ -385,6 +336,14 @@ momentum_normal = apply_kalman_filter_custom(
     r_val=0.1,
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# ---------------------------------------------------------------------
+# ⚛️ E = mc² CALCULATION ON HAM_NORMAL
+# m = abs(HAM_Normal)
+# c = speed of light in m/s (299,792,458)
+# ---------------------------------------------------------------------
+c = 299792458.0
+df["HAM_Energy_E"] = np.abs(df["HAM_Normal"]) * (c**2)
 
 # HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
@@ -406,10 +365,8 @@ df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
 # Apply State Machine (with Filtered Velocity Q=0.000001)
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 
-# Dynamic Rolling POC Engine & Hints (Zero Leak)
-df = calculate_rolling_ham_poc(
-    df, window=300, num_bins=100, value_area_pct=0.68
-)
+# Dynamic Hints
+df = calculate_dynamic_hints(df)
 
 # =====================================================================
 # DISPLAY MATRIX & METRICS
@@ -423,10 +380,8 @@ clean_cols = [
     "HA_Close",
     "Hurst_Normal",
     "HAM_Normal",
+    "HAM_Energy_E",
     "HAM_HeikinAshi",
-    "HAM_POC",
-    "HAM_VAH",
-    "HAM_VAL",
     "HAM_Hint",
     "HAM_Diff_Kalman",
     "HAM_Velocity",
@@ -438,9 +393,7 @@ display_df = pd.DataFrame(index=df_predict.index)
 
 for col in clean_cols:
     if col not in ["Flip_Status", "HAM_Hint"]:
-        display_df[col] = (
-            np.asarray(df_predict[col], dtype=float).flatten().round(4)
-        )
+        display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
     else:
         display_df[col] = df_predict[col]
 
@@ -456,24 +409,15 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("HAM HA Signal", f"{latest_candle['HAM_HeikinAshi']:.2f}")
+col3.metric("⚛️ Energy E (mc²)", f"{latest_candle['HAM_Energy_E']:.4e}")
 col4.metric("📊 HAM Diff (Kalman)", f"{latest_candle['HAM_Diff_Kalman']:.2f}")
 col5.metric("🎯 State Machine Status", f"{latest_candle['Flip_Status']}")
 
 st.divider()
-st.subheader("🎯 **Latest Candle HAM Volume Profile & POC Metrics**")
 
-col_poc1, col_poc2, col_poc3 = st.columns(3)
-col_poc1.metric("📍 Dynamic HAM POC", f"{latest_candle['HAM_POC']}")
-col_poc2.metric("⬆️ Value Area High (VAH)", f"{latest_candle['HAM_VAH']}")
-col_poc3.metric("⬇️ Value Area Low (VAL)", f"{latest_candle['HAM_VAL']}")
-
-st.divider()
-
-# Interactive Data Frame with Dynamic POC & Hints
+# Interactive Data Frame
 st.subheader(
-    f"📋 Dynamic Kinematic Matrix & POC Hints ({len(display_df):,} Locked"
-    " Candles)"
+    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Candles)"
 )
 st.dataframe(
     display_df,
@@ -490,19 +434,13 @@ st.dataframe(
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal", format="%.2f"
         ),
+        "HAM_Energy_E": st.column_config.NumberColumn(
+            "⚛️ HAM Energy (E=mc²)", format="%.4e"
+        ),
         "HAM_HeikinAshi": st.column_config.NumberColumn(
             "HAM HA Signal", format="%.2f"
         ),
-        "HAM_POC": st.column_config.NumberColumn(
-            "📍 Dynamic POC", format="%.2f"
-        ),
-        "HAM_VAH": st.column_config.NumberColumn(
-            "⬆️ VAH", format="%.2f"
-        ),
-        "HAM_VAL": st.column_config.NumberColumn(
-            "⬇️ VAL", format="%.2f"
-        ),
-        "HAM_Hint": st.column_config.TextColumn("💡 POC Hint Dynamic"),
+        "HAM_Hint": st.column_config.TextColumn("💡 HAM Hint Dynamic"),
         "HAM_Diff_Kalman": st.column_config.NumberColumn(
             "📊 HAM Diff", format="%.2f"
         ),
