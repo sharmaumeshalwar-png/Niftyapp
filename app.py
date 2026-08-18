@@ -42,8 +42,8 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Split Protocol:** 50% LEARN / 50% PREDICT ACTIVE\n\n"
-    "🔒 **State Lock Engine:** ACTIVE\n\n"
+    "🛡️ **Split Protocol:** STRICT 50% LEARN / 50% PREDICT ACTIVE\n\n"
+    "🔒 **Data Leakage Shield:** ACTIVE\n\n"
     "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
     f"🔔 **Hubble Expansion Filter:** GAUSSIAN (Sigma = {gaussian_sigma})\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
@@ -54,13 +54,16 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES & FILTERS
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
+    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1, last_x=None, last_p=None
 ):
-    """Standard Kalman Filter Engine for Core HAM Signals."""
+    """Standard Kalman Filter Engine supporting sequential processing for split."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
-        return np.array([])
-    x, p = arr[0], initial_p
+        return np.array([]), initial_p, initial_p
+    
+    x = arr[0] if last_x is None else last_x
+    p = initial_p if last_p is None else last_p
+    
     filtered_values = np.empty(len(arr))
     for i, z in enumerate(arr):
         p = p + q_val
@@ -68,7 +71,7 @@ def apply_kalman_filter_custom(
         x = x + k * (z - x)
         p = (1 - k) * p
         filtered_values[i] = x
-    return filtered_values
+    return filtered_values, x, p
 
 
 def apply_gaussian_smoothing(data_array, sigma=3.0):
@@ -137,15 +140,12 @@ def apply_hysteresis_state_machine(
 ):
     df = df_in.copy()
 
-    # 1. Raw Velocity Computation
+    # Raw Velocity & Kalman Filtered Velocity
     raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
-
-    # 2. Kalman Filtered Velocity
-    df["HAM_Velocity"] = apply_kalman_filter_custom(
+    vel_filtered, _, _ = apply_kalman_filter_custom(
         raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
     )
-
-    # 3. Acceleration computed from Filtered Velocity
+    df["HAM_Velocity"] = vel_filtered
     df["HAM_Acceleration"] = df["HAM_Velocity"].diff().fillna(0.0)
 
     diff_vals = df["HAM_Diff_Kalman"].to_numpy()
@@ -170,7 +170,6 @@ def apply_hysteresis_state_machine(
             abs(trough_val) * reversal_threshold_pct + 1.0
         )
 
-        # Learning Phase vs Prediction Phase Tagging
         phase_prefix = (
             "🟢 [PREDICT]" if i >= split_idx else "📘 [LEARN]"
         )
@@ -242,7 +241,7 @@ def fetch_nifty_data(interval="1h"):
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Nifty 50 Data & Initializing 50:50 Engine..."):
+    with st.spinner("🔄 Fetching Nifty 50 Data & Initializing STRICT 50:50 Engine..."):
         df = fetch_nifty_data(interval=timeframe)
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
@@ -254,28 +253,86 @@ except Exception as e:
 
 
 # =====================================================================
-# STRICT 50:50 LEARN vs PREDICT PROTOCOL
+# STRICT 50:50 LEARN vs PREDICT PIPELINE (NO DATA LEAKAGE)
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)  # Exact 50% split boundary
 
 df = apply_heikin_ashi(df)
 
-# 1. Base Normal Path (STRICT KALMAN CORE)
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
+# Separate Datasets for Strict Split
+df_learn = df.iloc[:split_idx].copy()
+df_predict = df.iloc[split_idx:].copy()
+
+# ---------------------------------------------------------------------
+# 1. LEARN PHASE (0 to 50%)
+# ---------------------------------------------------------------------
+learn_close = df_learn["Close"].to_numpy()
+df_learn["Hurst_Normal"] = calculate_rolling_hurst_vectorized(learn_close, window=30)
+
+kalman_base_learn, last_x_base, last_p_base = apply_kalman_filter_custom(
+    learn_close, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+
+mom_learn, last_x_mom, last_p_mom = apply_kalman_filter_custom(
+    learn_close - kalman_base_learn, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-momentum_normal = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
+df_learn["HAM_Normal"] = mom_learn * (df_learn["Hurst_Normal"].to_numpy() * 2.0)
+
+# HA Path - Learn
+learn_ha_close = df_learn["HA_Close"].to_numpy()
+df_learn["Hurst_HA"] = calculate_rolling_hurst_vectorized(learn_ha_close, window=30)
+kalman_ha_learn, last_x_ha, last_p_ha = apply_kalman_filter_custom(
+    learn_ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
-df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
+mom_ha_learn, last_x_ha_mom, last_p_ha_mom = apply_kalman_filter_custom(
+    learn_ha_close - kalman_ha_learn, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+df_learn["HAM_HeikinAshi"] = mom_ha_learn * (df_learn["Hurst_HA"].to_numpy() * 2.0)
+
+raw_diff_learn = df_learn["HAM_Normal"] - df_learn["HAM_HeikinAshi"]
+df_learn["HAM_Diff_Raw"] = raw_diff_learn
+kalman_diff_learn, last_x_diff, last_p_diff = apply_kalman_filter_custom(
+    raw_diff_learn.to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
+)
+df_learn["HAM_Diff_Kalman"] = kalman_diff_learn
+
+
+# ---------------------------------------------------------------------
+# 2. PREDICT PHASE (50% to 100%) - Uses Trained Kalman States
+# ---------------------------------------------------------------------
+predict_close = df_predict["Close"].to_numpy()
+df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(predict_close, window=30)
+
+kalman_base_pred, _, _ = apply_kalman_filter_custom(
+    predict_close, initial_p=50.0, q_val=0.0005, r_val=0.2, last_x=last_x_base, last_p=last_p_base
+)
+
+mom_pred, _, _ = apply_kalman_filter_custom(
+    predict_close - kalman_base_pred, initial_p=0.50, q_val=0.001, r_val=0.1, last_x=last_x_mom, last_p=last_p_mom
+)
+df_predict["HAM_Normal"] = mom_pred * (df_predict["Hurst_Normal"].to_numpy() * 2.0)
+
+# HA Path - Predict
+predict_ha_close = df_predict["HA_Close"].to_numpy()
+df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(predict_ha_close, window=30)
+kalman_ha_pred, _, _ = apply_kalman_filter_custom(
+    predict_ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2, last_x=last_x_ha, last_p=last_p_ha
+)
+mom_ha_pred, _, _ = apply_kalman_filter_custom(
+    predict_ha_close - kalman_ha_pred, initial_p=0.50, q_val=0.001, r_val=0.1, last_x=last_x_ha_mom, last_p=last_p_ha_mom
+)
+df_predict["HAM_HeikinAshi"] = mom_ha_pred * (df_predict["Hurst_HA"].to_numpy() * 2.0)
+
+raw_diff_pred = df_predict["HAM_Normal"] - df_predict["HAM_HeikinAshi"]
+df_predict["HAM_Diff_Raw"] = raw_diff_pred
+kalman_diff_pred, _, _ = apply_kalman_filter_custom(
+    raw_diff_pred.to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1, last_x=last_x_diff, last_p=last_p_diff
+)
+df_predict["HAM_Diff_Kalman"] = kalman_diff_pred
+
+# Combine Both
+df = pd.concat([df_learn, df_predict])
 
 # ---------------------------------------------------------------------
 # 🌌 UNIVERSE EXPANSION FORMULAS
@@ -285,52 +342,28 @@ Lambda_const = 1.1056e-52
 c_speed = 299792458.0
 G_const = 6.6743e-11
 
-# Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
-
-# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
 )
 
-# Column 3: Friedmann Cosmic Acceleration (a_dotdot)
 dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
 matter_gravity_factor = (4.0 * np.pi * G_const) / 3.0
 df["HAM_Cosmic_Accel_a_dotdot"] = (
     dark_energy_factor - matter_gravity_factor
 ) * df["HAM_Expansion_a"]
 
-# 2. HA Path
-ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
-df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
-kalman_base_ha = apply_kalman_filter_custom(
-    ha_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_ha = apply_kalman_filter_custom(
-    ha_close_full - kalman_base_ha, initial_p=0.50, q_val=0.001, r_val=0.1
-)
-df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
-
-# Raw HAM Diff & Filtered Diff (Kalman)
-df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
-df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
-    df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
-)
-
-# Apply State Machine passing split boundary
+# Apply State Machine & Dynamic Hints
 df = apply_hysteresis_state_machine(
     df, split_idx=split_idx, reversal_threshold_pct=0.20
 )
-
-# Dynamic Hints
 df = calculate_dynamic_hints(df)
 
 # =====================================================================
 # DISPLAY MATRIX & METRICS (PREDICT SLICE ONLY)
 # =====================================================================
-# Slice to 50% Predict Portion
-df_predict = df.iloc[split_idx:].copy()
+df_predict_out = df.iloc[split_idx:].copy()
 
 clean_cols = [
     "Close",
@@ -348,13 +381,13 @@ clean_cols = [
     "Flip_Status",
 ]
 
-display_df = pd.DataFrame(index=df_predict.index)
+display_df = pd.DataFrame(index=df_predict_out.index)
 
 for col in clean_cols:
     if col not in ["Flip_Status", "HAM_Hint"]:
-        display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
+        display_df[col] = np.asarray(df_predict_out[col], dtype=float).flatten()
     else:
-        display_df[col] = df_predict[col]
+        display_df[col] = df_predict_out[col]
 
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
@@ -365,7 +398,7 @@ latest_time = display_df.index[0]
 st.info(
     f"📊 **Data Partition Summary:** Total = {total_candles:,} Candles |"
     f" **Learn (Trained)** = {split_idx:,} | **Predict (Out-of-Sample)** ="
-    f" {len(df_predict):,}"
+    f" {len(df_predict_out):,}"
 )
 
 st.markdown(
