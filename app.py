@@ -14,8 +14,8 @@ st.set_page_config(
 )
 st.title("⚡ Nifty 50 (^NSEI) Kinematics & Universe Expansion Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
-    " **State-Machine Lock** | **Gaussian Filtered Hubble Expansion**"
+    "🎯 **Strict 50:50 Train/Predict Split Engine:** First 50% History (Learn) |"
+    " Last 50% Out-Of-Sample (Predict) | **Kalman HAM Core**"
 )
 
 # Sidebar Controls
@@ -42,7 +42,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
     st.rerun()
 
 st.sidebar.success(
-    "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
+    "🛡️ **Split Protocol:** 50% LEARN / 50% PREDICT ACTIVE\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
     f"🔔 **Hubble Expansion Filter:** GAUSSIAN (Sigma = {gaussian_sigma})\n\n"
@@ -132,10 +132,12 @@ def apply_heikin_ashi(df_in):
     return df_out
 
 
-def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
+def apply_hysteresis_state_machine(
+    df_in, split_idx, reversal_threshold_pct=0.20
+):
     df = df_in.copy()
 
-    # 1. Raw Velocity Computation from Kalman Filtered Diff
+    # 1. Raw Velocity Computation
     raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
 
     # 2. Kalman Filtered Velocity
@@ -149,16 +151,12 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
     diff_vals = df["HAM_Diff_Kalman"].to_numpy()
     states = []
 
-    current_state = "🟡 INITIALIZING"
+    current_state = "🟡 INITIALIZING (LEARN)"
     peak_val = diff_vals[0]
     trough_val = diff_vals[0]
 
     for i in range(len(diff_vals)):
         val = diff_vals[i]
-
-        if i == 0:
-            states.append("🟡 INITIALIZING")
-            continue
 
         if val > peak_val:
             peak_val = val
@@ -172,7 +170,15 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
             abs(trough_val) * reversal_threshold_pct + 1.0
         )
 
-        if current_state in ["🟡 INITIALIZING", "🟢 STRONG BULLISH TREND"]:
+        # Learning Phase vs Prediction Phase Tagging
+        phase_prefix = (
+            "🟢 [PREDICT]" if i >= split_idx else "📘 [LEARN]"
+        )
+
+        if current_state in [
+            "🟡 INITIALIZING (LEARN)",
+            "🟢 STRONG BULLISH TREND",
+        ]:
             if val < peak_drop_trigger:
                 current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
                 trough_val = val
@@ -186,14 +192,13 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
             else:
                 current_state = "🔴 STRONG BEARISH TREND (Rally Stopped)"
 
-        states.append(current_state)
+        states.append(f"{phase_prefix} {current_state}")
 
     df["Flip_Status"] = states
     return df
 
 
 def calculate_dynamic_hints(df_in):
-    """Generates dynamic market structure hints."""
     df = df_in.copy()
     hints = []
     for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Kalman"]):
@@ -215,7 +220,6 @@ def calculate_dynamic_hints(df_in):
 # =====================================================================
 @st.cache_data(ttl=1800)
 def fetch_nifty_data(interval="1h"):
-    # Fetch ^NSEI (Nifty 50 Index)
     period = "730d" if interval in ["1h", "1d"] else "60d"
     df_raw = yf.download(
         tickers="^NSEI", period=period, interval=interval, progress=False
@@ -238,11 +242,11 @@ def fetch_nifty_data(interval="1h"):
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Nifty 50 Data & Computing Kinematics..."):
+    with st.spinner("🔄 Fetching Nifty 50 Data & Initializing 50:50 Engine..."):
         df = fetch_nifty_data(interval=timeframe)
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop incomplete live candle
+        df = df.iloc[:-1]
 
 except Exception as e:
     st.error(f"🚨 Data Engine Error: {e}")
@@ -250,8 +254,11 @@ except Exception as e:
 
 
 # =====================================================================
-# FULL KINEMATICS & UNIVERSE EXPANSION FORMULAS
+# STRICT 50:50 LEARN vs PREDICT PROTOCOL
 # =====================================================================
+total_candles = len(df)
+split_idx = int(total_candles * 0.50)  # Exact 50% split boundary
+
 df = apply_heikin_ashi(df)
 
 # 1. Base Normal Path (STRICT KALMAN CORE)
@@ -271,17 +278,17 @@ momentum_normal = apply_kalman_filter_custom(
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 # ---------------------------------------------------------------------
-# 🌌 UNIVERSE EXPANSION FORMULAS ON HAM_NORMAL BASELINE
+# 🌌 UNIVERSE EXPANSION FORMULAS
 # ---------------------------------------------------------------------
-H0_const = 70.0  # Hubble Constant (km/s/Mpc)
-Lambda_const = 1.1056e-52  # Cosmological Constant (m^-2)
-c_speed = 299792458.0  # Speed of Light (m/s)
-G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
+H0_const = 70.0
+Lambda_const = 1.1056e-52
+c_speed = 299792458.0
+G_const = 6.6743e-11
 
 # Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER APPLIED HERE)
+# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
@@ -294,7 +301,7 @@ df["HAM_Cosmic_Accel_a_dotdot"] = (
     dark_energy_factor - matter_gravity_factor
 ) * df["HAM_Expansion_a"]
 
-# 2. HA Path (STRICT KALMAN CORE)
+# 2. HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_vectorized(ha_close_full, window=30)
 kalman_base_ha = apply_kalman_filter_custom(
@@ -311,17 +318,18 @@ df["HAM_Diff_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 
-# Apply State Machine
-df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
+# Apply State Machine passing split boundary
+df = apply_hysteresis_state_machine(
+    df, split_idx=split_idx, reversal_threshold_pct=0.20
+)
 
 # Dynamic Hints
 df = calculate_dynamic_hints(df)
 
 # =====================================================================
-# DISPLAY MATRIX & METRICS
+# DISPLAY MATRIX & METRICS (PREDICT SLICE ONLY)
 # =====================================================================
-total_candles = len(df)
-split_idx = int(total_candles * 0.50)
+# Slice to 50% Predict Portion
 df_predict = df.iloc[split_idx:].copy()
 
 clean_cols = [
@@ -354,7 +362,15 @@ display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 latest_candle = display_df.iloc[0]
 latest_time = display_df.index[0]
 
-st.markdown(f"### 🔒 **LAST LOCKED CANDLE (NIFTY IST):** `{latest_time}`")
+st.info(
+    f"📊 **Data Partition Summary:** Total = {total_candles:,} Candles |"
+    f" **Learn (Trained)** = {split_idx:,} | **Predict (Out-of-Sample)** ="
+    f" {len(df_predict):,}"
+)
+
+st.markdown(
+    f"### 🔒 **LAST LOCKED CANDLE (50% PREDICT WINDOW):** `{latest_time}`"
+)
 
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -373,7 +389,7 @@ st.divider()
 
 # Interactive Data Frame
 st.subheader(
-    f"📋 Nifty 50 Dynamic Kinematic Matrix ({len(display_df):,} Locked Candles)"
+    f"📋 50% Predict Out-of-Sample Matrix ({len(display_df):,} Candles)"
 )
 st.dataframe(
     display_df,
@@ -412,7 +428,9 @@ st.dataframe(
         "HAM_Acceleration": st.column_config.NumberColumn(
             "🚀 Acceleration (Δ2)", format="%.4f"
         ),
-        "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Lock"),
+        "Flip_Status": st.column_config.TextColumn(
+            "🎯 50:50 State Lock (Predict)"
+        ),
     },
     use_container_width=True,
     height=600,
