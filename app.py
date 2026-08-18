@@ -211,13 +211,12 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# ROBUST DATA FETCH ENGINE (DIRECT API BYPASS FOR FULL 60 DAYS)
+# DATA FETCH ENGINE
 # =====================================================================
 @st.cache_data(ttl=300)
 def fetch_nifty_data_robust(interval="5m"):
     period_range = "60d" if interval in ["5m", "15m"] else "730d"
 
-    # Method 1: Direct Yahoo Chart API Call (Bypasses yfinance throttling)
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range={period_range}&interval={interval}"
         headers = {
@@ -253,7 +252,6 @@ def fetch_nifty_data_robust(interval="5m"):
     except Exception:
         pass
 
-    # Method 2: Fallback to yfinance if direct API call fails
     df_raw = yf.download(
         tickers="^NSEI", period=period_range, interval=interval, progress=False
     )
@@ -471,18 +469,14 @@ for col in clean_cols:
 # Newest candles on top
 display_df_full = display_df_full.iloc[::-1]
 
-# Display 100 recent rows by default
-display_df_100 = display_df_full.head(100).copy()
-
 display_df_full.index = display_df_full.index.strftime("%Y-%m-%d %H:%M IST")
-display_df_100.index = display_df_100.index.strftime("%Y-%m-%d %H:%M IST")
 
 latest_candle = display_df_full.iloc[0]
 latest_time = display_df_full.index[0]
 
 st.info(
     f"📊 **Data Partition Summary ({timeframe}):** Total = {total_candles:,} Candles |"
-    f" **Learn (Trained)** = {split_idx:,} | **Predict (Out-of-Sample)** ="
+    f" **Learn (Trained)** = {split_idx:,} | **Predict (Out-of-Sample Shown Below)** ="
     f" {len(df_predict_out):,}"
 )
 
@@ -505,16 +499,11 @@ col5.metric(
 
 st.divider()
 
-# Data Table Section
-st.subheader(f"📋 Out-of-Sample Predict Matrix ({timeframe})")
-
-show_all = st.checkbox(
-    f"Show all {len(df_predict_out):,} Predict Candles (Last 30 Days)"
-)
-final_display = display_df_full if show_all else display_df_100
+# Data Table Section - SHOWS ALL PREDICT CANDLES BY DEFAULT
+st.subheader(f"📋 Out-of-Sample Full Predict Matrix ({len(df_predict_out):,} Candles)")
 
 st.dataframe(
-    final_display,
+    display_df_full,
     column_config={
         "Close": st.column_config.NumberColumn(
             "Nifty Close (₹)", format="₹%.2f"
