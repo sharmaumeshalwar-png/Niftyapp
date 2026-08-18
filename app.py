@@ -21,11 +21,12 @@ st.write(
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
+# Added 5m to options and set as default
 timeframe = st.sidebar.selectbox(
     "⏱️ Select Timeframe",
-    options=["1h", "15m", "1d"],
+    options=["5m", "15m", "1h", "1d"],
     index=0,
-    help="Interval for Nifty data via Yahoo Finance",
+    help="Interval for Nifty data via Yahoo Finance (Note: 5m supports up to 60 days max)",
 )
 
 gaussian_sigma = st.sidebar.slider(
@@ -56,7 +57,6 @@ st.sidebar.success(
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1, last_x=None, last_p=None
 ):
-    """Standard Kalman Filter Engine supporting sequential state tracking for zero leakage."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([]), initial_p, initial_p
@@ -75,7 +75,6 @@ def apply_kalman_filter_custom(
 
 
 def apply_gaussian_smoothing(data_array, sigma=3.0):
-    """Applies Gaussian 1D filter for Hubble Expansion Smoothing."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -140,7 +139,6 @@ def apply_hysteresis_state_machine(
 ):
     df = df_in.copy()
 
-    # Raw Velocity & Kalman Filtered Velocity
     raw_velocity = df["HAM_Diff_Kalman"].diff().fillna(0.0).to_numpy()
     vel_filtered, _, _ = apply_kalman_filter_custom(
         raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
@@ -215,11 +213,16 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# NIFTY 50 DATA FETCH ENGINE (yfinance)
+# NIFTY 50 DATA FETCH ENGINE (HANDLES 5M FETCHING)
 # =====================================================================
-@st.cache_data(ttl=1800)
-def fetch_nifty_data(interval="1h"):
-    period = "730d" if interval in ["1h", "1d"] else "60d"
+@st.cache_data(ttl=300)  # Shorter TTL (5 mins) for 5m intraday updates
+def fetch_nifty_data(interval="5m"):
+    # Yahoo Finance API constraints: 5m/15m allow max 60d period
+    if interval in ["5m", "15m"]:
+        period = "60d"
+    else:
+        period = "730d"
+
     df_raw = yf.download(
         tickers="^NSEI", period=period, interval=interval, progress=False
     )
@@ -241,7 +244,7 @@ def fetch_nifty_data(interval="1h"):
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Nifty 50 Data & Initializing STRICT 50:50 Engine..."):
+    with st.spinner(f"🔄 Fetching Nifty 50 [{timeframe}] Data & Running 50:50 Engine..."):
         df = fetch_nifty_data(interval=timeframe)
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
@@ -253,7 +256,7 @@ except Exception as e:
 
 
 # =====================================================================
-# STRICT 50:50 LEARN vs PREDICT PIPELINE (NO DATA LEAKAGE)
+# STRICT 50:50 LEARN vs PREDICT PIPELINE
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)  # Exact 50% split boundary
@@ -265,7 +268,7 @@ df_learn = df.iloc[:split_idx].copy()
 df_predict = df.iloc[split_idx:].copy()
 
 # ---------------------------------------------------------------------
-# 1. LEARN PHASE (0 to 50%)
+# 1. LEARN PHASE (First 50%)
 # ---------------------------------------------------------------------
 learn_close = df_learn["Close"].to_numpy()
 df_learn["Hurst_Normal"] = calculate_rolling_hurst_vectorized(learn_close, window=30)
@@ -299,7 +302,7 @@ df_learn["HAM_Diff_Kalman"] = kalman_diff_learn
 
 
 # ---------------------------------------------------------------------
-# 2. PREDICT PHASE (50% to 100%) - Uses Learned States
+# 2. PREDICT PHASE (Last 50%)
 # ---------------------------------------------------------------------
 predict_close = df_predict["Close"].to_numpy()
 df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(predict_close, window=30)
@@ -361,7 +364,7 @@ df = apply_hysteresis_state_machine(
 df = calculate_dynamic_hints(df)
 
 # =====================================================================
-# DISPLAY MATRIX & METRICS (PREDICT SLICE ONLY - LAST 100 CANDLES VIEW)
+# DISPLAY MATRIX & METRICS (PREDICT SLICE ONLY - RECENT CANDLES)
 # =====================================================================
 df_predict_out = df.iloc[split_idx:].copy()
 
@@ -402,7 +405,7 @@ latest_candle = display_df_full.iloc[0]
 latest_time = display_df_full.index[0]
 
 st.info(
-    f"📊 **Data Partition Summary:** Total = {total_candles:,} Candles |"
+    f"📊 **Data Partition Summary ({timeframe}):** Total = {total_candles:,} Candles |"
     f" **Learn (Trained)** = {split_idx:,} | **Predict (Out-of-Sample)** ="
     f" {len(df_predict_out):,}"
 )
@@ -428,11 +431,10 @@ st.divider()
 
 # Interactive Data Frame Section
 st.subheader(
-    f"📋 Recent Out-of-Sample Predict Matrix View"
+    f"📋 Recent Out-of-Sample Predict Matrix ({timeframe})"
 )
 
-# Toggle to show full predict matrix or just recent 100
-show_all = st.checkbox(f"Show all {len(df_predict_out):,} Predict Candles (Feb 2025 - Present)")
+show_all = st.checkbox(f"Show all {len(df_predict_out):,} Predict Candles")
 final_display = display_df_full if show_all else display_df_100
 
 st.dataframe(
