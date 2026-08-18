@@ -2,6 +2,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
+import requests
 from scipy.ndimage import gaussian_filter1d
 import streamlit as st
 import yfinance as yf
@@ -21,12 +22,11 @@ st.write(
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
-# Added 5m to options and set as default
 timeframe = st.sidebar.selectbox(
     "⏱️ Select Timeframe",
     options=["5m", "15m", "1h", "1d"],
     index=0,
-    help="Interval for Nifty data via Yahoo Finance (Note: 5m supports up to 60 days max)",
+    help="Interval for Nifty data (5m fetches full 60 days ~3,700 candles)",
 )
 
 gaussian_sigma = st.sidebar.slider(
@@ -60,10 +60,10 @@ def apply_kalman_filter_custom(
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([]), initial_p, initial_p
-    
+
     x = arr[0] if last_x is None else last_x
     p = initial_p if last_p is None else last_p
-    
+
     filtered_values = np.empty(len(arr))
     for i, z in enumerate(arr):
         p = p + q_val
@@ -168,9 +168,7 @@ def apply_hysteresis_state_machine(
             abs(trough_val) * reversal_threshold_pct + 1.0
         )
 
-        phase_prefix = (
-            "🟢 [PREDICT]" if i >= split_idx else "📘 [LEARN]"
-        )
+        phase_prefix = "🟢 [PREDICT]" if i >= split_idx else "📘 [LEARN]"
 
         if current_state in [
             "🟡 INITIALIZING (LEARN)",
@@ -213,22 +211,55 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# NIFTY 50 DATA FETCH ENGINE (HANDLES 5M FETCHING)
+# ROBUST DATA FETCH ENGINE (DIRECT API BYPASS FOR FULL 60 DAYS)
 # =====================================================================
-@st.cache_data(ttl=300)  # Shorter TTL (5 mins) for 5m intraday updates
-def fetch_nifty_data(interval="5m"):
-    # Yahoo Finance API constraints: 5m/15m allow max 60d period
-    if interval in ["5m", "15m"]:
-        period = "60d"
-    else:
-        period = "730d"
+@st.cache_data(ttl=300)
+def fetch_nifty_data_robust(interval="5m"):
+    period_range = "60d" if interval in ["5m", "15m"] else "730d"
 
+    # Method 1: Direct Yahoo Chart API Call (Bypasses yfinance throttling)
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range={period_range}&interval={interval}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0"
+                " Safari/537.36"
+            )
+        }
+        res = requests.get(url, headers=headers, timeout=10)
+
+        if res.status_code == 200:
+            data = res.json()
+            result = data["chart"]["result"][0]
+            timestamps = result["timestamp"]
+            quote = result["indicators"]["quote"][0]
+
+            df_api = pd.DataFrame(
+                {
+                    "Open": quote["open"],
+                    "High": quote["high"],
+                    "Low": quote["low"],
+                    "Close": quote["close"],
+                    "Volume": quote["volume"],
+                },
+                index=pd.to_datetime(timestamps, unit="s", utc=True),
+            )
+
+            df_api = df_api.dropna()
+            if len(df_api) > 500:
+                df_api.index = df_api.index.tz_convert("Asia/Kolkata")
+                return df_api
+    except Exception:
+        pass
+
+    # Method 2: Fallback to yfinance if direct API call fails
     df_raw = yf.download(
-        tickers="^NSEI", period=period, interval=interval, progress=False
+        tickers="^NSEI", period=period_range, interval=interval, progress=False
     )
 
     if df_raw.empty:
-        raise ValueError("Failed to fetch Nifty 50 data from Yahoo Finance.")
+        raise ValueError("Failed to fetch Nifty 50 data.")
 
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
@@ -244,8 +275,10 @@ def fetch_nifty_data(interval="5m"):
 
 # Fetch Data
 try:
-    with st.spinner(f"🔄 Fetching Nifty 50 [{timeframe}] Data & Running 50:50 Engine..."):
-        df = fetch_nifty_data(interval=timeframe)
+    with st.spinner(
+        f"🔄 Fetching Full Historical Data [{timeframe}] & Running 50:50 Engine..."
+    ):
+        df = fetch_nifty_data_robust(interval=timeframe)
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
         df = df.iloc[:-1]
@@ -271,7 +304,9 @@ df_predict = df.iloc[split_idx:].copy()
 # 1. LEARN PHASE (First 50%)
 # ---------------------------------------------------------------------
 learn_close = df_learn["Close"].to_numpy()
-df_learn["Hurst_Normal"] = calculate_rolling_hurst_vectorized(learn_close, window=30)
+df_learn["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    learn_close, window=30
+)
 
 kalman_base_learn, last_x_base, last_p_base = apply_kalman_filter_custom(
     learn_close, initial_p=50.0, q_val=0.0005, r_val=0.2
@@ -280,18 +315,24 @@ kalman_base_learn, last_x_base, last_p_base = apply_kalman_filter_custom(
 mom_learn, last_x_mom, last_p_mom = apply_kalman_filter_custom(
     learn_close - kalman_base_learn, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df_learn["HAM_Normal"] = mom_learn * (df_learn["Hurst_Normal"].to_numpy() * 2.0)
+df_learn["HAM_Normal"] = mom_learn * (
+    df_learn["Hurst_Normal"].to_numpy() * 2.0
+)
 
 # HA Path - Learn
 learn_ha_close = df_learn["HA_Close"].to_numpy()
-df_learn["Hurst_HA"] = calculate_rolling_hurst_vectorized(learn_ha_close, window=30)
+df_learn["Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    learn_ha_close, window=30
+)
 kalman_ha_learn, last_x_ha, last_p_ha = apply_kalman_filter_custom(
     learn_ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2
 )
 mom_ha_learn, last_x_ha_mom, last_p_ha_mom = apply_kalman_filter_custom(
     learn_ha_close - kalman_ha_learn, initial_p=0.50, q_val=0.001, r_val=0.1
 )
-df_learn["HAM_HeikinAshi"] = mom_ha_learn * (df_learn["Hurst_HA"].to_numpy() * 2.0)
+df_learn["HAM_HeikinAshi"] = mom_ha_learn * (
+    df_learn["Hurst_HA"].to_numpy() * 2.0
+)
 
 raw_diff_learn = df_learn["HAM_Normal"] - df_learn["HAM_HeikinAshi"]
 df_learn["HAM_Diff_Raw"] = raw_diff_learn
@@ -305,32 +346,65 @@ df_learn["HAM_Diff_Kalman"] = kalman_diff_learn
 # 2. PREDICT PHASE (Last 50%)
 # ---------------------------------------------------------------------
 predict_close = df_predict["Close"].to_numpy()
-df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(predict_close, window=30)
+df_predict["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    predict_close, window=30
+)
 
 kalman_base_pred, _, _ = apply_kalman_filter_custom(
-    predict_close, initial_p=50.0, q_val=0.0005, r_val=0.2, last_x=last_x_base, last_p=last_p_base
+    predict_close,
+    initial_p=50.0,
+    q_val=0.0005,
+    r_val=0.2,
+    last_x=last_x_base,
+    last_p=last_p_base,
 )
 
 mom_pred, _, _ = apply_kalman_filter_custom(
-    predict_close - kalman_base_pred, initial_p=0.50, q_val=0.001, r_val=0.1, last_x=last_x_mom, last_p=last_p_mom
+    predict_close - kalman_base_pred,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+    last_x=last_x_mom,
+    last_p=last_p_mom,
 )
-df_predict["HAM_Normal"] = mom_pred * (df_predict["Hurst_Normal"].to_numpy() * 2.0)
+df_predict["HAM_Normal"] = mom_pred * (
+    df_predict["Hurst_Normal"].to_numpy() * 2.0
+)
 
 # HA Path - Predict
 predict_ha_close = df_predict["HA_Close"].to_numpy()
-df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(predict_ha_close, window=30)
+df_predict["Hurst_HA"] = calculate_rolling_hurst_vectorized(
+    predict_ha_close, window=30
+)
 kalman_ha_pred, _, _ = apply_kalman_filter_custom(
-    predict_ha_close, initial_p=50.0, q_val=0.0005, r_val=0.2, last_x=last_x_ha, last_p=last_p_ha
+    predict_ha_close,
+    initial_p=50.0,
+    q_val=0.0005,
+    r_val=0.2,
+    last_x=last_x_ha,
+    last_p=last_p_ha,
 )
 mom_ha_pred, _, _ = apply_kalman_filter_custom(
-    predict_ha_close - kalman_ha_pred, initial_p=0.50, q_val=0.001, r_val=0.1, last_x=last_x_ha_mom, last_p=last_p_ha_mom
+    predict_ha_close - kalman_ha_pred,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+    last_x=last_x_ha_mom,
+    last_p=last_p_ha_mom,
 )
-df_predict["HAM_HeikinAshi"] = mom_ha_pred * (df_predict["Hurst_HA"].to_numpy() * 2.0)
+df_predict["HAM_HeikinAshi"] = mom_ha_pred * (
+    df_predict["Hurst_HA"].to_numpy() * 2.0
+)
 
 raw_diff_pred = df_predict["HAM_Normal"] - df_predict["HAM_HeikinAshi"]
 df_predict["HAM_Diff_Raw"] = raw_diff_pred
 kalman_diff_pred, _, _ = apply_kalman_filter_custom(
-    raw_diff_pred.to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1, last_x=last_x_diff, last_p=last_p_diff
+    raw_diff_pred.to_numpy(),
+    initial_p=0.50,
+    q_val=0.0001,
+    r_val=0.1,
+    last_x=last_x_diff,
+    last_p=last_p_diff,
 )
 df_predict["HAM_Diff_Kalman"] = kalman_diff_pred
 
@@ -364,7 +438,7 @@ df = apply_hysteresis_state_machine(
 df = calculate_dynamic_hints(df)
 
 # =====================================================================
-# DISPLAY MATRIX & METRICS (PREDICT SLICE ONLY - RECENT CANDLES)
+# DISPLAY MATRIX & METRICS
 # =====================================================================
 df_predict_out = df.iloc[split_idx:].copy()
 
@@ -388,14 +462,16 @@ display_df_full = pd.DataFrame(index=df_predict_out.index)
 
 for col in clean_cols:
     if col not in ["Flip_Status", "HAM_Hint"]:
-        display_df_full[col] = np.asarray(df_predict_out[col], dtype=float).flatten()
+        display_df_full[col] = np.asarray(
+            df_predict_out[col], dtype=float
+        ).flatten()
     else:
         display_df_full[col] = df_predict_out[col]
 
 # Newest candles on top
 display_df_full = display_df_full.iloc[::-1]
 
-# Slicing recent 100 candles for clean viewing
+# Display 100 recent rows by default
 display_df_100 = display_df_full.head(100).copy()
 
 display_df_full.index = display_df_full.index.strftime("%Y-%m-%d %H:%M IST")
@@ -429,12 +505,12 @@ col5.metric(
 
 st.divider()
 
-# Interactive Data Frame Section
-st.subheader(
-    f"📋 Recent Out-of-Sample Predict Matrix ({timeframe})"
-)
+# Data Table Section
+st.subheader(f"📋 Out-of-Sample Predict Matrix ({timeframe})")
 
-show_all = st.checkbox(f"Show all {len(df_predict_out):,} Predict Candles")
+show_all = st.checkbox(
+    f"Show all {len(df_predict_out):,} Predict Candles (Last 30 Days)"
+)
 final_display = display_df_full if show_all else display_df_100
 
 st.dataframe(
@@ -446,9 +522,7 @@ st.dataframe(
         "HA_Close": st.column_config.NumberColumn(
             "HA Close (₹)", format="₹%.2f"
         ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst", format="%.2f"
-        ),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal (Kalman)", format="%.2f"
         ),
