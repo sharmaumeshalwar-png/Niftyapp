@@ -11,22 +11,23 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="Nifty 50 Kinematics State-Machine Engine", layout="wide"
+    page_title="Nifty 50 Kinematics State-Machine Engine (1H)", layout="wide"
 )
 st.title("⚡ Nifty 50 (^NSEI) Kinematics & Universe Expansion Engine")
 st.write(
-    "🎯 **Strict 50:50 Train/Predict Split Engine:** First 50% History (Learn) |"
+    "🎯 **Strict 50:50 Train/Predict Split Engine (1-Hour Timeframe):** First 50% History (Learn) |"
     " Last 50% Out-Of-Sample (Predict) | **Kalman HAM Core**"
 )
 
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
+# Set 1h as default timeframe (index=1)
 timeframe = st.sidebar.selectbox(
     "⏱️ Select Timeframe",
-    options=["5m", "15m", "1h", "1d"],
+    options=["1h", "5m", "15m", "1d"],
     index=0,
-    help="Interval for Nifty data (5m fetches full 60 days ~3,700 candles)",
+    help="1-Hour timeframe fetches up to 730 days (~1,500 candles)",
 )
 
 gaussian_sigma = st.sidebar.slider(
@@ -211,11 +212,11 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# DATA FETCH ENGINE
+# DATA FETCH ENGINE (1H TIMEFRAME OPTIMIZED)
 # =====================================================================
 @st.cache_data(ttl=300)
-def fetch_nifty_data_robust(interval="5m"):
-    period_range = "60d" if interval in ["5m", "15m"] else "730d"
+def fetch_nifty_data_robust(interval="1h"):
+    period_range = "730d" if interval in ["1h", "1d"] else "60d"
 
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?range={period_range}&interval={interval}"
@@ -246,7 +247,7 @@ def fetch_nifty_data_robust(interval="5m"):
             )
 
             df_api = df_api.dropna()
-            if len(df_api) > 500:
+            if len(df_api) > 100:
                 df_api.index = df_api.index.tz_convert("Asia/Kolkata")
                 return df_api
     except Exception:
@@ -287,7 +288,7 @@ except Exception as e:
 
 
 # =====================================================================
-# STRICT 50:50 LEARN vs PREDICT PIPELINE
+# STRICT 50:50 LEARN vs PREDICT PIPELINE (1H)
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)  # Exact 50% split boundary
@@ -499,7 +500,7 @@ col5.metric(
 
 st.divider()
 
-# Data Table Section - SHOWS ALL PREDICT CANDLES BY DEFAULT
+# Data Table Section - ALL 1H PREDICT CANDLES
 st.subheader(f"📋 Out-of-Sample Full Predict Matrix ({len(df_predict_out):,} Candles)")
 
 st.dataframe(
