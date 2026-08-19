@@ -376,6 +376,11 @@ df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
 )
 
+# NAYA STEP: Gaussian Value par Kalman Filter Lagaya Gaya (initial_p = 0.50)
+df["HAM_Hubble_Vel_Kalman"] = apply_kalman_filter_custom(
+    df["HAM_Hubble_Vel_v"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
+)
+
 # Column 3: Friedmann Cosmic Acceleration (a_dotdot)
 dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
 matter_gravity_factor = (4.0 * np.pi * G_const) / 3.0
@@ -420,6 +425,7 @@ clean_cols = [
     "HAM_Normal",
     "HAM_Expansion_a",
     "HAM_Hubble_Vel_v",
+    "HAM_Hubble_Vel_Kalman",  # Naya Column yahan add kar diya gaya hai
     "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
@@ -451,8 +457,8 @@ col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    f"🔭 Hubble Vel (σ={gaussian_sigma})",
-    f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s",
+    f"🔭 Hubble Vel Kalman (P=0.50)",
+    f"{latest_candle['HAM_Hubble_Vel_Kalman']:.2f} km/s",
 )
 col5.metric(
     "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
@@ -484,6 +490,9 @@ st.dataframe(
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
             f"🔭 Hubble Vel (Gaussian σ={gaussian_sigma})", format="%.2f"
+        ),
+        "HAM_Hubble_Vel_Kalman": st.column_config.NumberColumn(
+            "🔭 Hubble Vel (Kalman P=0.50)", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
