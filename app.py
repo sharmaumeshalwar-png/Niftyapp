@@ -5,14 +5,15 @@ import pandas as pd
 import requests
 from scipy.ndimage import gaussian_filter1d
 import streamlit as st
+import yfinance as yf
 
 # =====================================================================
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="BTC Kinematics State-Machine Engine", layout="wide"
+    page_title="Silver Kinematics State-Machine Engine", layout="wide"
 )
-st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
+st.title("⚡ Silver (MCX / SI=F) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
     " **State-Machine Lock** | **Gaussian Filtered Hubble Expansion**"
@@ -205,132 +206,47 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# DUAL-SOURCE DATA FETCH ENGINE
+# DUAL-SOURCE DATA FETCH ENGINE (SILVER FUTURES - SI=F)
 # =====================================================================
 @st.cache_data(ttl=3600)
-def fetch_binance_data(start_ts, end_ts):
-    endpoint = "https://api.binance.com/api/v3/klines"
-    all_candles = []
-    current_start = start_ts
-    headers = {"User-Agent": "Mozilla/5.0"}
+def fetch_silver_data():
+    """Fetches 1-Hour Silver Continuous Futures data (SI=F)."""
+    # Yahoo Finance Silver Futures ticker
+    ticker = "SI=F"
+    silver_data = yf.download(ticker, period="730d", interval="1h", progress=False)
 
-    while current_start < end_ts:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "limit": 1000,
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
+    if silver_data.empty:
+        raise ValueError("Silver Data Fetch Failed from Yahoo Finance.")
 
-        if not isinstance(res, list) or len(res) == 0:
-            break
+    # Flatten multi-index columns if returned by yfinance
+    if isinstance(silver_data.columns, pd.MultiIndex):
+        silver_data.columns = silver_data.columns.get_level_values(0)
 
-        all_candles.extend(res)
-        last_candle_time = res[-1][0]
-        if last_candle_time <= current_start:
-            break
-        current_start = last_candle_time + 1
-        time.sleep(0.02)
-
-    if len(all_candles) < 2000:
-        return None
-
-    cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
-    ]
-    df_raw = pd.DataFrame(all_candles, columns=cols)
-    num_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(
-        df_raw["OpenTime"], unit="ms", utc=True
-    )
-    df_raw.set_index("Timestamp", inplace=True)
-    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+    df_raw = silver_data[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    return df_raw
 
 
-@st.cache_data(ttl=3600)
-def fetch_coinbase_data(start_dt, now_dt):
-    endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    current_end = now_dt
-    all_candles = []
-
-    while current_end > start_dt:
-        current_start = max(start_dt, current_end - timedelta(hours=300))
-        params = {
-            "granularity": 3600,
-            "start": current_start.isoformat(),
-            "end": current_end.isoformat(),
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
-
-        if isinstance(res, list) and len(res) > 0:
-            all_candles.extend(res)
-        else:
-            break
-
-        current_end = current_start
-        time.sleep(0.05)
-
-    if len(all_candles) == 0:
-        return None
-
-    cols = ["time", "Low", "High", "Open", "Close", "Volume"]
-    df_raw = pd.DataFrame(all_candles, columns=cols)
-    num_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df_raw[num_cols] = df_raw[num_cols].astype(float)
-    df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
-    df_raw.set_index("Timestamp", inplace=True)
-    df_raw.sort_index(ascending=True, inplace=True)
-    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
-
-
-def get_robust_2year_hourly():
-    now = datetime.now(timezone.utc)
-    start_dt = now - timedelta(days=730)
-
+def get_robust_silver_hourly():
     try:
-        df = fetch_binance_data(
-            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
-        )
-        if df is not None and len(df) >= 5000:
-            return df, "Binance REST API"
-    except Exception:
+        df = fetch_silver_data()
+        if df is not None and len(df) >= 1000:
+            return df, "Yahoo Finance (COMEX Silver Futures)"
+    except Exception as e:
         pass
 
-    df = fetch_coinbase_data(start_dt, now)
-    if df is not None and len(df) >= 2000:
-        return df, "Coinbase Pro API (Fallback)"
-
-    raise ValueError(
-        "Both primary and fallback endpoints failed to return sufficient"
-        " candles."
-    )
+    raise ValueError("Failed to retrieve Silver candle data from API endpoints.")
 
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Data & Computing Kinematics Engine..."):
-        df, source_used = get_robust_2year_hourly()
+    with st.spinner("🔄 Fetching Silver Data & Computing Kinematics Engine..."):
+        df, source_used = get_robust_silver_hourly()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
         df = df.iloc[:-1]
+        
+        if df.index.tz is None:
+            df.index = pd.to_datetime(df.index, utc=True)
         df.index = df.index.tz_convert("Asia/Kolkata")
 
 except Exception as e:
@@ -376,7 +292,7 @@ df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
 )
 
-# NAYA STEP: Gaussian Value par Kalman Filter Lagaya Gaya (initial_p = 0.50)
+# Gaussian Value par Kalman Filter (initial_p = 0.50)
 df["HAM_Hubble_Vel_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Hubble_Vel_v"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
@@ -425,7 +341,7 @@ clean_cols = [
     "HAM_Normal",
     "HAM_Expansion_a",
     "HAM_Hubble_Vel_v",
-    "HAM_Hubble_Vel_Kalman",  # Naya Column yahan add kar diya gaya hai
+    "HAM_Hubble_Vel_Kalman",
     "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
@@ -453,7 +369,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col1.metric("Locked Silver Close", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
@@ -468,13 +384,13 @@ st.divider()
 
 # Interactive Data Frame
 st.subheader(
-    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Candles)"
+    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Silver Candles)"
 )
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn(
-            "Close Price ($)", format="$%.2f"
+            "Silver Price ($)", format="$%.2f"
         ),
         "HA_Close": st.column_config.NumberColumn(
             "HA Close ($)", format="$%.2f"
