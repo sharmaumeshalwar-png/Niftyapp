@@ -11,9 +11,9 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="Silver Kinematics State-Machine Engine", layout="wide"
+    page_title="Zerodha Silver ETF Kinematics Engine", layout="wide"
 )
-st.title("⚡ Silver (MCX / SI=F) Kinematics & Universe Expansion Engine")
+st.title("⚡ Zerodha Silver ETF (SILVERZERODHA.NS) Kinematics Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
     " **State-Machine Lock** | **Gaussian Filtered Hubble Expansion**"
@@ -206,45 +206,37 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# DUAL-SOURCE DATA FETCH ENGINE (SILVER FUTURES - SI=F)
+# DATA FETCH ENGINE: ZERODHA SILVER ETF (NSE: SILVERZERODHA.NS)
 # =====================================================================
 @st.cache_data(ttl=3600)
-def fetch_silver_data():
-    """Fetches 1-Hour Silver Continuous Futures data (SI=F)."""
-    # Yahoo Finance Silver Futures ticker
-    ticker = "SI=F"
-    silver_data = yf.download(ticker, period="730d", interval="1h", progress=False)
+def fetch_zerodha_silver_etf():
+    """Fetches 1-Hour Candles for Zerodha Silver ETF (~₹226 range)."""
+    ticker = "SILVERZERODHA.NS"
+    etf_data = yf.download(ticker, period="730d", interval="1h", progress=False)
 
-    if silver_data.empty:
-        raise ValueError("Silver Data Fetch Failed from Yahoo Finance.")
+    if etf_data.empty:
+        # Fallback to ICICISILVER if SILVERZERODHA feed is brief
+        ticker = "SILVERIETF.NS"
+        etf_data = yf.download(ticker, period="730d", interval="1h", progress=False)
 
-    # Flatten multi-index columns if returned by yfinance
-    if isinstance(silver_data.columns, pd.MultiIndex):
-        silver_data.columns = silver_data.columns.get_level_values(0)
+    if etf_data.empty:
+        raise ValueError("Silver ETF Data Fetch Failed from NSE APIs.")
 
-    df_raw = silver_data[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    if isinstance(etf_data.columns, pd.MultiIndex):
+        etf_data.columns = etf_data.columns.get_level_values(0)
+
+    df_raw = etf_data[["Open", "High", "Low", "Close", "Volume"]].dropna()
     return df_raw
-
-
-def get_robust_silver_hourly():
-    try:
-        df = fetch_silver_data()
-        if df is not None and len(df) >= 1000:
-            return df, "Yahoo Finance (COMEX Silver Futures)"
-    except Exception as e:
-        pass
-
-    raise ValueError("Failed to retrieve Silver candle data from API endpoints.")
 
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Silver Data & Computing Kinematics Engine..."):
-        df, source_used = get_robust_silver_hourly()
+    with st.spinner("🔄 Fetching Zerodha Silver ETF Data & Computing Engine..."):
+        df = fetch_zerodha_silver_etf()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
         df = df.iloc[:-1]
-        
+
         if df.index.tz is None:
             df.index = pd.to_datetime(df.index, utc=True)
         df.index = df.index.tz_convert("Asia/Kolkata")
@@ -286,7 +278,7 @@ G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 # Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER APPLIED HERE)
+# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
@@ -369,7 +361,7 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Locked Silver Close", f"${latest_candle['Close']:,.2f}")
+col1.metric("Silver ETF Price", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
@@ -384,16 +376,16 @@ st.divider()
 
 # Interactive Data Frame
 st.subheader(
-    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Silver Candles)"
+    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked ETF Candles)"
 )
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn(
-            "Silver Price ($)", format="$%.2f"
+            "Zerodha Silver ETF Price (₹)", format="₹%.2f"
         ),
         "HA_Close": st.column_config.NumberColumn(
-            "HA Close ($)", format="$%.2f"
+            "HA Close (₹)", format="₹%.2f"
         ),
         "Hurst_Normal": st.column_config.NumberColumn(
             "Hurst", format="%.2f"
