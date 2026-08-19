@@ -15,13 +15,13 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
-    " **State-Machine Lock** | **Gaussian -> Kalman Hubble Pipeline**"
+    " **State-Machine Lock** | **Gaussian -> Kalman (Q=0.000001) Hubble Pipeline**"
 )
 
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
-# Dynamic Controls for Gaussian & Kalman Smoothing
+# Dynamic Controls for Gaussian Smoothing
 gaussian_sigma = st.sidebar.slider(
     "🔔 Hubble Gaussian Sigma (σ)",
     min_value=0.5,
@@ -31,18 +31,8 @@ gaussian_sigma = st.sidebar.slider(
     help="Gaussian bell-curve smoothing applied to Base Hubble Velocity.",
 )
 
-hubble_q_val = st.sidebar.slider(
-    "🔔 Hubble Kalman Q-Noise Value",
-    min_value=0.00001,
-    max_value=0.01,
-    value=0.0001,
-    step=0.00005,
-    format="%.5f",
-    help=(
-        "Process noise covariance (Q) for Kalman Filter applied on Gaussian"
-        " base value."
-    ),
-)
+# Fixed Q-Noise parameter for Hubble Kalman
+hubble_q_val = 0.000001
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
@@ -53,7 +43,7 @@ st.sidebar.success(
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
     f"🔔 **Gaussian Base Filter:** SIGMA = {gaussian_sigma}\n\n"
-    f"🎯 **Hubble Kalman Filter:** INITIAL P = 0.50 (Q = {hubble_q_val})\n\n"
+    f"🎯 **Hubble Kalman Filter:** INITIAL P = 0.50 (FIXED Q = {hubble_q_val:.6f})\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
@@ -62,7 +52,7 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES & FILTERS
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
+    data_array, initial_p=0.50, q_val=0.000001, r_val=0.1
 ):
     """Standard Kalman Filter Engine for Signals."""
     arr = np.asarray(data_array, dtype=float).flatten()
@@ -387,16 +377,16 @@ df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 # Raw Hubble Velocity
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 
-# Column 2A: NEW COLUMN - Hubble Gaussian Base Value
+# Column 2A: Hubble Gaussian Base Value
 df["HAM_Hubble_Vel_Gaussian"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
 )
 
-# Column 2B: Hubble Kalman Filter (Applied on Gaussian Base Value with Initial P = 0.50)
+# Column 2B: Hubble Kalman Filter (Applied on Gaussian Base Value with Initial P = 0.50, Q = 0.000001)
 df["HAM_Hubble_Vel_v"] = apply_kalman_filter_custom(
     df["HAM_Hubble_Vel_Gaussian"].to_numpy(),
     initial_p=0.50,
-    q_val=hubble_q_val,
+    q_val=0.000001,
     r_val=0.1,
 )
 
@@ -480,7 +470,7 @@ col4.metric(
     f"{latest_candle['HAM_Hubble_Vel_Gaussian']:.2f} km/s",
 )
 col5.metric(
-    "🔭 Hubble Kalman (P=0.50)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
+    "🔭 Hubble Kalman (Q=1e-6)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
 )
 
 st.divider()
@@ -511,7 +501,7 @@ st.dataframe(
             f"🔔 Hubble Vel Gaussian (σ={gaussian_sigma})", format="%.2f"
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            "🔭 Hubble Vel Kalman (P=0.50)", format="%.2f"
+            "🔭 Hubble Vel Kalman (P=0.5, Q=1e-6)", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
