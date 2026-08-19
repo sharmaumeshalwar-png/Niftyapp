@@ -11,12 +11,13 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="Zerodha Silver ETF Kinematics Engine", layout="wide"
+    page_title="MCX SilverMIC Kinematics Engine", layout="wide"
 )
-st.title("⚡ Zerodha Silver ETF (SILVERZERODHA.NS) Kinematics Engine")
+st.title("⚡ MCX SilverMIC Futures Kinematics Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
-    " **State-Machine Lock** | **Gaussian Filtered Hubble Expansion**"
+    "🎯 **1-Hour Timeframe Engine (MCX Live):** Continuous HAM Kinematics"
+    " (Kalman Core) | **State-Machine Lock** | **Gaussian Filtered Hubble"
+    " Expansion**"
 )
 
 # Sidebar Controls
@@ -206,36 +207,42 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# DATA FETCH ENGINE: ZERODHA SILVER ETF (NSE: SILVERZERODHA.NS)
+# DATA FETCH ENGINE: MCX SILVER MIC FUTURES
 # =====================================================================
-@st.cache_data(ttl=3600)
-def fetch_zerodha_silver_etf():
-    """Fetches 1-Hour Candles for Zerodha Silver ETF (~₹226 range)."""
-    ticker = "SILVERZERODHA.NS"
-    etf_data = yf.download(ticker, period="730d", interval="1h", progress=False)
+@st.cache_data(ttl=300)
+def fetch_mcx_silver_mic():
+    """Fetches 1-Hour Candles for MCX Silver Futures."""
+    # Preferred tickers: SI=F gives global live continuous silver future data
+    tickers = ["SILVERMICQ26.COMM", "SILVERMIC-F", "SI=F"]
+    data = pd.DataFrame()
 
-    if etf_data.empty:
-        # Fallback to ICICISILVER if SILVERZERODHA feed is brief
-        ticker = "SILVERIETF.NS"
-        etf_data = yf.download(ticker, period="730d", interval="1h", progress=False)
+    for ticker in tickers:
+        try:
+            data = yf.download(
+                ticker, period="60d", interval="1h", progress=False
+            )
+            if not data.empty:
+                break
+        except Exception:
+            continue
 
-    if etf_data.empty:
-        raise ValueError("Silver ETF Data Fetch Failed from NSE APIs.")
+    if data.empty:
+        raise ValueError("MCX Silver Data Fetch Failed from Yahoo Finance APIs.")
 
-    if isinstance(etf_data.columns, pd.MultiIndex):
-        etf_data.columns = etf_data.columns.get_level_values(0)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
 
-    df_raw = etf_data[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    df_raw = data[["Open", "High", "Low", "Close", "Volume"]].dropna()
     return df_raw
 
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching Zerodha Silver ETF Data & Computing Engine..."):
-        df = fetch_zerodha_silver_etf()
+    with st.spinner("🔄 Fetching MCX SilverMIC Live Data & Computing Engine..."):
+        df = fetch_mcx_silver_mic()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]
+        df = df.iloc[:-1]  # Drop incomplete current candle
 
         if df.index.tz is None:
             df.index = pd.to_datetime(df.index, utc=True)
@@ -270,26 +277,22 @@ df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 # ---------------------------------------------------------------------
 # 🌌 UNIVERSE EXPANSION FORMULAS ON HAM_NORMAL BASELINE
 # ---------------------------------------------------------------------
-H0_const = 70.0  # Hubble Constant (km/s/Mpc)
-Lambda_const = 1.1056e-52  # Cosmological Constant (m^-2)
-c_speed = 299792458.0  # Speed of Light (m/s)
-G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
+H0_const = 70.0
+Lambda_const = 1.1056e-52
+c_speed = 299792458.0
+G_const = 6.6743e-11
 
-# Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (GAUSSIAN FILTER)
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 df["HAM_Hubble_Vel_v"] = apply_gaussian_smoothing(
     raw_hubble_vel, sigma=gaussian_sigma
 )
 
-# Gaussian Value par Kalman Filter (initial_p = 0.50)
 df["HAM_Hubble_Vel_Kalman"] = apply_kalman_filter_custom(
     df["HAM_Hubble_Vel_v"].to_numpy(), initial_p=0.50, q_val=0.0001, r_val=0.1
 )
 
-# Column 3: Friedmann Cosmic Acceleration (a_dotdot)
 dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
 matter_gravity_factor = (4.0 * np.pi * G_const) / 3.0
 df["HAM_Cosmic_Accel_a_dotdot"] = (
@@ -361,11 +364,11 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 # Metrics Cards
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Silver ETF Price", f"₹{latest_candle['Close']:,.2f}")
+col1.metric("MCX Silver Price", f"{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    f"🔭 Hubble Vel Kalman (P=0.50)",
+    f"🔭 Hubble Vel Kalman",
     f"{latest_candle['HAM_Hubble_Vel_Kalman']:.2f} km/s",
 )
 col5.metric(
@@ -376,20 +379,16 @@ st.divider()
 
 # Interactive Data Frame
 st.subheader(
-    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked ETF Candles)"
+    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Silver MIC Candles)"
 )
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn(
-            "Zerodha Silver ETF Price (₹)", format="₹%.2f"
+            "MCX Silver Price", format="%.2f"
         ),
-        "HA_Close": st.column_config.NumberColumn(
-            "HA Close (₹)", format="₹%.2f"
-        ),
-        "Hurst_Normal": st.column_config.NumberColumn(
-            "Hurst", format="%.2f"
-        ),
+        "HA_Close": st.column_config.NumberColumn("HA Close", format="%.2f"),
+        "Hurst_Normal": st.column_config.NumberColumn("Hurst", format="%.2f"),
         "HAM_Normal": st.column_config.NumberColumn(
             "Base HAM Normal (Kalman)", format="%.2f"
         ),
