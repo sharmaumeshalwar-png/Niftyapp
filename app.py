@@ -14,22 +14,14 @@ st.set_page_config(
 st.title("⚡ Bitcoin (BTC-USD) Kinematics & Universe Expansion Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine:** Continuous HAM Kinematics (Kalman Core) |"
-    " **State-Machine Lock** | **Kalman Filtered Hubble Expansion**"
+    " **State-Machine Lock** | **Direct Hubble Kalman Pipeline**"
 )
 
 # Sidebar Controls
 st.sidebar.header("🔄 Live Engine Controls")
 
-# Dynamic Controls for Hubble Kalman Filter
-hubble_q_val = st.sidebar.slider(
-    "🔔 Hubble Kalman Q-Noise Value",
-    min_value=0.00001,
-    max_value=0.01,
-    value=0.0001,
-    step=0.00005,
-    format="%.5f",
-    help="Process noise covariance (Q) for Hubble Velocity Kalman Filter.",
-)
+# Fixed Q-Noise parameter for Hubble Kalman
+hubble_q_val = 0.50
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
@@ -39,8 +31,7 @@ st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **State Lock Engine:** ACTIVE\n\n"
     "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
-    f"🔔 **Hubble Expansion Filter:** KALMAN (Initial P = 0.50, Q ="
-    f" {hubble_q_val})\n\n"
+    f"🎯 **Hubble Kalman Filter:** INITIAL P = 0.50 (FIXED Q = {hubble_q_val:.2f})\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
@@ -49,7 +40,7 @@ st.sidebar.success(
 # MATHEMATICAL ENGINES & FILTERS
 # =====================================================================
 def apply_kalman_filter_custom(
-    data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
+    data_array, initial_p=0.50, q_val=0.50, r_val=0.1
 ):
     """Standard Kalman Filter Engine for Signals."""
     arr = np.asarray(data_array, dtype=float).flatten()
@@ -127,7 +118,7 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
 
     # 2. Kalman Filtered Velocity
     df["HAM_Velocity"] = apply_kalman_filter_custom(
-        raw_velocity, initial_p=0.50, q_val=0.000001, r_val=0.1
+        raw_velocity, initial_p=0.50, q_val=0.50, r_val=0.1
     )
 
     # 3. Acceleration computed from Filtered Velocity
@@ -363,10 +354,12 @@ G_const = 6.6743e-11  # Gravitational Constant (m^3 kg^-1 s^-2)
 # Column 1: Scale Factor a(t)
 df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
 
-# Column 2: Hubble Recession Velocity v (KALMAN FILTER APPLIED HERE)
+# Raw Hubble Velocity
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
+
+# Column 2: Hubble Kalman Filter (Directly on Raw Hubble Velocity)
 df["HAM_Hubble_Vel_v"] = apply_kalman_filter_custom(
-    raw_hubble_vel, initial_p=0.50, q_val=hubble_q_val, r_val=0.1
+    raw_hubble_vel, initial_p=0.50, q_val=0.50, r_val=0.1
 )
 
 # Column 3: Friedmann Cosmic Acceleration (a_dotdot)
@@ -439,15 +432,12 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 # Metrics Cards
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    "🔭 Hubble Vel (Kalman)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
-)
-col5.metric(
-    "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
+    "🔭 Hubble Kalman (Q=0.50)", f"{latest_candle['HAM_Hubble_Vel_v']:.2f} km/s"
 )
 
 st.divider()
@@ -475,7 +465,7 @@ st.dataframe(
             "🌌 Scale Factor a(t)", format="%.4f"
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            "🔭 Hubble Vel (Kalman P=0.50)", format="%.2f"
+            "🔭 Hubble Vel Kalman (P=0.5, Q=0.50)", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
@@ -488,7 +478,7 @@ st.dataframe(
             "📊 HAM Diff (Kalman)", format="%.2f"
         ),
         "HAM_Velocity": st.column_config.NumberColumn(
-            "⚡ Velocity (Kalman Q=1e-6)", format="%.4f"
+            "⚡ Velocity (Kalman Q=0.50)", format="%.4f"
         ),
         "HAM_Acceleration": st.column_config.NumberColumn(
             "🚀 Acceleration (Δ2)", format="%.4f"
