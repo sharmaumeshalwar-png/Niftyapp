@@ -16,7 +16,7 @@ st.set_page_config(
 st.title("⚡ MCX SilverMIC Futures Kinematics Engine")
 st.write(
     "🎯 **1-Hour Timeframe Engine (MCX Live):** Continuous HAM Kinematics"
-    " (Kalman Core) | **ZLEMA + Causal Gaussian Engine** | **Zero-Repaint Lock**"
+    " (Kalman Core) | **Zero-Centered Gaussian Wave Engine** | **Zero-Repaint Lock**"
 )
 
 # Sidebar Controls
@@ -28,7 +28,7 @@ gaussian_sigma = st.sidebar.slider(
     max_value=20.0,
     value=10.0,
     step=0.5,
-    help="Gaussian bell-curve smoothing applied to Hubble Velocity.",
+    help="Gaussian bell-curve smoothing applied to Zero-Centered Hubble Velocity.",
 )
 
 if st.sidebar.button("⚡ Force Refresh Engine"):
@@ -38,18 +38,18 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **Repaint Protection:** ZERO REPAINT (Historical Values Locked)\n\n"
+    "🌊 **Wave Format:** +/- Zero-Centered Bipolar Oscillator\n\n"
     "⚡ **Zero-Lag Engine:** ZLEMA + GAUSSIAN CAUSAL COMBINATION\n\n"
-    "⚡ **Base HAM Core:** KALMAN FILTER ACTIVE\n\n"
     f"🔔 **Hubble Expansion Filter:** GAUSSIAN (Sigma = {gaussian_sigma})\n\n"
     "🌌 **Cosmic Expansion Columns:** ACTIVE"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & FILTERS (STRICT CAUSAL - NO REPAINT - ZERO LAG)
+# MATHEMATICAL ENGINES & FILTERS (STRICT CAUSAL - NO REPAINT - BIPOLAR WAVE)
 # =====================================================================
 def apply_kalman_filter_causal(data_array, initial_p=0.50, q_val=0.005, r_val=0.1):
-    """Sequential Causal Kalman Filter: Fast Tracking (q_val=0.005 for Zero-Lag)."""
+    """Sequential Causal Kalman Filter."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -73,7 +73,6 @@ def apply_zlema_causal(data_array, period=10):
     lag = int((period - 1) / 2)
     zlema_vals = np.empty_like(arr)
     
-    # Calculate De-lagged Data Array
     de_lagged = np.empty_like(arr)
     for i in range(len(arr)):
         if i >= lag:
@@ -81,7 +80,6 @@ def apply_zlema_causal(data_array, period=10):
         else:
             de_lagged[i] = arr[i]
             
-    # Apply Causal EMA over De-lagged Series
     alpha = 2.0 / (period + 1.0)
     ema = de_lagged[0]
     for i in range(len(arr)):
@@ -91,8 +89,13 @@ def apply_zlema_causal(data_array, period=10):
     return zlema_vals
 
 
-def apply_zlema_gaussian_smoothing_causal(data_array, sigma=10.0, window_size=20):
-    """Causal Hybrid Gaussian + ZLEMA Engine: High Smoothness + Zero Lag + Zero Repaint."""
+def apply_bipolar_wave_gaussian_causal(data_array, sigma=10.0, window_size=25):
+    """
+    Causal Bipolar Gaussian Wave Engine:
+    - Converts Absolute Values to Zero-Centered +/- Wave
+    - Applies Smooth Gaussian + ZLEMA De-lagging
+    - 100% Causal, Zero-Repaint, Zero Future Leakage
+    """
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -103,25 +106,29 @@ def apply_zlema_gaussian_smoothing_causal(data_array, sigma=10.0, window_size=20
         sub_arr = arr[start_idx : i + 1]
         
         if len(sub_arr) > 0:
-            # Step 1: Smooth the local window using Causal Gaussian
-            filt = gaussian_filter1d(sub_arr, sigma=sigma, mode="nearest")
+            # Step 1: Zero-Center baseline subtraction (Convert to +/- Wave)
+            rolling_mean = np.mean(sub_arr)
+            centered_sub_arr = sub_arr - rolling_mean
+            
+            # Step 2: Smooth using Causal Gaussian
+            filt = gaussian_filter1d(centered_sub_arr, sigma=sigma, mode="nearest")
             raw_gauss = filt[-1]
             
-            # Step 2: Calculate Zero-Lag Offset Correction
+            # Step 3: Zero-Lag Offset Correction
             lag_offset = max(1, int((sigma - 1.0) / 2.0))
             if len(sub_arr) > lag_offset:
                 past_gauss = filt[-1 - lag_offset]
-                zero_lag_val = 2.0 * raw_gauss - past_gauss  # De-lagged Endpoint
+                zero_lag_val = 2.0 * raw_gauss - past_gauss
             else:
                 zero_lag_val = raw_gauss
                 
             smoothed[i] = zero_lag_val
         else:
-            smoothed[i] = arr[i]
+            smoothed[i] = 0.0
             
-    # Step 3: Run final ZLEMA pass over the causal smoothed endpoints
-    final_zlema_gaussian = apply_zlema_causal(smoothed, period=int(sigma))
-    return final_zlema_gaussian
+    # Step 4: Run ZLEMA smoothing pass over causal endpoints
+    final_wave = apply_zlema_causal(smoothed, period=int(sigma))
+    return final_wave
 
 
 def calculate_rolling_hurst_causal(price_series, window=30):
@@ -313,13 +320,14 @@ Lambda_const = 1.1056e-52
 c_speed = 299792458.0
 G_const = 6.6743e-11
 
-df["HAM_Expansion_a"] = np.abs(df["HAM_Normal"]) + 1.0
+# Sign-Preserved Expansion Core
+df["HAM_Expansion_a"] = df["HAM_Normal"]
 
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 
-# APPLY HYBRID ZLEMA + CAUSAL GAUSSIAN FILTER
-df["HAM_Hubble_Vel_v"] = apply_zlema_gaussian_smoothing_causal(
-    raw_hubble_vel, sigma=gaussian_sigma, window_size=20
+# APPLY BIPOLAR GAUSSIAN WAVE ENGINE (+ / - ZERO CENTERED)
+df["HAM_Hubble_Vel_v"] = apply_bipolar_wave_gaussian_causal(
+    raw_hubble_vel, sigma=gaussian_sigma, window_size=25
 )
 
 df["HAM_Hubble_Vel_Kalman"] = apply_kalman_filter_causal(
@@ -398,8 +406,8 @@ col1.metric("MCX Silver Price", f"{latest_candle['Close']:,.2f}")
 col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
 col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
 col4.metric(
-    f"🔭 Hubble Vel Kalman",
-    f"{latest_candle['HAM_Hubble_Vel_Kalman']:.2f} km/s",
+    f"🔭 Hubble Wave (Bipolar)",
+    f"{latest_candle['HAM_Hubble_Vel_v']:.2f}",
 )
 col5.metric(
     "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
@@ -425,10 +433,10 @@ st.dataframe(
             "🌌 Scale Factor a(t)", format="%.4f"
         ),
         "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            f"🔭 Hubble Vel (ZLEMA + Gaussian σ={gaussian_sigma})", format="%.2f"
+            f"🔭 Hubble Wave (+/- Gaussian σ={gaussian_sigma})", format="%.2f"
         ),
         "HAM_Hubble_Vel_Kalman": st.column_config.NumberColumn(
-            "🔭 Hubble Vel (Kalman Fast Q=0.005)", format="%.2f"
+            "🔭 Hubble Wave (Kalman Q=0.005)", format="%.2f"
         ),
         "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
             "🚀 Cosmic Accel (ä)", format="%.4e"
