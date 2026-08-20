@@ -1,8 +1,5 @@
-import time
-from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
-import requests
 from scipy.ndimage import gaussian_filter1d
 import streamlit as st
 import yfinance as yf
@@ -11,16 +8,16 @@ import yfinance as yf
 # PAGE CONFIGURATION & HEADER
 # =====================================================================
 st.set_page_config(
-    page_title="MCX SilverMIC Kinematics Engine", layout="wide"
+    page_title="MCX Silver 2-Year 50:50 Kinematics Engine", layout="wide"
 )
-st.title("⚡ MCX SilverMIC Futures Kinematics Engine")
+st.title("⚡ MCX Silver 2-Year Kinematics Engine (50:50 Dual Window)")
 st.write(
-    "🎯 **1-Hour Timeframe Engine (MCX Live):** Continuous HAM Kinematics"
-    " (Kalman Core) | **Zero-Centered Gaussian Wave Engine** | **Zero-Repaint Lock**"
+    "🎯 **2-Year Timeframe Engine:** 50% In-Sample Historical Analysis | 50%"
+    " Out-of-Sample Prediction Engine | **Zero-Repaint & Zero-Leakage Lock**"
 )
 
 # Sidebar Controls
-st.sidebar.header("🔄 Live Engine Controls")
+st.sidebar.header("🔄 Engine Parameters")
 
 gaussian_sigma = st.sidebar.slider(
     "🔔 Hubble Gaussian Sigma (σ)",
@@ -31,22 +28,20 @@ gaussian_sigma = st.sidebar.slider(
     help="Gaussian bell-curve smoothing applied to Zero-Centered Hubble Velocity.",
 )
 
-if st.sidebar.button("⚡ Force Refresh Engine"):
+if st.sidebar.button("⚡ Force Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
 st.sidebar.success(
     "🛡️ **Leak Protection:** ACTIVE (Strict Causal Rolling Window)\n\n"
     "🔒 **Repaint Protection:** ZERO REPAINT (Historical Values Locked)\n\n"
-    "🌊 **Wave Format:** +/- Zero-Centered Bipolar Oscillator\n\n"
-    "⚡ **Zero-Lag Engine:** ZLEMA + GAUSSIAN CAUSAL COMBINATION\n\n"
-    f"🔔 **Hubble Expansion Filter:** GAUSSIAN (Sigma = {gaussian_sigma})\n\n"
-    "🌌 **Cosmic Expansion Columns:** ACTIVE"
+    "📅 **Data Horizon:** 2 Years (1D Interval)\n\n"
+    "⚖️ **Split Ratio:** 50% In-Sample : 50% Out-of-Sample"
 )
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES & FILTERS (STRICT CAUSAL - NO REPAINT - BIPOLAR WAVE)
+# MATHEMATICAL ENGINES & FILTERS (STRICT CAUSAL - NO REPAINT)
 # =====================================================================
 def apply_kalman_filter_causal(data_array, initial_p=0.50, q_val=0.005, r_val=0.1):
     """Sequential Causal Kalman Filter."""
@@ -92,8 +87,8 @@ def apply_zlema_causal(data_array, period=10):
 def apply_bipolar_wave_gaussian_causal(data_array, sigma=10.0, window_size=25):
     """
     Causal Bipolar Gaussian Wave Engine:
-    - Converts Absolute Values to Zero-Centered +/- Wave
-    - Applies Smooth Gaussian + ZLEMA De-lagging
+    - Zero-Centers values using past-only rolling mean
+    - Applies Smooth Causal Gaussian Filter
     - 100% Causal, Zero-Repaint, Zero Future Leakage
     """
     arr = np.asarray(data_array, dtype=float).flatten()
@@ -106,15 +101,12 @@ def apply_bipolar_wave_gaussian_causal(data_array, sigma=10.0, window_size=25):
         sub_arr = arr[start_idx : i + 1]
         
         if len(sub_arr) > 0:
-            # Step 1: Zero-Center baseline subtraction (Convert to +/- Wave)
             rolling_mean = np.mean(sub_arr)
             centered_sub_arr = sub_arr - rolling_mean
             
-            # Step 2: Smooth using Causal Gaussian
             filt = gaussian_filter1d(centered_sub_arr, sigma=sigma, mode="nearest")
             raw_gauss = filt[-1]
             
-            # Step 3: Zero-Lag Offset Correction
             lag_offset = max(1, int((sigma - 1.0) / 2.0))
             if len(sub_arr) > lag_offset:
                 past_gauss = filt[-1 - lag_offset]
@@ -126,7 +118,6 @@ def apply_bipolar_wave_gaussian_causal(data_array, sigma=10.0, window_size=25):
         else:
             smoothed[i] = 0.0
             
-    # Step 4: Run ZLEMA smoothing pass over causal endpoints
     final_wave = apply_zlema_causal(smoothed, period=int(sigma))
     return final_wave
 
@@ -234,7 +225,7 @@ def apply_hysteresis_state_machine(df_in, reversal_threshold_pct=0.20):
 def calculate_dynamic_hints(df_in):
     df = df_in.copy()
     hints = []
-    for h_norm, h_diff in zip(df["HAM_Normal"], df["HAM_Diff_Kalman"]):
+    for h_diff in df["HAM_Diff_Kalman"]:
         if h_diff > 1.0:
             hints.append("🔥 Strong Bullish Expansion")
         elif h_diff < -1.0:
@@ -249,19 +240,20 @@ def calculate_dynamic_hints(df_in):
 
 
 # =====================================================================
-# DATA FETCH ENGINE: MCX SILVER MIC FUTURES WITH FALLBACKS
+# DATA FETCH ENGINE: 2-YEAR HISTORICAL DAILY MCX DATA
 # =====================================================================
-@st.cache_data(ttl=300)
-def fetch_mcx_silver_mic():
-    tickers = ["SI=F", "SILVERMIC24AUGFUT.MCX", "SILVERMIC.MCX"]
+@st.cache_data(ttl=3600)
+def fetch_2year_mcx_silver():
+    tickers = ["SI=F", "SILVERMIC.MCX"]
     data = pd.DataFrame()
 
     for ticker in tickers:
         try:
+            # 2Y Daily interval gives accurate full 2-year horizon (~500 candles)
             data = yf.download(
-                ticker, period="60d", interval="1h", progress=False
+                ticker, period="2y", interval="1d", progress=False
             )
-            if not data.empty and len(data) > 10:
+            if not data.empty and len(data) > 200:
                 break
         except Exception:
             continue
@@ -278,11 +270,10 @@ def fetch_mcx_silver_mic():
 
 # Fetch Data
 try:
-    with st.spinner("🔄 Fetching MCX Silver Live Data & Computing Engine..."):
-        df = fetch_mcx_silver_mic()
+    with st.spinner("🔄 Fetching 2-Year MCX Silver Data & Processing..."):
+        df = fetch_2year_mcx_silver()
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
-        df = df.iloc[:-1]  # Drop incomplete running candle to lock historic state
 
         if df.index.tz is None:
             df.index = pd.to_datetime(df.index, utc=True)
@@ -294,11 +285,11 @@ except Exception as e:
 
 
 # =====================================================================
-# FULL CAUSAL KINEMATICS & UNIVERSE EXPANSION FORMULAS
+# FULL CAUSAL KINEMATICS ENGINE (ENTIRE 2-YEAR VECTOR)
 # =====================================================================
 df = apply_heikin_ashi(df)
 
-# 1. Base Normal Path (STRICT CAUSAL KALMAN CORE)
+# Normal Close Processing
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_causal(
     normal_close_full, window=30
@@ -314,33 +305,19 @@ momentum_normal = apply_kalman_filter_causal(
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
-# Cosmic Expansion Calculations
+# Hubble & Gaussian Engine
 H0_const = 70.0
-Lambda_const = 1.1056e-52
-c_speed = 299792458.0
-G_const = 6.6743e-11
-
-# Sign-Preserved Expansion Core
 df["HAM_Expansion_a"] = df["HAM_Normal"]
-
 raw_hubble_vel = H0_const * df["HAM_Expansion_a"].to_numpy()
 
-# APPLY BIPOLAR GAUSSIAN WAVE ENGINE (+ / - ZERO CENTERED)
 df["HAM_Hubble_Vel_v"] = apply_bipolar_wave_gaussian_causal(
     raw_hubble_vel, sigma=gaussian_sigma, window_size=25
 )
-
 df["HAM_Hubble_Vel_Kalman"] = apply_kalman_filter_causal(
     df["HAM_Hubble_Vel_v"].to_numpy(), initial_p=0.50, q_val=0.005, r_val=0.1
 )
 
-dark_energy_factor = (Lambda_const * (c_speed**2)) / 3.0
-matter_gravity_factor = (4.0 * np.pi * G_const) / 3.0
-df["HAM_Cosmic_Accel_a_dotdot"] = (
-    dark_energy_factor - matter_gravity_factor
-) * df["HAM_Expansion_a"]
-
-# 2. HA Path (STRICT CAUSAL KALMAN CORE)
+# HA Path
 ha_close_full = np.asarray(df["HA_Close"], dtype=float).flatten()
 df["Hurst_HA"] = calculate_rolling_hurst_causal(ha_close_full, window=30)
 kalman_base_ha = apply_kalman_filter_causal(
@@ -351,32 +328,40 @@ momentum_ha = apply_kalman_filter_causal(
 )
 df["HAM_HeikinAshi"] = momentum_ha * (df["Hurst_HA"].to_numpy() * 2.0)
 
-# Raw HAM Diff & Filtered Diff (Kalman)
+# HAM Diff & Filters
 df["HAM_Diff_Raw"] = df["HAM_Normal"] - df["HAM_HeikinAshi"]
 df["HAM_Diff_Kalman"] = apply_kalman_filter_causal(
     df["HAM_Diff_Raw"].to_numpy(), initial_p=0.50, q_val=0.005, r_val=0.1
 )
 
-# Apply State Machine & Dynamic Hints
 df = apply_hysteresis_state_machine(df, reversal_threshold_pct=0.20)
 df = calculate_dynamic_hints(df)
 
 # =====================================================================
-# DISPLAY MATRIX & METRICS
+# 50:50 SPLIT ENGINE (ANALYSIS VS PREDICTION)
 # =====================================================================
 total_candles = len(df)
 split_idx = int(total_candles * 0.50)
-df_predict = df.iloc[split_idx:].copy()
 
+df_in_sample = df.iloc[:split_idx].copy()       # First 1 Year (In-Sample Analysis)
+df_out_of_sample = df.iloc[split_idx:].copy()  # Second 1 Year (Out-of-Sample Prediction)
+
+st.success(
+    f"📊 **Total Dataset:** {total_candles} Daily Candles (~2 Years)\n\n"
+    f"🔹 **50% In-Sample Analysis Window:** {len(df_in_sample)} Candles "
+    f"({df_in_sample.index[0].strftime('%Y-%m-%d')} to {df_in_sample.index[-1].strftime('%Y-%m-%d')})\n\n"
+    f"🔸 **50% Out-Of-Sample Prediction Window:** {len(df_out_of_sample)} Candles "
+    f"({df_out_of_sample.index[0].strftime('%Y-%m-%d')} to {df_out_of_sample.index[-1].strftime('%Y-%m-%d')})"
+)
+
+# Display Matrix Setup
 clean_cols = [
     "Close",
     "HA_Close",
     "Hurst_Normal",
     "HAM_Normal",
-    "HAM_Expansion_a",
     "HAM_Hubble_Vel_v",
     "HAM_Hubble_Vel_Kalman",
-    "HAM_Cosmic_Accel_a_dotdot",
     "HAM_HeikinAshi",
     "HAM_Hint",
     "HAM_Diff_Kalman",
@@ -385,77 +370,42 @@ clean_cols = [
     "Flip_Status",
 ]
 
-display_df = pd.DataFrame(index=df_predict.index)
+def prepare_display_df(target_df):
+    disp = pd.DataFrame(index=target_df.index)
+    for col in clean_cols:
+        if col not in ["Flip_Status", "HAM_Hint"]:
+            disp[col] = np.asarray(target_df[col], dtype=float).flatten()
+        else:
+            disp[col] = target_df[col]
+    disp = disp.iloc[::-1]
+    disp.index = disp.index.strftime("%Y-%m-%d IST")
+    return disp
 
-for col in clean_cols:
-    if col not in ["Flip_Status", "HAM_Hint"]:
-        display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
-    else:
-        display_df[col] = df_predict[col]
+tab1, tab2 = st.tabs([
+    "🔮 50% Out-of-Sample Prediction Matrix",
+    "📊 50% In-Sample Analysis Matrix"
+])
 
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+with tab1:
+    disp_pred = prepare_display_df(df_out_of_sample)
+    st.markdown("### 🔸 Out-of-Sample Prediction Horizon")
+    st.dataframe(
+        disp_pred,
+        column_config={
+            "Close": st.column_config.NumberColumn("MCX Silver Price", format="%.2f"),
+            "HAM_Hubble_Vel_v": st.column_config.NumberColumn(f"🔭 Hubble Wave (+/- Gaussian)", format="%.2f"),
+            "HAM_Diff_Kalman": st.column_config.NumberColumn("📊 HAM Diff", format="%.2f"),
+            "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis State"),
+        },
+        use_container_width=True,
+        height=500,
+    )
 
-latest_candle = display_df.iloc[0]
-latest_time = display_df.index[0]
-
-st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("MCX Silver Price", f"{latest_candle['Close']:,.2f}")
-col2.metric("Base HAM Normal", f"{latest_candle['HAM_Normal']:.2f}")
-col3.metric("🌌 Scale Factor (a)", f"{latest_candle['HAM_Expansion_a']:.4f}")
-col4.metric(
-    f"🔭 Hubble Wave (Bipolar)",
-    f"{latest_candle['HAM_Hubble_Vel_v']:.2f}",
-)
-col5.metric(
-    "🚀 Cosmic Accel (ä)", f"{latest_candle['HAM_Cosmic_Accel_a_dotdot']:.4e}"
-)
-
-st.divider()
-
-st.subheader(
-    f"📋 Dynamic Kinematic Matrix ({len(display_df):,} Locked Silver MIC Candles)"
-)
-st.dataframe(
-    display_df,
-    column_config={
-        "Close": st.column_config.NumberColumn(
-            "MCX Silver Price", format="%.2f"
-        ),
-        "HA_Close": st.column_config.NumberColumn("HA Close", format="%.2f"),
-        "Hurst_Normal": st.column_config.NumberColumn("Hurst", format="%.2f"),
-        "HAM_Normal": st.column_config.NumberColumn(
-            "Base HAM Normal (Kalman)", format="%.2f"
-        ),
-        "HAM_Expansion_a": st.column_config.NumberColumn(
-            "🌌 Scale Factor a(t)", format="%.4f"
-        ),
-        "HAM_Hubble_Vel_v": st.column_config.NumberColumn(
-            f"🔭 Hubble Wave (+/- Gaussian σ={gaussian_sigma})", format="%.2f"
-        ),
-        "HAM_Hubble_Vel_Kalman": st.column_config.NumberColumn(
-            "🔭 Hubble Wave (Kalman Q=0.005)", format="%.2f"
-        ),
-        "HAM_Cosmic_Accel_a_dotdot": st.column_config.NumberColumn(
-            "🚀 Cosmic Accel (ä)", format="%.4e"
-        ),
-        "HAM_HeikinAshi": st.column_config.NumberColumn(
-            "HAM HA Signal (Kalman)", format="%.2f"
-        ),
-        "HAM_Hint": st.column_config.TextColumn("💡 HAM Hint Dynamic"),
-        "HAM_Diff_Kalman": st.column_config.NumberColumn(
-            "📊 HAM Diff (Kalman)", format="%.2f"
-        ),
-        "HAM_Velocity": st.column_config.NumberColumn(
-            "⚡ Velocity (Kalman Q=0.005)", format="%.4f"
-        ),
-        "HAM_Acceleration": st.column_config.NumberColumn(
-            "🚀 Acceleration (Δ2)", format="%.4f"
-        ),
-        "Flip_Status": st.column_config.TextColumn("🎯 Hysteresis Lock"),
-    },
-    use_container_width=True,
-    height=600,
-)
+with tab2:
+    disp_analysis = prepare_display_df(df_in_sample)
+    st.markdown("### 🔹 Historical Training & Baseline Analysis Horizon")
+    st.dataframe(
+        disp_analysis,
+        use_container_width=True,
+        height=500,
+    )
