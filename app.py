@@ -79,33 +79,54 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
 # =====================================================================
 @st.cache_data(ttl=1800)
 def fetch_binance_klines(start_ts, end_ts):
-    endpoint = "https://api.binance.com/api/v3/klines"
+    endpoints = [
+        "https://api.binance.com/api/v3/klines",
+        "https://api1.binance.com/api/v3/klines",
+        "https://api3.binance.com/api/v3/klines",
+    ]
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        )
+    }
+
     all_candles = []
-    current_start = start_ts
-    headers = {"User-Agent": "Mozilla/5.0"}
+    for endpoint in endpoints:
+        try:
+            current_start = start_ts
+            all_candles = []
+            while current_start < end_ts:
+                params = {
+                    "symbol": "BTCUSDT",
+                    "interval": "1h",
+                    "startTime": current_start,
+                    "limit": 1000,
+                }
+                res = requests.get(
+                    endpoint, params=params, headers=headers, timeout=15
+                )
 
-    while current_start < end_ts:
-        params = {
-            "symbol": "BTCUSDT",
-            "interval": "1h",
-            "startTime": current_start,
-            "limit": 1000,
-        }
-        res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
-        ).json()
+                if res.status_code != 200:
+                    break
 
-        if not isinstance(res, list) or len(res) == 0:
-            break
+                data = res.json()
+                if not isinstance(data, list) or len(data) == 0:
+                    break
 
-        all_candles.extend(res)
-        last_candle_time = res[-1][0]
-        if last_candle_time <= current_start:
-            break
-        current_start = last_candle_time + 1
-        time.sleep(0.02)
+                all_candles.extend(data)
+                last_candle_time = data[-1][0]
+                if last_candle_time <= current_start:
+                    break
+                current_start = last_candle_time + 1
+                time.sleep(0.02)
 
-    if len(all_candles) < 500:
+            if len(all_candles) >= 300:
+                break
+        except Exception:
+            continue
+
+    if len(all_candles) < 300:
         return None
 
     cols = [
@@ -136,11 +157,15 @@ def fetch_binance_klines(start_ts, end_ts):
 def fetch_binance_open_interest():
     """Fetch BTC Futures Open Interest Data from Binance."""
     endpoint = "https://fapi.binance.com/futures/data/openInterestHist"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+    }
     params = {"symbol": "BTCUSDT", "period": "1h", "limit": 500}
     try:
         res = requests.get(
-            endpoint, params=params, headers=headers, timeout=10
+            endpoint, params=params, headers=headers, timeout=15
         ).json()
         if isinstance(res, list) and len(res) > 0:
             df_oi = pd.DataFrame(res)
@@ -170,7 +195,10 @@ try:
         )
 
         if df is None:
-            st.error("🚨 Price data fetch failed.")
+            st.error(
+                "🚨 Price data fetch failed. Please click 'Force Refresh"
+                " Engine' in sidebar."
+            )
             st.stop()
 
         df.sort_index(inplace=True)
