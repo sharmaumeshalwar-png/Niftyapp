@@ -11,7 +11,8 @@ import yfinance as yf
 st.set_page_config(page_title="Sensex Kinematics Engine", layout="wide")
 st.title("⚡ BSE Sensex (^BSESN) Kinematics Engine")
 st.write(
-    "🎯 **1-Hour Timeframe Engine:** Sensex HAM Normal (Kalman Filter Core)"
+    "🎯 **1-Hour Timeframe:** 2-Year Historical Data Load | 1-Year Active"
+    " Matrix Prediction | HAM Normal (Kalman Filter)"
 )
 
 # Sidebar Controls
@@ -72,22 +73,22 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
 
 
 # =====================================================================
-# DATA FETCH ENGINE (SENSEX FROM YAHOO FINANCE)
+# DATA FETCH ENGINE (2-YEAR HOURLY SENSEX DATA)
 # =====================================================================
-@st.cache_data(ttl=1800)
-def fetch_sensex_data():
-    """Fetch 1-Hour Interval Sensex (^BSESN) Data."""
+@st.cache_data(ttl=3600)
+def fetch_sensex_2year_hourly():
+    """Fetch 2-Year Hourly Sensex (^BSESN) Data from Yahoo Finance."""
     try:
         ticker = yf.Ticker("^BSESN")
-        # 1-hour interval data for last 730 days (max allowed by Yahoo for 1h)
-        df_raw = ticker.history(period="60d", interval="1h")
+        # 730d (2 years) max hourly limit for Yahoo Finance
+        df_raw = ticker.history(period="730d", interval="1h")
 
         if df_raw.empty:
             return None
 
         df_raw = df_raw[["Open", "High", "Low", "Close", "Volume"]].copy()
 
-        # Handle timezone to IST
+        # Localize & Convert to IST Timezone
         if df_raw.index.tz is None:
             df_raw.index = df_raw.index.tz_localize("Asia/Kolkata")
         else:
@@ -100,17 +101,22 @@ def fetch_sensex_data():
 
 # Fetch Data Execution
 try:
-    with st.spinner("🔄 Fetching BSE Sensex Data from Yahoo Finance..."):
-        df = fetch_sensex_data()
+    with st.spinner(
+        "🔄 Fetching 2-Year Hourly BSE Sensex Data from Yahoo Finance..."
+    ):
+        df = fetch_sensex_2year_hourly()
 
-        if df is None or len(df) < 50:
-            st.error("🚨 Sensex price data fetch failed. Please try again.")
+        if df is None or len(df) < 500:
+            st.error(
+                "🚨 Sensex price data fetch failed. Click 'Force Refresh Engine'"
+                " in sidebar."
+            )
             st.stop()
 
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
 
-        # Drop incomplete live candle
+        # Drop live incomplete running candle
         df = df.iloc[:-1]
 
 except Exception as e:
@@ -119,9 +125,9 @@ except Exception as e:
 
 
 # =====================================================================
-# CALCULATIONS
+# CALCULATIONS (FULL 2-YEAR HISTORICAL DATA)
 # =====================================================================
-# Base HAM Normal Signal for Sensex
+# Entire 2-year data used to train/calculate Hurst & Kalman Filters
 normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
 df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
     normal_close_full, window=30
@@ -139,9 +145,10 @@ df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
 
 # =====================================================================
-# DISPLAY MATRIX & METRICS
+# PREDICTION MATRIX (DISPLAY LAST 1 YEAR DATA)
 # =====================================================================
 total_candles = len(df)
+# Split 50% = Read full 2 years, predict/show last 1 year
 split_idx = int(total_candles * 0.50)
 df_predict = df.iloc[split_idx:].copy()
 
@@ -151,7 +158,7 @@ display_df = pd.DataFrame(index=df_predict.index)
 for col in clean_cols:
     display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
 
-# Display latest candles at the top
+# Display latest locked candles at the top
 display_df = display_df.iloc[::-1]
 display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
 
@@ -161,15 +168,19 @@ latest_time = display_df.index[0]
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
 # Metrics Cards
-col1, col2 = st.columns(2)
-col1.metric("Sensex Locked Close Price", f"₹{latest_candle['Close']:,.2f}")
+col1, col2, col3 = st.columns(3)
+col1.metric("Sensex Locked Close", f"₹{latest_candle['Close']:,.2f}")
 col2.metric("HAM Normal (Kalman)", f"{latest_candle['HAM_Normal']:.4f}")
+col3.metric(
+    "Total Training/Predict Candles", f"{total_candles:,} / {len(display_df):,}"
+)
 
 st.divider()
 
-# Interactive Data Frame
+# Interactive Table Display
 st.subheader(
-    f"📋 Sensex Kinematics Matrix ({len(display_df):,} Locked Hourly Candles)"
+    f"📋 Sensex 1-Year Prediction Matrix ({len(display_df):,} Locked Hourly"
+    " Candles)"
 )
 st.dataframe(
     display_df,
