@@ -2,20 +2,19 @@ from datetime import datetime, timedelta, timezone
 import time
 import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
-import yfinance as yf
 
 # =====================================================================
 # PAGE CONFIGURATION
 # =====================================================================
-st.set_page_config(page_title="Sensex Kinematics Engine", layout="wide")
-st.title("⚡ BSE Sensex (^BSESN) Kinematics Engine")
+st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Kinematics & Advanced Math Engine")
 st.write(
-    "🎯 **1-Hour Timeframe:** 2-Year Historical Data Load | 1-Year Active"
-    " Matrix Prediction | HAM Normal (Kalman Filter)"
+    "🎯 **1-Hour Timeframe:** Kalman Filter + Custom Delta + Chaos/Ramsey/Phase-Space Features"
 )
 
-# Sidebar Controls
+# Sidebar
 st.sidebar.header("🔄 Live Engine Controls")
 if st.sidebar.button("⚡ Force Refresh Engine"):
     st.cache_data.clear()
@@ -23,12 +22,12 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES
+# MATHEMATICAL ENGINES (STRICTLY CAUSAL - NO FUTURE LEAK)
 # =====================================================================
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
 ):
-    """Standard Kalman Filter Engine for Signals."""
+    """Standard Kalman Filter Engine (Causal)."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -44,6 +43,7 @@ def apply_kalman_filter_custom(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
+    """Rolling Hurst Exponent (Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
@@ -72,126 +72,149 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
+def calculate_chaos_divergence(price_series, window=30):
+    """1. Chaos Theory Proxy: Local trajectory divergence in phase space.
+
+    Measures sensitive dependence on past initial conditions without future
+    leak.
+    """
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+    returns = s.pct_change().fillna(0.0).to_numpy()
+    chaos_vals = np.zeros(len(arr))
+
+    if len(returns) < window:
+        return chaos_vals
+
+    # Rolling trajectory divergence proxy
+    for i in range(window, len(returns)):
+        sub_window = returns[i - window : i]
+        diffs = np.abs(np.diff(sub_window))
+        # Log mean divergence rate
+        mean_diff = np.mean(diffs) + 1e-8
+        max_diff = np.max(diffs) + 1e-8
+        chaos_vals[i] = np.log(max_diff / mean_diff)
+
+    return chaos_vals
+
+
+def calculate_ramsey_order_ratio(price_series, window=30, pattern_len=4):
+    """2. Ramsey Theory Metric: Measures structural order/patterns in random noise.
+
+    Counts repeated binary movement combinations in past window.
+    """
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+    binary_moves = (s.diff() > 0).astype(int).to_numpy()
+    ramsey_vals = np.zeros(len(arr))
+
+    if len(binary_moves) < window:
+        return ramsey_vals
+
+    for i in range(window, len(binary_moves)):
+        sub_seq = binary_moves[i - window : i]
+        # Count frequency of dominant 4-bit binary pattern
+        patterns = [
+            tuple(sub_seq[j : j + pattern_len])
+            for j in range(len(sub_seq) - pattern_len + 1)
+        ]
+        if patterns:
+            counts = pd.Series(patterns).value_counts()
+            max_freq = counts.iloc[0]
+            ramsey_vals[i] = max_freq / len(patterns)
+
+    return ramsey_vals
+
+
+def calculate_phase_space_distance(price_series, window=30, delay=2):
+    """3. Takens' Theorem (Phase Space Reconstruction): 2D Delay Coordinates.
+
+    Calculates current state distance from historical centroid in phase space.
+    """
+    arr = np.asarray(price_series, dtype=float).flatten()
+    s = pd.Series(arr)
+    log_ret = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
+    dist_vals = np.zeros(len(arr))
+
+    if len(log_ret) < window + delay:
+        return dist_vals
+
+    for i in range(window + delay, len(log_ret)):
+        sub_window = log_ret[i - window : i]
+        x_pts = sub_window[:-delay]
+        y_pts = sub_window[delay:]
+
+        centroid_x = np.mean(x_pts)
+        centroid_y = np.mean(y_pts)
+
+        curr_x = log_ret[i - delay]
+        curr_y = log_ret[i]
+
+        # Euclidean distance in reconstructed phase space
+        dist_vals[i] = np.sqrt(
+            (curr_x - centroid_x) ** 2 + (curr_y - centroid_y) ** 2
+        )
+
+    return dist_vals
+
+
 # =====================================================================
-# DATA FETCH ENGINE (2-YEAR HOURLY SENSEX DATA)
+# DATA FETCH ENGINE
 # =====================================================================
 @st.cache_data(ttl=3600)
-def fetch_sensex_2year_hourly():
-    """Fetch 2-Year Hourly Sensex (^BSESN) Data from Yahoo Finance."""
-    try:
-        ticker = yf.Ticker("^BSESN")
-        # 730d (2 years) max hourly limit for Yahoo Finance
-        df_raw = ticker.history(period="730d", interval="1h")
+def fetch_binance_data(start_ts, end_ts):
+    endpoint = "https://api.binance.com/api/v3/klines"
+    all_candles = []
+    current_start = start_ts
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-        if df_raw.empty:
-            return None
+    while current_start < end_ts:
+        params = {
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "startTime": current_start,
+            "limit": 1000,
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
 
-        df_raw = df_raw[["Open", "High", "Low", "Close", "Volume"]].copy()
+        if not isinstance(res, list) or len(res) == 0:
+            break
 
-        # Localize & Convert to IST Timezone
-        if df_raw.index.tz is None:
-            df_raw.index = df_raw.index.tz_localize("Asia/Kolkata")
-        else:
-            df_raw.index = df_raw.index.tz_convert("Asia/Kolkata")
+        all_candles.extend(res)
+        last_candle_time = res[-1][0]
+        if last_candle_time <= current_start:
+            break
+        current_start = last_candle_time + 1
+        time.sleep(0.02)
 
-        return df_raw
-    except Exception:
+    if len(all_candles) < 2000:
         return None
 
-
-# Fetch Data Execution
-try:
-    with st.spinner(
-        "🔄 Fetching 2-Year Hourly BSE Sensex Data from Yahoo Finance..."
-    ):
-        df = fetch_sensex_2year_hourly()
-
-        if df is None or len(df) < 500:
-            st.error(
-                "🚨 Sensex price data fetch failed. Click 'Force Refresh Engine'"
-                " in sidebar."
-            )
-            st.stop()
-
-        df.sort_index(inplace=True)
-        df = df[~df.index.duplicated(keep="first")]
-
-        # Drop live incomplete running candle
-        df = df.iloc[:-1]
-
-except Exception as e:
-    st.error(f"🚨 Engine Processing Error: {e}")
-    st.stop()
+    cols = [
+        "OpenTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "CloseTime",
+        "QuoteVolume",
+        "Trades",
+        "TakerBase",
+        "TakerQuote",
+        "Ignore",
+    ]
+    df_raw = pd.DataFrame(all_candles, columns=cols)
+    num_cols = ["Open", "High", "Low", "Close", "Volume"]
+    df_raw[num_cols] = df_raw[num_cols].astype(float)
+    df_raw["Timestamp"] = pd.to_datetime(
+        df_raw["OpenTime"], unit="ms", utc=True
+    )
+    df_raw.set_index("Timestamp", inplace=True)
+    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
 
 
-# =====================================================================
-# CALCULATIONS (FULL 2-YEAR HISTORICAL DATA)
-# =====================================================================
-# Entire 2-year data used to train/calculate Hurst & Kalman Filters
-normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
-df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
-    normal_close_full, window=30
-)
-kalman_base_normal = apply_kalman_filter_custom(
-    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
-)
-momentum_normal = apply_kalman_filter_custom(
-    normal_close_full - kalman_base_normal,
-    initial_p=0.50,
-    q_val=0.001,
-    r_val=0.1,
-)
-df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
-
-
-# =====================================================================
-# PREDICTION MATRIX (DISPLAY LAST 1 YEAR DATA)
-# =====================================================================
-total_candles = len(df)
-# Split 50% = Read full 2 years, predict/show last 1 year
-split_idx = int(total_candles * 0.50)
-df_predict = df.iloc[split_idx:].copy()
-
-clean_cols = ["Close", "HAM_Normal"]
-
-display_df = pd.DataFrame(index=df_predict.index)
-for col in clean_cols:
-    display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
-
-# Display latest locked candles at the top
-display_df = display_df.iloc[::-1]
-display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
-
-latest_candle = display_df.iloc[0]
-latest_time = display_df.index[0]
-
-st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
-
-# Metrics Cards
-col1, col2, col3 = st.columns(3)
-col1.metric("Sensex Locked Close", f"₹{latest_candle['Close']:,.2f}")
-col2.metric("HAM Normal (Kalman)", f"{latest_candle['HAM_Normal']:.4f}")
-col3.metric(
-    "Total Training/Predict Candles", f"{total_candles:,} / {len(display_df):,}"
-)
-
-st.divider()
-
-# Interactive Table Display
-st.subheader(
-    f"📋 Sensex 1-Year Prediction Matrix ({len(display_df):,} Locked Hourly"
-    " Candles)"
-)
-st.dataframe(
-    display_df,
-    column_config={
-        "Close": st.column_config.NumberColumn(
-            "Sensex Close (₹)", format="₹%.2f"
-        ),
-        "HAM_Normal": st.column_config.NumberColumn(
-            "HAM Normal (Kalman)", format="%.4f"
-        ),
-    },
-    use_container_width=True,
-    height=600,
-)
+@st.cache_data(ttl=3600)
+def fetch_coin
