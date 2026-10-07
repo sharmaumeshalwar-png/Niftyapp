@@ -10,7 +10,7 @@ import streamlit as st
 # =====================================================================
 st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Advanced Kinematics Engine")
-st.write("🎯 **1-Hour Timeframe:** Kinematics + Chaos, Ramsey & Takens' Phase Space")
+st.write("🎯 **1-Hour Timeframe:** Kinematics + Chaos Kalman Filter")
 
 # Sidebar
 st.sidebar.header("🔄 Live Engine Controls")
@@ -25,7 +25,7 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
 ):
-    """Standard Kalman Filter Engine for Core HAM Signals."""
+    """Standard Causal Kalman Filter Engine."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -69,12 +69,11 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-# --- NEW THEORY COMPUTATIONS (STRICTLY NO FUTURE LEAK) ---
+# --- THEORY COMPUTATIONS (STRICTLY CAUSAL / NO LOOKAHEAD) ---
 def compute_chaos_attractor_dist(price_series, tau=1, window=24):
     """
-    1. Chaos Theory Metric (Phase Space Attractor Divergence)
+    Chaos Theory Metric (Phase Space Attractor Divergence)
     Uses historical lag (t - tau) to calculate phase space vector distance.
-    No future data used.
     """
     s = pd.Series(price_series)
     diff_t = s - s.shift(tau)
@@ -92,31 +91,27 @@ def compute_chaos_attractor_dist(price_series, tau=1, window=24):
 
 def compute_ramsey_structure_density(price_series, window=24):
     """
-    2. Ramsey Theory Metric (Guaranteed Structure / Micro-pattern Clustered Order)
-    Measures structured streak/monotonic alignment in past window.
+    Ramsey Theory Metric (Guaranteed Micro-pattern Density)
     """
     s = pd.Series(price_series)
     returns = s.diff()
     direction = np.where(returns > 0, 1, np.where(returns < 0, -1, 0))
     
-    # Rolling pattern density: Absolute mean of directional momentum
     pattern_density = pd.Series(direction).rolling(window=window).apply(
         lambda x: np.abs(np.sum(x)) / window, raw=True
     )
     return pattern_density.fillna(0.0)
 
 
-def compute_takens_trajectory(price_series, lag=1, embed_dim=3):
+def compute_takens_trajectory(price_series, lag=1):
     """
-    3. Takens' Theorem Metric (High-Dimensional Embedding Velocity)
-    Calculates dynamic trajectory velocity in 3D time-delay reconstructed phase space.
+    Takens' Theorem Metric (3D Delay Embedding Velocity)
     """
     s = pd.Series(price_series)
     x = s
     y = s.shift(lag)
     z = s.shift(2 * lag)
     
-    # Velocity vector length between consecutive embedded states
     vx = x.diff()
     vy = y.diff()
     vz = z.diff()
@@ -264,13 +259,16 @@ momentum_normal = apply_kalman_filter_custom(
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
-# 2. Custom Column Calculation
-df["HAM_Custom_Delta"] = (
-    df["Close"].shift(1) - df["Close"]
-) + df["HAM_Normal"]
-
-# 3. THREE NEW THEORY COLUMNS (STRICTLY CAUSAL / NO LOOKAHEAD)
+# 2. Raw Chaos Z-Score Calculation
 df["Chaos_Attractor_ZScore"] = compute_chaos_attractor_dist(df["Close"])
+
+# 3. Apply 0.50 Kalman Filter on Chaos Z-Score
+chaos_raw = df["Chaos_Attractor_ZScore"].to_numpy()
+df["Chaos_ZScore_Kalman"] = apply_kalman_filter_custom(
+    chaos_raw, initial_p=0.50, q_val=0.001, r_val=0.1
+)
+
+# 4. Other Theory Columns
 df["Ramsey_Order_Density"] = compute_ramsey_structure_density(df["Close"])
 df["Takens_Embedding_Velocity"] = compute_takens_trajectory(df["Close"])
 
@@ -285,8 +283,8 @@ df_predict = df.iloc[split_idx:].copy()
 clean_cols = [
     "Close", 
     "HAM_Normal", 
-    "HAM_Custom_Delta",
     "Chaos_Attractor_ZScore",
+    "Chaos_ZScore_Kalman",
     "Ramsey_Order_Density",
     "Takens_Embedding_Velocity"
 ]
@@ -307,8 +305,8 @@ st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 # Metrics Cards
 col1, col2, col3 = st.columns(3)
 col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Chaos Attractor Z-Score", f"{latest_candle['Chaos_Attractor_ZScore']:.4f}")
-col3.metric("Ramsey Order Density", f"{latest_candle['Ramsey_Order_Density']:.4f}")
+col2.metric("Chaos Raw Z-Score", f"{latest_candle['Chaos_Attractor_ZScore']:.4f}")
+col3.metric("Chaos Kalman (0.50)", f"{latest_candle['Chaos_ZScore_Kalman']:.4f}")
 
 st.divider()
 
@@ -323,11 +321,11 @@ st.dataframe(
         "HAM_Normal": st.column_config.NumberColumn(
             "HAM Normal (Kalman)", format="%.4f"
         ),
-        "HAM_Custom_Delta": st.column_config.NumberColumn(
-            "(Last Close - Current Close) + HAM Normal", format="%.4f"
-        ),
         "Chaos_Attractor_ZScore": st.column_config.NumberColumn(
-            "Chaos Attractor (Z-Score)", format="%.4f"
+            "Chaos Raw (Z-Score)", format="%.4f"
+        ),
+        "Chaos_ZScore_Kalman": st.column_config.NumberColumn(
+            "Chaos Smoothed (0.50 Kalman)", format="%.4f"
         ),
         "Ramsey_Order_Density": st.column_config.NumberColumn(
             "Ramsey Structure Density", format="%.4f"
