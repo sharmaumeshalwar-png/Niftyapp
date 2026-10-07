@@ -8,9 +8,9 @@ import streamlit as st
 # =====================================================================
 # PAGE CONFIGURATION
 # =====================================================================
-st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Advanced Kinematics Engine")
-st.write("🎯 **1-Hour Timeframe:** Kinematics + Chaos Kalman Filter")
+st.set_page_config(page_title="BTC Kinematics & Fokker-Planck Engine", layout="wide")
+st.title("⚡ Bitcoin (BTC-USD) Advanced Predictive Engine")
+st.write("🎯 **1-Hour Timeframe:** Fokker-Planck 24h Target + Regime Switch Engine")
 
 # Sidebar
 st.sidebar.header("🔄 Live Engine Controls")
@@ -71,18 +71,12 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
 
 # --- THEORY COMPUTATIONS (STRICTLY CAUSAL / NO LOOKAHEAD) ---
 def compute_chaos_attractor_dist(price_series, tau=1, window=24):
-    """
-    Chaos Theory Metric (Phase Space Attractor Divergence)
-    Uses historical lag (t - tau) to calculate phase space vector distance.
-    """
+    """Chaos Theory Metric (Phase Space Attractor Divergence)."""
     s = pd.Series(price_series)
     diff_t = s - s.shift(tau)
     diff_2tau = s.shift(tau) - s.shift(2 * tau)
     
-    # Euclidian distance in reconstructed 2D phase space
     phase_dist = np.sqrt(diff_t**2 + diff_2tau**2)
-    
-    # Rolling standard score to capture chaotic state shifts
     rolling_mean = phase_dist.rolling(window=window).mean()
     rolling_std = phase_dist.rolling(window=window).std() + 1e-8
     chaos_metric = (phase_dist - rolling_mean) / rolling_std
@@ -90,9 +84,7 @@ def compute_chaos_attractor_dist(price_series, tau=1, window=24):
 
 
 def compute_ramsey_structure_density(price_series, window=24):
-    """
-    Ramsey Theory Metric (Guaranteed Micro-pattern Density)
-    """
+    """Ramsey Theory Metric (Guaranteed Micro-pattern Density)."""
     s = pd.Series(price_series)
     returns = s.diff()
     direction = np.where(returns > 0, 1, np.where(returns < 0, -1, 0))
@@ -104,9 +96,7 @@ def compute_ramsey_structure_density(price_series, window=24):
 
 
 def compute_takens_trajectory(price_series, lag=1):
-    """
-    Takens' Theorem Metric (3D Delay Embedding Velocity)
-    """
+    """Takens' Theorem Metric (3D Delay Embedding Velocity)."""
     s = pd.Series(price_series)
     x = s
     y = s.shift(lag)
@@ -118,6 +108,48 @@ def compute_takens_trajectory(price_series, lag=1):
     
     takens_velocity = np.sqrt(vx**2 + vy**2 + vz**2)
     return takens_velocity.fillna(0.0)
+
+
+# --- NEW predictive ENGINES: FOKKER-PLANCK & REGIME SWITCHING ---
+def compute_fokker_planck_24h_target(price_series, window=30, horizon=24):
+    """
+    Fokker-Planck Drift-Diffusion Stochastic Engine.
+    Estimates Causal Drift (mu) & Volatility (sigma) up to time t,
+    and solves Fokker-Planck Expectation for t + horizon (24 hours).
+    STRICTLY NO LOOKAHEAD DATA USED.
+    """
+    s = pd.Series(price_series, dtype=float)
+    log_returns = np.log(s / s.shift(1)).fillna(0.0)
+    
+    # Rolling Causal Drift (mu) and Diffusion (sigma)
+    mu_rolling = log_returns.rolling(window=window).mean()
+    var_rolling = log_returns.rolling(window=window).var()
+    
+    # Drift correction for Geometric Brownian Motion / Fokker-Planck PDF mean
+    drift_rate = (mu_rolling - 0.5 * var_rolling) * horizon
+    
+    # Expected Expected Value Target at t + 24
+    expected_target_24h = s * np.exp(drift_rate)
+    return expected_target_24h.fillna(s)
+
+
+def compute_market_regime_state(price_series, window=30):
+    """
+    Quantile Volatility & Drift Regime Classification Engine.
+    Classifies Market State into: Bullish Trend, Bearish Trend, or High Volatility Chop.
+    """
+    s = pd.Series(price_series, dtype=float)
+    log_returns = np.log(s / s.shift(1)).fillna(0.0)
+    
+    mu = log_returns.rolling(window=window).mean()
+    sigma = log_returns.rolling(window=window).std() + 1e-8
+    z_momentum = mu / sigma
+    
+    regime = np.where(
+        z_momentum > 0.35, "Bullish Trend",
+        np.where(z_momentum < -0.35, "Bearish Trend", "High Noise / Chop")
+    )
+    return pd.Series(regime, index=s.index)
 
 
 # =====================================================================
@@ -259,18 +291,20 @@ momentum_normal = apply_kalman_filter_custom(
 )
 df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
 
-# 2. Raw Chaos Z-Score Calculation
+# 2. Chaos Z-Score & 0.50 Kalman Smoothing
 df["Chaos_Attractor_ZScore"] = compute_chaos_attractor_dist(df["Close"])
-
-# 3. Apply 0.50 Kalman Filter on Chaos Z-Score
 chaos_raw = df["Chaos_Attractor_ZScore"].to_numpy()
 df["Chaos_ZScore_Kalman"] = apply_kalman_filter_custom(
     chaos_raw, initial_p=0.50, q_val=0.001, r_val=0.1
 )
 
-# 4. Other Theory Columns
+# 3. Auxiliary Theory Columns
 df["Ramsey_Order_Density"] = compute_ramsey_structure_density(df["Close"])
 df["Takens_Embedding_Velocity"] = compute_takens_trajectory(df["Close"])
+
+# 4. PREDICTIVE ENGINES (FOKKER-PLANCK 24H TARGET & REGIME)
+df["Predicted_Close_24h"] = compute_fokker_planck_24h_target(df["Close"], window=30, horizon=24)
+df["Market_Regime_State"] = compute_market_regime_state(df["Close"], window=30)
 
 
 # =====================================================================
@@ -282,6 +316,8 @@ df_predict = df.iloc[split_idx:].copy()
 
 clean_cols = [
     "Close", 
+    "Predicted_Close_24h",
+    "Market_Regime_State",
     "HAM_Normal", 
     "Chaos_Attractor_ZScore",
     "Chaos_ZScore_Kalman",
@@ -291,7 +327,7 @@ clean_cols = [
 
 display_df = pd.DataFrame(index=df_predict.index)
 for col in clean_cols:
-    display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
+    display_df[col] = df_predict[col].values
 
 # Display latest candles at the top
 display_df = display_df.iloc[::-1]
@@ -302,21 +338,38 @@ latest_time = display_df.index[0]
 
 st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
 
+# Calculate Delta Target
+curr_close = float(latest_candle['Close'])
+target_24h = float(latest_candle['Predicted_Close_24h'])
+delta_val = target_24h - curr_close
+delta_pct = (delta_val / curr_close) * 100.0
+
 # Metrics Cards
-col1, col2, col3 = st.columns(3)
-col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
-col2.metric("Chaos Raw Z-Score", f"{latest_candle['Chaos_Attractor_ZScore']:.4f}")
-col3.metric("Chaos Kalman (0.50)", f"{latest_candle['Chaos_ZScore_Kalman']:.4f}")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Locked Close Price", f"${curr_close:,.2f}")
+col2.metric(
+    "Fokker-Planck 24h Target", 
+    f"${target_24h:,.2f}", 
+    f"{delta_val:+,.2f} ({delta_pct:+.2f}%)"
+)
+col3.metric("Current Market Regime", f"{latest_candle['Market_Regime_State']}")
+col4.metric("Chaos Kalman (0.50)", f"{float(latest_candle['Chaos_ZScore_Kalman']):.4f}")
 
 st.divider()
 
 # Interactive Data Frame
-st.subheader(f"📋 Custom Kinematic Matrix ({len(display_df):,} Locked Candles)")
+st.subheader(f"📋 Predictive Kinematic Matrix ({len(display_df):,} Locked Candles)")
 st.dataframe(
     display_df,
     column_config={
         "Close": st.column_config.NumberColumn(
             "Close Price ($)", format="$%.2f"
+        ),
+        "Predicted_Close_24h": st.column_config.NumberColumn(
+            "Fokker-Planck Predicted 24h Target ($)", format="$%.2f"
+        ),
+        "Market_Regime_State": st.column_config.TextColumn(
+            "Regime State"
         ),
         "HAM_Normal": st.column_config.NumberColumn(
             "HAM Normal (Kalman)", format="%.4f"
