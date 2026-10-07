@@ -9,10 +9,8 @@ import streamlit as st
 # PAGE CONFIGURATION
 # =====================================================================
 st.set_page_config(page_title="BTC Kinematics Engine", layout="wide")
-st.title("⚡ Bitcoin (BTC-USD) Kinematics & Advanced Math Engine")
-st.write(
-    "🎯 **1-Hour Timeframe:** Kalman Filter + Custom Delta + Chaos/Ramsey/Phase-Space Features"
-)
+st.title("⚡ Bitcoin (BTC-USD) Advanced Kinematics Engine")
+st.write("🎯 **1-Hour Timeframe:** Kinematics + Chaos, Ramsey & Takens' Phase Space")
 
 # Sidebar
 st.sidebar.header("🔄 Live Engine Controls")
@@ -22,12 +20,12 @@ if st.sidebar.button("⚡ Force Refresh Engine"):
 
 
 # =====================================================================
-# MATHEMATICAL ENGINES (STRICTLY CAUSAL - NO FUTURE LEAK)
+# MATHEMATICAL ENGINES
 # =====================================================================
 def apply_kalman_filter_custom(
     data_array, initial_p=0.50, q_val=0.0001, r_val=0.1
 ):
-    """Standard Kalman Filter Engine (Causal)."""
+    """Standard Kalman Filter Engine for Core HAM Signals."""
     arr = np.asarray(data_array, dtype=float).flatten()
     if len(arr) == 0:
         return np.array([])
@@ -43,7 +41,6 @@ def apply_kalman_filter_custom(
 
 
 def calculate_rolling_hurst_vectorized(price_series, window=30):
-    """Rolling Hurst Exponent (Causal)."""
     arr = np.asarray(price_series, dtype=float).flatten()
     s = pd.Series(arr)
     log_returns = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
@@ -72,90 +69,60 @@ def calculate_rolling_hurst_vectorized(price_series, window=30):
     return hurst_values
 
 
-def calculate_chaos_divergence(price_series, window=30):
-    """1. Chaos Theory Proxy: Local trajectory divergence in phase space.
-
-    Measures sensitive dependence on past initial conditions without future
-    leak.
+# --- NEW THEORY COMPUTATIONS (STRICTLY NO FUTURE LEAK) ---
+def compute_chaos_attractor_dist(price_series, tau=1, window=24):
     """
-    arr = np.asarray(price_series, dtype=float).flatten()
-    s = pd.Series(arr)
-    returns = s.pct_change().fillna(0.0).to_numpy()
-    chaos_vals = np.zeros(len(arr))
-
-    if len(returns) < window:
-        return chaos_vals
-
-    # Rolling trajectory divergence proxy
-    for i in range(window, len(returns)):
-        sub_window = returns[i - window : i]
-        diffs = np.abs(np.diff(sub_window))
-        # Log mean divergence rate
-        mean_diff = np.mean(diffs) + 1e-8
-        max_diff = np.max(diffs) + 1e-8
-        chaos_vals[i] = np.log(max_diff / mean_diff)
-
-    return chaos_vals
-
-
-def calculate_ramsey_order_ratio(price_series, window=30, pattern_len=4):
-    """2. Ramsey Theory Metric: Measures structural order/patterns in random noise.
-
-    Counts repeated binary movement combinations in past window.
+    1. Chaos Theory Metric (Phase Space Attractor Divergence)
+    Uses historical lag (t - tau) to calculate phase space vector distance.
+    No future data used.
     """
-    arr = np.asarray(price_series, dtype=float).flatten()
-    s = pd.Series(arr)
-    binary_moves = (s.diff() > 0).astype(int).to_numpy()
-    ramsey_vals = np.zeros(len(arr))
-
-    if len(binary_moves) < window:
-        return ramsey_vals
-
-    for i in range(window, len(binary_moves)):
-        sub_seq = binary_moves[i - window : i]
-        # Count frequency of dominant 4-bit binary pattern
-        patterns = [
-            tuple(sub_seq[j : j + pattern_len])
-            for j in range(len(sub_seq) - pattern_len + 1)
-        ]
-        if patterns:
-            counts = pd.Series(patterns).value_counts()
-            max_freq = counts.iloc[0]
-            ramsey_vals[i] = max_freq / len(patterns)
-
-    return ramsey_vals
+    s = pd.Series(price_series)
+    diff_t = s - s.shift(tau)
+    diff_2tau = s.shift(tau) - s.shift(2 * tau)
+    
+    # Euclidian distance in reconstructed 2D phase space
+    phase_dist = np.sqrt(diff_t**2 + diff_2tau**2)
+    
+    # Rolling standard score to capture chaotic state shifts
+    rolling_mean = phase_dist.rolling(window=window).mean()
+    rolling_std = phase_dist.rolling(window=window).std() + 1e-8
+    chaos_metric = (phase_dist - rolling_mean) / rolling_std
+    return chaos_metric.fillna(0.0)
 
 
-def calculate_phase_space_distance(price_series, window=30, delay=2):
-    """3. Takens' Theorem (Phase Space Reconstruction): 2D Delay Coordinates.
-
-    Calculates current state distance from historical centroid in phase space.
+def compute_ramsey_structure_density(price_series, window=24):
     """
-    arr = np.asarray(price_series, dtype=float).flatten()
-    s = pd.Series(arr)
-    log_ret = np.log(s / s.shift(1)).fillna(0.0).to_numpy()
-    dist_vals = np.zeros(len(arr))
+    2. Ramsey Theory Metric (Guaranteed Structure / Micro-pattern Clustered Order)
+    Measures structured streak/monotonic alignment in past window.
+    """
+    s = pd.Series(price_series)
+    returns = s.diff()
+    direction = np.where(returns > 0, 1, np.where(returns < 0, -1, 0))
+    
+    # Rolling pattern density: Absolute mean of directional momentum
+    pattern_density = pd.Series(direction).rolling(window=window).apply(
+        lambda x: np.abs(np.sum(x)) / window, raw=True
+    )
+    return pattern_density.fillna(0.0)
 
-    if len(log_ret) < window + delay:
-        return dist_vals
 
-    for i in range(window + delay, len(log_ret)):
-        sub_window = log_ret[i - window : i]
-        x_pts = sub_window[:-delay]
-        y_pts = sub_window[delay:]
-
-        centroid_x = np.mean(x_pts)
-        centroid_y = np.mean(y_pts)
-
-        curr_x = log_ret[i - delay]
-        curr_y = log_ret[i]
-
-        # Euclidean distance in reconstructed phase space
-        dist_vals[i] = np.sqrt(
-            (curr_x - centroid_x) ** 2 + (curr_y - centroid_y) ** 2
-        )
-
-    return dist_vals
+def compute_takens_trajectory(price_series, lag=1, embed_dim=3):
+    """
+    3. Takens' Theorem Metric (High-Dimensional Embedding Velocity)
+    Calculates dynamic trajectory velocity in 3D time-delay reconstructed phase space.
+    """
+    s = pd.Series(price_series)
+    x = s
+    y = s.shift(lag)
+    z = s.shift(2 * lag)
+    
+    # Velocity vector length between consecutive embedded states
+    vx = x.diff()
+    vy = y.diff()
+    vz = z.diff()
+    
+    takens_velocity = np.sqrt(vx**2 + vy**2 + vz**2)
+    return takens_velocity.fillna(0.0)
 
 
 # =====================================================================
@@ -193,18 +160,8 @@ def fetch_binance_data(start_ts, end_ts):
         return None
 
     cols = [
-        "OpenTime",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "CloseTime",
-        "QuoteVolume",
-        "Trades",
-        "TakerBase",
-        "TakerQuote",
-        "Ignore",
+        "OpenTime", "Open", "High", "Low", "Close", "Volume",
+        "CloseTime", "QuoteVolume", "Trades", "TakerBase", "TakerQuote", "Ignore"
     ]
     df_raw = pd.DataFrame(all_candles, columns=cols)
     num_cols = ["Open", "High", "Low", "Close", "Volume"]
@@ -217,4 +174,168 @@ def fetch_binance_data(start_ts, end_ts):
 
 
 @st.cache_data(ttl=3600)
-def fetch_coin
+def fetch_coinbase_data(start_dt, now_dt):
+    endpoint = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    current_end = now_dt
+    all_candles = []
+
+    while current_end > start_dt:
+        current_start = max(start_dt, current_end - timedelta(hours=300))
+        params = {
+            "granularity": 3600,
+            "start": current_start.isoformat(),
+            "end": current_end.isoformat(),
+        }
+        res = requests.get(
+            endpoint, params=params, headers=headers, timeout=10
+        ).json()
+
+        if isinstance(res, list) and len(res) > 0:
+            all_candles.extend(res)
+        else:
+            break
+
+        current_end = current_start
+        time.sleep(0.05)
+
+    if len(all_candles) == 0:
+        return None
+
+    cols = ["time", "Low", "High", "Open", "Close", "Volume"]
+    df_raw = pd.DataFrame(all_candles, columns=cols)
+    num_cols = ["Open", "High", "Low", "Close", "Volume"]
+    df_raw[num_cols] = df_raw[num_cols].astype(float)
+    df_raw["Timestamp"] = pd.to_datetime(df_raw["time"], unit="s", utc=True)
+    df_raw.set_index("Timestamp", inplace=True)
+    df_raw.sort_index(ascending=True, inplace=True)
+    return df_raw[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def get_robust_2year_hourly():
+    now = datetime.now(timezone.utc)
+    start_dt = now - timedelta(days=730)
+
+    try:
+        df = fetch_binance_data(
+            int(start_dt.timestamp() * 1000), int(now.timestamp() * 1000)
+        )
+        if df is not None and len(df) >= 5000:
+            return df, "Binance REST API"
+    except Exception:
+        pass
+
+    df = fetch_coinbase_data(start_dt, now)
+    if df is not None and len(df) >= 2000:
+        return df, "Coinbase Pro API (Fallback)"
+
+    raise ValueError("Failed to fetch price data.")
+
+
+# Fetch Data
+try:
+    with st.spinner("🔄 Fetching Data & Calculating Engine..."):
+        df, source_used = get_robust_2year_hourly()
+        df.sort_index(inplace=True)
+        df = df[~df.index.duplicated(keep="first")]
+        df = df.iloc[:-1]
+        df.index = df.index.tz_convert("Asia/Kolkata")
+except Exception as e:
+    st.error(f"🚨 Data Engine Error: {e}")
+    st.stop()
+
+
+# =====================================================================
+# CALCULATION ENGINE
+# =====================================================================
+# 1. Base HAM Normal Signal
+normal_close_full = np.asarray(df["Close"], dtype=float).flatten()
+df["Hurst_Normal"] = calculate_rolling_hurst_vectorized(
+    normal_close_full, window=30
+)
+kalman_base_normal = apply_kalman_filter_custom(
+    normal_close_full, initial_p=50.0, q_val=0.0005, r_val=0.2
+)
+momentum_normal = apply_kalman_filter_custom(
+    normal_close_full - kalman_base_normal,
+    initial_p=0.50,
+    q_val=0.001,
+    r_val=0.1,
+)
+df["HAM_Normal"] = momentum_normal * (df["Hurst_Normal"].to_numpy() * 2.0)
+
+# 2. Custom Column Calculation
+df["HAM_Custom_Delta"] = (
+    df["Close"].shift(1) - df["Close"]
+) + df["HAM_Normal"]
+
+# 3. THREE NEW THEORY COLUMNS (STRICTLY CAUSAL / NO LOOKAHEAD)
+df["Chaos_Attractor_ZScore"] = compute_chaos_attractor_dist(df["Close"])
+df["Ramsey_Order_Density"] = compute_ramsey_structure_density(df["Close"])
+df["Takens_Embedding_Velocity"] = compute_takens_trajectory(df["Close"])
+
+
+# =====================================================================
+# DISPLAY MATRIX & METRICS
+# =====================================================================
+total_candles = len(df)
+split_idx = int(total_candles * 0.50)
+df_predict = df.iloc[split_idx:].copy()
+
+clean_cols = [
+    "Close", 
+    "HAM_Normal", 
+    "HAM_Custom_Delta",
+    "Chaos_Attractor_ZScore",
+    "Ramsey_Order_Density",
+    "Takens_Embedding_Velocity"
+]
+
+display_df = pd.DataFrame(index=df_predict.index)
+for col in clean_cols:
+    display_df[col] = np.asarray(df_predict[col], dtype=float).flatten()
+
+# Display latest candles at the top
+display_df = display_df.iloc[::-1]
+display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M IST")
+
+latest_candle = display_df.iloc[0]
+latest_time = display_df.index[0]
+
+st.markdown(f"### 🔒 **LAST LOCKED CANDLE (IST):** `{latest_time}`")
+
+# Metrics Cards
+col1, col2, col3 = st.columns(3)
+col1.metric("Locked Close Price", f"${latest_candle['Close']:,.2f}")
+col2.metric("Chaos Attractor Z-Score", f"{latest_candle['Chaos_Attractor_ZScore']:.4f}")
+col3.metric("Ramsey Order Density", f"{latest_candle['Ramsey_Order_Density']:.4f}")
+
+st.divider()
+
+# Interactive Data Frame
+st.subheader(f"📋 Custom Kinematic Matrix ({len(display_df):,} Locked Candles)")
+st.dataframe(
+    display_df,
+    column_config={
+        "Close": st.column_config.NumberColumn(
+            "Close Price ($)", format="$%.2f"
+        ),
+        "HAM_Normal": st.column_config.NumberColumn(
+            "HAM Normal (Kalman)", format="%.4f"
+        ),
+        "HAM_Custom_Delta": st.column_config.NumberColumn(
+            "(Last Close - Current Close) + HAM Normal", format="%.4f"
+        ),
+        "Chaos_Attractor_ZScore": st.column_config.NumberColumn(
+            "Chaos Attractor (Z-Score)", format="%.4f"
+        ),
+        "Ramsey_Order_Density": st.column_config.NumberColumn(
+            "Ramsey Structure Density", format="%.4f"
+        ),
+        "Takens_Embedding_Velocity": st.column_config.NumberColumn(
+            "Takens Phase Velocity", format="%.4f"
+        ),
+    },
+    use_container_width=True,
+    height=600,
+)
