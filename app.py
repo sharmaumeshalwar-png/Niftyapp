@@ -10,7 +10,7 @@ import streamlit as st
 # =====================================================================
 st.set_page_config(page_title="BTC Kinematics & Fokker-Planck Engine", layout="wide")
 st.title("⚡ Bitcoin (BTC-USD) Advanced Predictive Engine")
-st.write("🎯 **1-Hour Timeframe:** Fokker-Planck 24h Target + Regime Switch Engine")
+st.write("🎯 **1-Hour Timeframe:** Mean-Reverting Fokker-Planck 24h Target & 95% Volatility Range")
 
 # Sidebar
 st.sidebar.header("🔄 Live Engine Controls")
@@ -110,34 +110,36 @@ def compute_takens_trajectory(price_series, lag=1):
     return takens_velocity.fillna(0.0)
 
 
-# --- NEW predictive ENGINES: FOKKER-PLANCK & REGIME SWITCHING ---
-def compute_fokker_planck_24h_target(price_series, window=30, horizon=24):
+# --- MEAN-REVERTING FOKKER-PLANCK (ORNSTEIN-UHLENBECK) ENGINE ---
+def compute_fokker_planck_ou_target(price_series, window=30, horizon=24, theta=0.08):
     """
-    Fokker-Planck Drift-Diffusion Stochastic Engine.
-    Estimates Causal Drift (mu) & Volatility (sigma) up to time t,
-    and solves Fokker-Planck Expectation for t + horizon (24 hours).
-    STRICTLY NO LOOKAHEAD DATA USED.
+    Solves Mean-Reverting Fokker-Planck Stochastic Differential Equation.
+    Calculates Mean-Reverting Expected Target & 95% Confidence Interval Bands for t + 24.
+    STRICTLY NO FUTURE LEAKAGE.
     """
     s = pd.Series(price_series, dtype=float)
     log_returns = np.log(s / s.shift(1)).fillna(0.0)
     
-    # Rolling Causal Drift (mu) and Diffusion (sigma)
-    mu_rolling = log_returns.rolling(window=window).mean()
-    var_rolling = log_returns.rolling(window=window).var()
+    # Anchor Mean & Historical Volatility up to time t
+    rolling_mean = s.rolling(window=window).mean()
+    rolling_vol = log_returns.rolling(window=window).std() + 1e-8
     
-    # Drift correction for Geometric Brownian Motion / Fokker-Planck PDF mean
-    drift_rate = (mu_rolling - 0.5 * var_rolling) * horizon
+    # 1. Expected Target Mean Price at t + 24
+    decay_factor = np.exp(-theta * horizon)
+    expected_target_24h = rolling_mean + (s - rolling_mean) * decay_factor
     
-    # Expected Expected Value Target at t + 24
-    expected_target_24h = s * np.exp(drift_rate)
-    return expected_target_24h.fillna(s)
+    # 2. Cumulative Volatility Diffusion Variance over 24 hours
+    diffusion_std = s * rolling_vol * np.sqrt((1 - np.exp(-2 * theta * horizon)) / (2 * theta))
+    
+    # 3. 95% Confidence Interval Bounds (1.96 * Sigma)
+    target_lower_95 = expected_target_24h - (1.96 * diffusion_std)
+    target_upper_95 = expected_target_24h + (1.96 * diffusion_std)
+    
+    return expected_target_24h.fillna(s), target_lower_95.fillna(s), target_upper_95.fillna(s)
 
 
 def compute_market_regime_state(price_series, window=30):
-    """
-    Quantile Volatility & Drift Regime Classification Engine.
-    Classifies Market State into: Bullish Trend, Bearish Trend, or High Volatility Chop.
-    """
+    """Quantile Volatility & Drift Regime Classification Engine."""
     s = pd.Series(price_series, dtype=float)
     log_returns = np.log(s / s.shift(1)).fillna(0.0)
     
@@ -302,8 +304,11 @@ df["Chaos_ZScore_Kalman"] = apply_kalman_filter_custom(
 df["Ramsey_Order_Density"] = compute_ramsey_structure_density(df["Close"])
 df["Takens_Embedding_Velocity"] = compute_takens_trajectory(df["Close"])
 
-# 4. PREDICTIVE ENGINES (FOKKER-PLANCK 24H TARGET & REGIME)
-df["Predicted_Close_24h"] = compute_fokker_planck_24h_target(df["Close"], window=30, horizon=24)
+# 4. PREDICTIVE MEAN-REVERTING FOKKER-PLANCK ENGINE
+target_24h, lower_95, upper_95 = compute_fokker_planck_ou_target(df["Close"], window=30, horizon=24)
+df["Predicted_Close_24h"] = target_24h
+df["Target_Lower_95%"] = lower_95
+df["Target_Upper_95%"] = upper_95
 df["Market_Regime_State"] = compute_market_regime_state(df["Close"], window=30)
 
 
@@ -317,6 +322,8 @@ df_predict = df.iloc[split_idx:].copy()
 clean_cols = [
     "Close", 
     "Predicted_Close_24h",
+    "Target_Lower_95%",
+    "Target_Upper_95%",
     "Market_Regime_State",
     "HAM_Normal", 
     "Chaos_Attractor_ZScore",
@@ -352,13 +359,16 @@ col2.metric(
     f"${target_24h:,.2f}", 
     f"{delta_val:+,.2f} ({delta_pct:+.2f}%)"
 )
-col3.metric("Current Market Regime", f"{latest_candle['Market_Regime_State']}")
-col4.metric("Chaos Kalman (0.50)", f"{float(latest_candle['Chaos_ZScore_Kalman']):.4f}")
+col3.metric(
+    "95% Probability Range", 
+    f"${float(latest_candle['Target_Lower_95\%']):,.2f} -${float(latest_candle['Target_Upper_95%']):,.2f}"
+)
+col4.metric("Current Market Regime", f"{latest_candle['Market_Regime_State']}")
 
 st.divider()
 
 # Interactive Data Frame
-st.subheader(f"📋 Predictive Kinematic Matrix ({len(display_df):,} Locked Candles)")
+st.subheader(f"📋 Corrected Predictive Kinematic Matrix ({len(display_df):,} Locked Candles)")
 st.dataframe(
     display_df,
     column_config={
@@ -366,7 +376,13 @@ st.dataframe(
             "Close Price ($)", format="$%.2f"
         ),
         "Predicted_Close_24h": st.column_config.NumberColumn(
-            "Fokker-Planck Predicted 24h Target ($)", format="$%.2f"
+            "Fokker-Planck 24h Target ($)", format="$%.2f"
+        ),
+        "Target_Lower_95%": st.column_config.NumberColumn(
+            "Lower 95% Limit ($)", format="$%.2f"
+        ),
+        "Target_Upper_95%": st.column_config.NumberColumn(
+            "Upper 95% Limit ($)", format="$%.2f"
         ),
         "Market_Regime_State": st.column_config.TextColumn(
             "Regime State"
