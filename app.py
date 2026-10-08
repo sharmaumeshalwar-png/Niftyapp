@@ -120,7 +120,6 @@ def compute_fokker_planck_ou_target(price_series, window=30, horizon=24, theta=0
     s = pd.Series(price_series, dtype=float)
     log_returns = np.log(s / s.shift(1)).fillna(0.0)
     
-    # Anchor Mean & Historical Volatility up to time t
     rolling_mean = s.rolling(window=window).mean()
     rolling_vol = log_returns.rolling(window=window).std() + 1e-8
     
