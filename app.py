@@ -358,9 +358,14 @@ col2.metric(
     f"${target_24h:,.2f}", 
     f"{delta_val:+,.2f} ({delta_pct:+.2f}%)"
 )
+
+# Safe fallback extracting to avoid KeyError
+lower_95_val = latest_candle.get("Target_Lower_95%", 0.0)
+upper_95_val = latest_candle.get("Target_Upper_95%", 0.0)
+
 col3.metric(
     "95% Probability Range", 
-    f"${float(latest_candle['Target_Lower_95\%']):,.2f} -${float(latest_candle['Target_Upper_95%']):,.2f}"
+    f"${float(lower_95_val):,.2f} -${float(upper_95_val):,.2f}"
 )
 col4.metric("Current Market Regime", f"{latest_candle['Market_Regime_State']}")
 
